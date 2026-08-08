@@ -413,6 +413,10 @@ test("coordinator worker envelopes reject private fields, unknown aliases, unbou
   privateResult.answer = "The private departmentWorkPackages should be visible.";
   assert.throws(() => validateCompanionWorkerResult(request, privateResult, policy), /private_leakage/);
 
+  const missingArtifactBindings = structuredClone(valid) as any;
+  delete missingArtifactBindings.artifactBindings;
+  assert.throws(() => validateCompanionWorkerResult(request, missingArtifactBindings, policy), /worker_result_artifact_bindings_required/);
+
   let sent = 0;
   const failingOpenClaw = createOpenClawCompanionAdapter({
     send() {

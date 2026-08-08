@@ -917,6 +917,9 @@ export function validateCompanionWorkerResult(
     throw new Error("worker_result_output_limit_exceeded");
   }
   const citations = normalizeCitations(raw.citations);
+  if (!Array.isArray(raw.artifactBindings) || raw.artifactBindings.length === 0) {
+    throw new Error("worker_result_artifact_bindings_required");
+  }
   const artifactBindings = normalizeArtifactBindings(raw.artifactBindings, citations, request.context.projectionChecksum);
   const aiAttribution = normalizeAiAttribution(raw.aiAttribution, "result.aiAttribution");
   if (JSON.stringify(aiAttribution) !== JSON.stringify(request.aiAttribution)) throw new Error("worker_result_attribution_mismatch");
