@@ -82,11 +82,38 @@ export type AttestDepartmentReviewCommand = CommandEnvelopeBase & {
   };
 };
 
+export type DeriveCitizenBriefCommand = CommandEnvelopeBase & {
+  commandType: "derive_citizen_brief_v1";
+  payload: {
+    brief: CitizenBriefInput;
+  };
+};
+
+export type CorrectDepartmentDraftCommand = CommandEnvelopeBase & {
+  commandType: "correct_department_draft_v1";
+  payload: {
+    packageId: string;
+    packageChecksum: string;
+    priorDraftArtifactChecksum: string;
+    draft: DepartmentDraftInput;
+  };
+};
+
+export type RetractDepartmentResponseCommand = CommandEnvelopeBase & {
+  commandType: "retract_department_response_v1";
+  payload: {
+    retraction: DepartmentRetractionInput;
+  };
+};
+
 export type CommandEnvelope =
   | IntakeDiscussionCommand
   | AssignDepartmentPackageCommand
   | RecordDepartmentDraftCommand
-  | AttestDepartmentReviewCommand;
+  | AttestDepartmentReviewCommand
+  | DeriveCitizenBriefCommand
+  | CorrectDepartmentDraftCommand
+  | RetractDepartmentResponseCommand;
 
 export type DepartmentPackageInput = {
   id: string;
@@ -112,6 +139,26 @@ export type DepartmentReviewInput = {
   draftArtifactChecksum: string;
   decision: "accepted" | "rejected";
   reviewedAt: string;
+};
+
+export type BriefSourceBinding = {
+  packageId: string;
+  packageChecksum: string;
+  draftArtifactChecksum: string;
+  reviewAttestationChecksum: string;
+};
+
+export type CitizenBriefInput = {
+  id: string;
+  sourceBindings: BriefSourceBinding[];
+  authorityBinding: AuthorityBinding;
+};
+
+export type DepartmentRetractionInput = {
+  packageId: string;
+  packageChecksum: string;
+  targetDraftArtifactChecksum: string;
+  targetReviewAttestationChecksum: string;
 };
 
 export type QueryEnvelope = {
@@ -141,11 +188,14 @@ export type CaseEventV1 = {
     | "discussion_recorded_v1"
     | "department_package_assigned_v1"
     | "department_draft_recorded_v1"
-    | "department_review_attested_v1";
+    | "department_review_attested_v1"
+    | "citizen_brief_derived_v1"
+    | "department_draft_corrected_v1"
+    | "department_response_retracted_v1";
   priorEventChecksum: string;
   actorBinding: ActorBinding;
   payloadChecksum: string;
-  correctionOf: null;
+  correctionOf: string | null;
   eventChecksum: string;
 };
 
@@ -189,6 +239,9 @@ export type CaseProjection = {
   provenance: DiscussionArtifact;
   /** One bounded package for Issue #3, visible only to administration until accepted. */
   departmentPackage?: DepartmentPackageProjection;
+  /** Canonical Issue #4 package set; private/admin only until a brief is current. */
+  departmentPackages?: DepartmentPackageProjection[];
+  reviewedCitizenBrief?: ReviewedCitizenBriefProjection;
 };
 
 export type ProjectionEnvelope = {
@@ -196,6 +249,7 @@ export type ProjectionEnvelope = {
   caseId: string;
   caseVersion: number;
   journalHeadChecksum: string;
+  projectionChecksum: string;
   visibility: "public" | "administration" | "council";
   policyVersion: string;
   projection: CaseProjection;
@@ -229,6 +283,8 @@ export type CivicCaseCoordinatorOptions = {
   allowedSignerPubkeys?: readonly string[];
   fixturePubkey?: string;
   fixtureSignerPubkey?: string;
+  /** Issue #4 synthetic fixture: exactly eight unique departments when configured. */
+  requiredDepartmentIds?: readonly string[];
   [key: string]: unknown;
 };
 
@@ -244,6 +300,7 @@ type InternalCoordinatorOptions = {
   syntheticFixtureOnly: boolean;
   allowedKinds: readonly number[];
   allowedSignerPubkeys?: ReadonlySet<string>;
+  requiredDepartmentIds?: readonly string[];
 };
 
 type JournalState = {
@@ -289,6 +346,28 @@ type DepartmentReviewPayload = {
   authorityBinding: AuthorityBinding;
 };
 
+type CitizenBriefPayload = {
+  brief: ReviewedCitizenBriefProjection;
+  sourceBindings: BriefSourceBinding[];
+  briefChecksum: string;
+  policyVersion: string;
+  authorityBinding: AuthorityBinding;
+};
+
+type DepartmentDraftCorrectionPayload = {
+  packageId: string;
+  packageChecksum: string;
+  priorDraftArtifactChecksum: string;
+  draft: DepartmentDraftInput;
+  draftArtifactChecksum: string;
+  authorityBinding: AuthorityBinding;
+};
+
+type DepartmentRetractionPayload = {
+  retraction: DepartmentRetractionInput;
+  authorityBinding: AuthorityBinding;
+};
+
 type StoredCaseEvent = CaseEventV1 & {
   /** Immutable payload retained only behind the coordinator seam. */
   payload:
@@ -296,7 +375,10 @@ type StoredCaseEvent = CaseEventV1 & {
     | DiscussionRecordedPayload
     | DepartmentPackagePayload
     | DepartmentDraftPayload
-    | DepartmentReviewPayload;
+    | DepartmentReviewPayload
+    | CitizenBriefPayload
+    | DepartmentDraftCorrectionPayload
+    | DepartmentRetractionPayload;
 };
 
 export type DepartmentPackageProjection = {
@@ -318,11 +400,13 @@ export type DepartmentPackageProjection = {
     actorId?: string;
   };
   reviewState: "assigned" | "draft_pending_review" | "accepted" | "rejected";
+  correctionState: "current" | "corrected" | "retracted";
   review?: {
     decision: "accepted" | "rejected";
     draftArtifactChecksum: string;
     reviewedAt: string;
     policyVersion: string;
+    attestationChecksum?: string;
     reviewerActorId?: string;
   };
   artifactChecksum?: string;
@@ -330,6 +414,30 @@ export type DepartmentPackageProjection = {
   policyVersion?: string;
   publicSummary?: string;
   publicCitations?: string[];
+  authorityBinding: AuthorityBinding;
+};
+
+export type ReviewedCitizenBriefProjection = {
+  schemaVersion: "citizen_brief_projection_v1";
+  id: string;
+  title: string;
+  summary: string;
+  responses: Array<{
+    departmentId: string;
+    publicSummary: string;
+    publicCitations: string[];
+  }>;
+  provenance: {
+    sourceDiscussionRef: SourceReference;
+    suggestionId: string;
+    packageBindings: Array<BriefSourceBinding & {
+      departmentId: string;
+      reviewedAt: string;
+    }>;
+  };
+  briefChecksum: string;
+  policyVersion: string;
+  correctionState: "current" | "invalidated";
   authorityBinding: AuthorityBinding;
 };
 
@@ -357,6 +465,9 @@ const PAYLOAD_KEYS = new Set(["discussion"]);
 const PACKAGE_PAYLOAD_KEYS = new Set(["departmentPackage"]);
 const DRAFT_PAYLOAD_KEYS = new Set(["packageId", "packageChecksum", "draft"]);
 const REVIEW_PAYLOAD_KEYS = new Set(["review"]);
+const BRIEF_PAYLOAD_KEYS = new Set(["brief"]);
+const CORRECTION_PAYLOAD_KEYS = new Set(["packageId", "packageChecksum", "priorDraftArtifactChecksum", "draft"]);
+const RETRACTION_PAYLOAD_KEYS = new Set(["retraction"]);
 const ACTOR_KEYS = new Set(["actorId", "actorClass"]);
 const ACTOR_REGISTRATION_KEYS = new Set(["actorId", "actorClass", "departmentId"]);
 const DEPARTMENT_PACKAGE_KEYS = new Set([
@@ -377,6 +488,9 @@ const DEPARTMENT_DRAFT_KEYS = new Set([
   "authorityBinding",
 ]);
 const DEPARTMENT_REVIEW_KEYS = new Set(["packageId", "draftArtifactChecksum", "decision", "reviewedAt"]);
+const BRIEF_KEYS = new Set(["id", "sourceBindings", "authorityBinding"]);
+const SOURCE_BINDING_KEYS = new Set(["packageId", "packageChecksum", "draftArtifactChecksum", "reviewAttestationChecksum"]);
+const RETRACTION_KEYS = new Set(["packageId", "packageChecksum", "targetDraftArtifactChecksum", "targetReviewAttestationChecksum"]);
 const ARTIFACT_KEYS = new Set([
   "schemaVersion",
   "id",
@@ -615,6 +729,7 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     "allowedSignerPubkeys",
     "fixturePubkey",
     "fixtureSignerPubkey",
+    "requiredDepartmentIds",
   ]), "options");
 
   const rawScope = options.scope ?? (
@@ -647,6 +762,20 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     fail("case_id_invalid");
   }
   const policyVersion = nonEmptyString(options.policyVersion ?? "case-intake-v1", "policy_version_invalid");
+  let requiredDepartmentIds: string[] | undefined;
+  if (options.requiredDepartmentIds !== undefined) {
+    if (!Array.isArray(options.requiredDepartmentIds) || options.requiredDepartmentIds.length !== 8) {
+      fail("required_departments_invalid");
+    }
+    requiredDepartmentIds = options.requiredDepartmentIds.map((departmentId) => {
+      const normalized = nonEmptyString(departmentId, "required_departments_invalid");
+      if (normalized.length > 256) fail("required_departments_invalid");
+      if (!/^[A-Za-z0-9._~-]+$/.test(normalized)) fail("required_departments_invalid");
+      return normalized;
+    });
+    if (new Set(requiredDepartmentIds).size !== requiredDepartmentIds.length) fail("required_departments_unique");
+    requiredDepartmentIds.sort();
+  }
   const actorValues = options.actors ?? options.actorRegistry ?? [
     { actorId: "synthetic:citizen-1", actorClass: "citizen" },
     { actorId: "synthetic:public-1", actorClass: "public" },
@@ -660,6 +789,17 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     const normalized = normalizeActorRegistration(actor);
     if (actors.has(normalized.actorId)) fail("actor_registry_unique");
     actors.set(normalized.actorId, normalized);
+  }
+  if (requiredDepartmentIds) {
+    for (const departmentId of requiredDepartmentIds) {
+      const hasAgent = [...actors.values()].some(
+        (actor) => actor.actorClass === "department_agent" && actor.departmentId === departmentId,
+      );
+      const hasReviewer = [...actors.values()].some(
+        (actor) => actor.actorClass === "department_reviewer" && actor.departmentId === departmentId,
+      );
+      if (!hasAgent || !hasReviewer) fail("department_registry_incomplete");
+    }
   }
   if (options.syntheticFixtureOnly === false) fail("synthetic_fixture_required");
   const allowedKinds = options.allowedKinds ?? [1];
@@ -685,6 +825,7 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     syntheticFixtureOnly: true,
     allowedKinds: [...allowedKinds],
     allowedSignerPubkeys,
+    requiredDepartmentIds,
   };
 }
 
@@ -698,6 +839,7 @@ function appendEvent(
   actorBinding: ActorBinding,
   eventType: CaseEventV1["eventType"],
   payload: unknown,
+  correctionOf: string | null = null,
 ): StoredCaseEvent {
   const caseVersion = state.events.length + 1;
   const priorEventChecksum = state.events.length === 0
@@ -713,7 +855,7 @@ function appendEvent(
     priorEventChecksum,
     actorBinding,
     payloadChecksum,
-    correctionOf: null,
+    correctionOf,
   } as const;
   const event: StoredCaseEvent = {
     ...eventWithoutChecksum,
@@ -804,6 +946,139 @@ function normalizeDepartmentReview(value: unknown): DepartmentReviewInput {
   };
 }
 
+function normalizeSourceBinding(value: unknown): BriefSourceBinding {
+  ownKeys(value, SOURCE_BINDING_KEYS, "brief.sourceBindings");
+  if (!isRecord(value)) fail("citizen_brief_binding_invalid");
+  const packageId = nonEmptyString(value.packageId, "citizen_brief_binding_invalid");
+  const packageChecksum = nonEmptyString(value.packageChecksum, "citizen_brief_binding_invalid");
+  const draftArtifactChecksum = nonEmptyString(value.draftArtifactChecksum, "citizen_brief_binding_invalid");
+  const reviewAttestationChecksum = nonEmptyString(value.reviewAttestationChecksum, "citizen_brief_binding_invalid");
+  if (!SHA256.test(packageChecksum) || !SHA256.test(draftArtifactChecksum) || !SHA256.test(reviewAttestationChecksum)) {
+    fail("citizen_brief_binding_checksum_invalid");
+  }
+  return { packageId, packageChecksum, draftArtifactChecksum, reviewAttestationChecksum };
+}
+
+function normalizeCitizenBrief(value: unknown): CitizenBriefInput {
+  ownKeys(value, BRIEF_KEYS, "brief");
+  if (!isRecord(value)) fail("citizen_brief_invalid");
+  if (value.authorityBinding !== "none") fail("authority_field_forbidden:brief.authorityBinding");
+  if (!Array.isArray(value.sourceBindings) || value.sourceBindings.length === 0) fail("citizen_brief_bindings_required");
+  const sourceBindings = value.sourceBindings.map(normalizeSourceBinding);
+  if (new Set(sourceBindings.map((binding) => binding.packageId)).size !== sourceBindings.length) {
+    fail("citizen_brief_binding_duplicate");
+  }
+  sourceBindings.sort((left, right) => left.packageId < right.packageId ? -1 : left.packageId > right.packageId ? 1 : 0);
+  return {
+    id: boundedDepartmentString(value.id, "citizen_brief_invalid", 512),
+    sourceBindings,
+    authorityBinding: "none",
+  };
+}
+
+function normalizeDepartmentRetraction(value: unknown): DepartmentRetractionInput {
+  ownKeys(value, RETRACTION_KEYS, "retraction");
+  if (!isRecord(value)) fail("department_retraction_invalid");
+  const targetDraftArtifactChecksum = nonEmptyString(value.targetDraftArtifactChecksum, "department_retraction_invalid");
+  const targetReviewAttestationChecksum = nonEmptyString(value.targetReviewAttestationChecksum, "department_retraction_invalid");
+  const packageChecksum = nonEmptyString(value.packageChecksum, "department_retraction_invalid");
+  if (!SHA256.test(packageChecksum) || !SHA256.test(targetDraftArtifactChecksum) || !SHA256.test(targetReviewAttestationChecksum)) {
+    fail("department_retraction_checksum_invalid");
+  }
+  return {
+    packageId: nonEmptyString(value.packageId, "department_retraction_invalid"),
+    packageChecksum,
+    targetDraftArtifactChecksum,
+    targetReviewAttestationChecksum,
+  };
+}
+
+function briefChecksumFor(brief: ReviewedCitizenBriefProjection): string {
+  const withoutChecksum = Object.fromEntries(
+    Object.entries(brief).filter(([key]) => key !== "briefChecksum"),
+  );
+  return sha256(withoutChecksum);
+}
+
+function validateBriefBindings(
+  sourceBindings: readonly BriefSourceBinding[],
+  departments: ReadonlyMap<string, ReplayedDepartmentState>,
+  options: InternalCoordinatorOptions,
+): BriefSourceBinding[] {
+  const required = options.requiredDepartmentIds;
+  if (!required || required.length !== 8 || sourceBindings.length !== required.length) fail("citizen_brief_departments_incomplete");
+  const byPackage = new Map(sourceBindings.map((binding) => [binding.packageId, binding]));
+  if (byPackage.size !== sourceBindings.length) fail("citizen_brief_binding_duplicate");
+  const ordered: BriefSourceBinding[] = [];
+  for (const departmentId of required) {
+    const department = [...departments.values()].find((item) => item.departmentPackage.departmentId === departmentId);
+    if (!department?.draft || !department.review || department.review.review.decision !== "accepted" || department.correctionState !== "current") {
+      fail("citizen_brief_review_incomplete");
+    }
+    const binding = byPackage.get(department.departmentPackage.id);
+    if (
+      !binding ||
+      binding.packageChecksum !== department.packageChecksum ||
+      binding.draftArtifactChecksum !== department.draft.draftArtifactChecksum ||
+      binding.reviewAttestationChecksum !== department.review.attestationChecksum
+    ) fail("citizen_brief_binding_stale");
+    ordered.push(clone(binding));
+  }
+  return ordered;
+}
+
+function deriveBriefProjection(
+  options: InternalCoordinatorOptions,
+  discussion: DiscussionArtifact,
+  suggestion: DiscussionRecordedPayload["suggestion"],
+  departments: ReadonlyMap<string, ReplayedDepartmentState>,
+  id: string,
+  sourceBindings: readonly BriefSourceBinding[],
+): ReviewedCitizenBriefProjection {
+  const orderedDepartments = options.requiredDepartmentIds ?? [];
+  const responses = orderedDepartments.map((departmentId) => {
+    const department = [...departments.values()].find((item) => item.departmentPackage.departmentId === departmentId);
+    if (!department?.draft || !department.review || department.review.review.decision !== "accepted") fail("citizen_brief_review_incomplete");
+    return {
+      departmentId,
+      publicSummary: department.draft.draft.publicSummary,
+      publicCitations: [...new Set(department.draft.draft.publicCitations)].sort(),
+    };
+  });
+  const packageBindings = orderedDepartments.map((departmentId, index) => {
+    const department = [...departments.values()].find((item) => item.departmentPackage.departmentId === departmentId);
+    const review = department?.review;
+    if (!department?.draft || !review) fail("citizen_brief_review_incomplete");
+    return {
+      ...sourceBindings[index]!,
+      departmentId,
+      reviewedAt: review.review.reviewedAt,
+    };
+  });
+  const base: Omit<ReviewedCitizenBriefProjection, "briefChecksum"> = {
+    schemaVersion: "citizen_brief_projection_v1",
+    id,
+    title: suggestion.title,
+    summary: responses.map((response) => `${response.departmentId}: ${response.publicSummary}`).join(" "),
+    responses,
+    provenance: {
+      sourceDiscussionRef: {
+        type: "nostr_event",
+        id: discussion.event.id,
+        ref: discussion.sourceRef,
+      },
+      suggestionId: suggestion.id,
+      packageBindings,
+    },
+    policyVersion: options.policyVersion,
+    correctionState: "current",
+    authorityBinding: "none",
+  };
+  const brief = { ...base, briefChecksum: "" } as ReviewedCitizenBriefProjection;
+  brief.briefChecksum = briefChecksumFor(brief);
+  return brief;
+}
+
 type ReplayedDepartmentState = {
   departmentPackage: DepartmentPackageInput;
   packageChecksum: string;
@@ -811,18 +1086,25 @@ type ReplayedDepartmentState = {
     draft: DepartmentDraftInput;
     draftArtifactChecksum: string;
     actorBinding: ActorBinding;
+    eventId: string;
   };
   review?: {
     review: DepartmentReviewInput;
     policyVersion: string;
     actorBinding: ActorBinding;
+    attestationChecksum: string;
+    eventId: string;
   };
+  correctionState: "current" | "corrected" | "retracted";
 };
 
 type ReplayedCaseState = {
   discussion: DiscussionArtifact;
   suggestion: DiscussionRecordedPayload["suggestion"];
+  departments: Map<string, ReplayedDepartmentState>;
   department?: ReplayedDepartmentState;
+  brief?: ReviewedCitizenBriefProjection;
+  briefSourceEventIds?: Map<string, { draftEventId: string; reviewEventId: string }>;
 };
 
 function replayJournal(
@@ -832,7 +1114,9 @@ function replayJournal(
   let prior = genesisChecksum(options.caseId);
   let discussion: DiscussionArtifact | undefined;
   let suggestion: DiscussionRecordedPayload["suggestion"] | undefined;
-  let department: ReplayedDepartmentState | undefined;
+  const departments = new Map<string, ReplayedDepartmentState>();
+  let brief: ReviewedCitizenBriefProjection | undefined;
+  let briefSourceEventIds: Map<string, { draftEventId: string; reviewEventId: string }> | undefined;
   for (const [index, event] of state.events.entries()) {
     const expectedVersion = index + 1;
     if (
@@ -842,7 +1126,6 @@ function replayJournal(
       event.priorEventChecksum !== prior ||
       !SHA256.test(event.payloadChecksum) ||
       !SHA256.test(event.eventChecksum) ||
-      event.correctionOf !== null ||
       event.eventId !== `urn:stadtstack:case-event:${options.caseId}:${expectedVersion}`
     ) {
       fail("journal_chain_invalid");
@@ -852,12 +1135,12 @@ function replayJournal(
     if (sha256(payload) !== event.payloadChecksum) fail("payload_checksum_invalid");
     if (event.eventType === "case_created_v1") {
       const casePayload = payload as CaseCreatedPayload;
-      if (index !== 0 || casePayload.caseId !== options.caseId || casePayload.authorityBinding !== "none") {
+      if (index !== 0 || casePayload.caseId !== options.caseId || casePayload.authorityBinding !== "none" || event.correctionOf !== null) {
         fail("journal_chain_invalid");
       }
     } else if (event.eventType === "discussion_recorded_v1") {
       const discussionPayload = payload as DiscussionRecordedPayload;
-      if (index !== 1 || discussionPayload.authorityBinding !== "none") fail("journal_chain_invalid");
+      if (index !== 1 || discussionPayload.authorityBinding !== "none" || event.correctionOf !== null) fail("journal_chain_invalid");
       const candidate = normalizeArtifactShape(discussionPayload.discussion);
       if (!candidate || candidate.id !== candidate.event.id) fail("journal_chain_invalid");
       if (
@@ -873,10 +1156,16 @@ function replayJournal(
       discussion = clone(candidate);
       suggestion = clone(discussionPayload.suggestion);
     } else if (event.eventType === "department_package_assigned_v1") {
-      if (index < 2 || !discussion || !suggestion || department) fail("journal_chain_invalid");
+      if (index < 2 || !discussion || !suggestion || event.correctionOf !== null) fail("journal_chain_invalid");
       const packagePayload = payload as DepartmentPackagePayload;
       const departmentPackage = normalizeDepartmentPackage(packagePayload.departmentPackage);
       const stewardRegistration = options.actors.get(event.actorBinding.actorId);
+      if (departments.has(departmentPackage.id) || [...departments.values()].some((item) => item.departmentPackage.departmentId === departmentPackage.departmentId)) {
+        fail("journal_chain_invalid");
+      }
+      if (options.requiredDepartmentIds && !options.requiredDepartmentIds.includes(departmentPackage.departmentId)) {
+        fail("journal_chain_invalid");
+      }
       if (
         packagePayload.authorityBinding !== "none" ||
         packagePayload.packageChecksum !== sha256(departmentPackage) ||
@@ -885,13 +1174,15 @@ function replayJournal(
         !stewardRegistration ||
         stewardRegistration.actorClass !== "case_steward"
       ) fail("journal_chain_invalid");
-      department = {
+      departments.set(departmentPackage.id, {
         departmentPackage,
         packageChecksum: packagePayload.packageChecksum,
-      };
+        correctionState: "current",
+      });
     } else if (event.eventType === "department_draft_recorded_v1") {
-      if (!department || department.draft) fail("journal_chain_invalid");
       const draftPayload = payload as DepartmentDraftPayload;
+      const department = departments.get(draftPayload.packageId);
+      if (!department || department.draft || event.correctionOf !== null) fail("journal_chain_invalid");
       const draft = normalizeDepartmentDraft(draftPayload.draft);
       const registration = options.actors.get(event.actorBinding.actorId);
       if (
@@ -909,10 +1200,13 @@ function replayJournal(
         draft,
         draftArtifactChecksum: draftPayload.draftArtifactChecksum,
         actorBinding: clone(event.actorBinding),
+        eventId: event.eventId,
       };
+      department.correctionState = "current";
     } else if (event.eventType === "department_review_attested_v1") {
-      if (!department?.draft || department.review) fail("journal_chain_invalid");
       const reviewPayload = payload as DepartmentReviewPayload;
+      const department = departments.get(reviewPayload.review.packageId);
+      if (!department?.draft || department.review || event.correctionOf !== null) fail("journal_chain_invalid");
       const review = normalizeDepartmentReview(reviewPayload.review);
       const registration = options.actors.get(event.actorBinding.actorId);
       if (
@@ -936,14 +1230,89 @@ function replayJournal(
         review,
         policyVersion: reviewPayload.policyVersion,
         actorBinding: clone(event.actorBinding),
+        attestationChecksum: reviewPayload.attestationChecksum,
+        eventId: event.eventId,
       };
+      department.correctionState = "current";
+    } else if (event.eventType === "department_draft_corrected_v1") {
+      const correctionPayload = payload as DepartmentDraftCorrectionPayload;
+      const department = departments.get(correctionPayload.packageId);
+      if (!department?.draft || !department.review || department.review.review.decision !== "accepted" || event.correctionOf !== department.draft.eventId) fail("journal_chain_invalid");
+      const draft = normalizeDepartmentDraft(correctionPayload.draft);
+      const registration = options.actors.get(event.actorBinding.actorId);
+      if (
+        correctionPayload.authorityBinding !== "none" ||
+        correctionPayload.packageChecksum !== department.packageChecksum ||
+        correctionPayload.priorDraftArtifactChecksum !== department.draft.draftArtifactChecksum ||
+        correctionPayload.draftArtifactChecksum !== sha256(draft) ||
+        event.actorBinding.actorClass !== "department_agent" ||
+        !registration ||
+        registration.actorClass !== "department_agent" ||
+        registration.departmentId !== department.departmentPackage.departmentId ||
+        event.actorBinding.actorId !== department.departmentPackage.assignedAgentActorId
+      ) fail("journal_chain_invalid");
+      department.draft = {
+        draft,
+        draftArtifactChecksum: correctionPayload.draftArtifactChecksum,
+        actorBinding: clone(event.actorBinding),
+        eventId: event.eventId,
+      };
+      department.review = undefined;
+      department.correctionState = "corrected";
+    } else if (event.eventType === "department_response_retracted_v1") {
+      const retractionPayload = payload as DepartmentRetractionPayload;
+      const department = departments.get(retractionPayload.retraction.packageId);
+      if (!department?.draft || !department.review || department.review.review.decision !== "accepted" || event.correctionOf !== department.review.eventId) fail("journal_chain_invalid");
+      const retraction = normalizeDepartmentRetraction(retractionPayload.retraction);
+      const registration = options.actors.get(event.actorBinding.actorId);
+      if (
+        retractionPayload.authorityBinding !== "none" ||
+        retraction.packageChecksum !== department.packageChecksum ||
+        retraction.targetDraftArtifactChecksum !== department.draft.draftArtifactChecksum ||
+        retraction.targetReviewAttestationChecksum !== department.review.attestationChecksum ||
+        event.actorBinding.actorClass !== "case_steward" ||
+        !registration ||
+        registration.actorClass !== "case_steward"
+      ) fail("journal_chain_invalid");
+      department.draft = undefined;
+      department.review = undefined;
+      department.correctionState = "retracted";
+    } else if (event.eventType === "citizen_brief_derived_v1") {
+      if (!discussion || !suggestion || event.correctionOf !== null) fail("journal_chain_invalid");
+      const briefPayload = payload as CitizenBriefPayload;
+      const registration = options.actors.get(event.actorBinding.actorId);
+      if (
+        briefPayload.authorityBinding !== "none" ||
+        briefPayload.policyVersion !== options.policyVersion ||
+        event.actorBinding.actorClass !== "case_steward" ||
+        !registration ||
+        registration.actorClass !== "case_steward"
+      ) fail("journal_chain_invalid");
+      const validatedBindings = validateBriefBindings(briefPayload.sourceBindings, departments, options);
+      const derived = deriveBriefProjection(options, discussion, suggestion, departments, briefPayload.brief.id, validatedBindings);
+      if (
+        canonicalJson(derived) !== canonicalJson(briefPayload.brief) ||
+        briefPayload.briefChecksum !== briefChecksumFor(derived) ||
+        briefPayload.briefChecksum !== briefPayload.brief.briefChecksum
+      ) fail("journal_chain_invalid");
+      brief = clone(briefPayload.brief);
+      briefSourceEventIds = new Map(
+        validatedBindings.map((binding) => {
+          const department = departments.get(binding.packageId);
+          if (!department?.draft || !department.review) fail("journal_chain_invalid");
+          return [binding.packageId, { draftEventId: department.draft.eventId, reviewEventId: department.review.eventId }] as const;
+        }),
+      );
     } else {
       fail("journal_chain_invalid");
     }
     prior = eventChecksum;
   }
   if (state.headChecksum !== prior) fail("journal_chain_invalid");
-  return discussion && suggestion ? { discussion, suggestion, department } : undefined;
+  if (options.requiredDepartmentIds && departments.size > options.requiredDepartmentIds.length) fail("journal_chain_invalid");
+  if (!discussion || !suggestion) return undefined;
+  const department = departments.size === 1 ? [...departments.values()][0] : undefined;
+  return { discussion, suggestion, departments, department, brief, briefSourceEventIds };
 }
 
 function normalizeAndVerifyDiscussion(
@@ -1047,7 +1416,7 @@ function departmentPackageProjection(
   visibility: QueryEnvelope["visibility"],
 ): DepartmentPackageProjection | undefined {
   const review = department.review;
-  if (visibility !== "administration" && (!review || review.review.decision !== "accepted")) return undefined;
+  if (visibility !== "administration" && (department.correctionState !== "current" || !review || review.review.decision !== "accepted")) return undefined;
   if (visibility !== "administration" && review) {
     const draft = department.draft;
     if (!draft) return undefined;
@@ -1059,6 +1428,7 @@ function departmentPackageProjection(
       request: department.departmentPackage.request,
       packageChecksum: department.packageChecksum,
       reviewState: "accepted",
+      correctionState: department.correctionState,
       artifactChecksum: review.review.draftArtifactChecksum,
       reviewedAt: review.review.reviewedAt,
       policyVersion: review.policyVersion,
@@ -1077,6 +1447,7 @@ function departmentPackageProjection(
     assignedAgentActorId: department.departmentPackage.assignedAgentActorId,
     assignedReviewerActorId: department.departmentPackage.assignedReviewerActorId,
     reviewState: department.review?.review.decision ?? (department.draft ? "draft_pending_review" : "assigned"),
+    correctionState: department.correctionState,
     authorityBinding: "none",
   };
   if (department.draft) {
@@ -1096,10 +1467,44 @@ function departmentPackageProjection(
       draftArtifactChecksum: department.review.review.draftArtifactChecksum,
       reviewedAt: department.review.review.reviewedAt,
       policyVersion: department.review.policyVersion,
+      attestationChecksum: department.review.attestationChecksum,
       reviewerActorId: department.review.actorBinding.actorId,
     };
   }
   return result;
+}
+
+function briefIsCurrent(
+  options: InternalCoordinatorOptions,
+  replayed: ReplayedCaseState,
+  brief: ReviewedCitizenBriefProjection,
+): boolean {
+  if (brief.correctionState !== "current") return false;
+  try {
+    if (!replayed.briefSourceEventIds || replayed.briefSourceEventIds.size !== brief.provenance.packageBindings.length) return false;
+    for (const binding of brief.provenance.packageBindings) {
+      const department = replayed.departments.get(binding.packageId);
+      const sourceEvents = replayed.briefSourceEventIds.get(binding.packageId);
+      if (!department?.draft || !department.review || !sourceEvents || department.draft.eventId !== sourceEvents.draftEventId || department.review.eventId !== sourceEvents.reviewEventId) {
+        return false;
+      }
+    }
+    const bindings = brief.provenance.packageBindings.map(({ departmentId: _departmentId, reviewedAt: _reviewedAt, ...binding }) => binding);
+    const validated = validateBriefBindings(bindings, replayed.departments, options);
+    const derived = deriveBriefProjection(options, replayed.discussion, replayed.suggestion, replayed.departments, brief.id, validated);
+    return canonicalJson(derived) === canonicalJson(brief) && briefChecksumFor(brief) === brief.briefChecksum;
+  } catch {
+    return false;
+  }
+}
+
+function invalidatedBriefProjection(brief: ReviewedCitizenBriefProjection): ReviewedCitizenBriefProjection {
+  return {
+    ...clone(brief),
+    summary: "",
+    responses: [],
+    correctionState: "invalidated",
+  };
 }
 
 function buildProjection(
@@ -1124,9 +1529,30 @@ function buildProjection(
     suggestions: [clone(projectedSuggestion)],
     provenance: clone(discussion),
   };
-  if ("department" in replayed && replayed.department) {
-    const departmentProjection = departmentPackageProjection(replayed.department, visibility);
+  const departments = [...replayed.departments.values()].sort((left, right) => {
+    const leftId = left.departmentPackage.departmentId;
+    const rightId = right.departmentPackage.departmentId;
+    return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+  });
+  const projectedDepartments = departments
+    .map((department) => departmentPackageProjection(department, visibility))
+    .filter((department): department is DepartmentPackageProjection => Boolean(department));
+  if (visibility === "administration") {
+    if (projectedDepartments.length > 0) result.departmentPackages = projectedDepartments;
+  } else if (projectedDepartments.length > 0) {
+    result.departmentPackages = projectedDepartments;
+  }
+  if (departments.length === 1) {
+    const departmentProjection = departmentPackageProjection(departments[0]!, visibility);
     if (departmentProjection) result.departmentPackage = departmentProjection;
+  }
+  if (replayed.brief) {
+    result.reviewedCitizenBrief = briefIsCurrent(options, replayed, replayed.brief)
+      ? clone(replayed.brief)
+      : invalidatedBriefProjection(replayed.brief);
+    if (visibility !== "administration" && !briefIsCurrent(options, replayed, replayed.brief)) {
+      result.reviewedCitizenBrief = invalidatedBriefProjection(replayed.brief);
+    }
   }
   return result;
 }
@@ -1142,8 +1568,11 @@ type NormalizedCommand = {
   departmentPackage?: DepartmentPackageInput;
   packageId?: string;
   packageChecksum?: string;
+  priorDraftArtifactChecksum?: string;
   draft?: DepartmentDraftInput;
   review?: DepartmentReviewInput;
+  brief?: CitizenBriefInput;
+  retraction?: DepartmentRetractionInput;
 };
 
 function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
@@ -1154,7 +1583,10 @@ function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
     commandType !== "intake_discussion_v1" &&
     commandType !== "assign_department_package_v1" &&
     commandType !== "record_department_draft_v1" &&
-    commandType !== "attest_department_review_v1"
+    commandType !== "attest_department_review_v1" &&
+    commandType !== "derive_citizen_brief_v1" &&
+    commandType !== "correct_department_draft_v1" &&
+    commandType !== "retract_department_response_v1"
   ) fail("command_type_invalid");
   const caseId = nonEmptyString(command.caseId, "case_id_required");
   const actor = normalizeActor(command.actorBinding);
@@ -1187,6 +1619,22 @@ function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
     result.packageId = packageId;
     result.packageChecksum = packageChecksum;
     result.draft = normalizeDepartmentDraft(command.payload.draft);
+  } else if (commandType === "derive_citizen_brief_v1") {
+    ownKeys(command.payload, BRIEF_PAYLOAD_KEYS, "payload");
+    result.brief = normalizeCitizenBrief(command.payload.brief);
+  } else if (commandType === "correct_department_draft_v1") {
+    ownKeys(command.payload, CORRECTION_PAYLOAD_KEYS, "payload");
+    const packageId = nonEmptyString(command.payload.packageId, "department_package_invalid");
+    const packageChecksum = nonEmptyString(command.payload.packageChecksum, "department_package_checksum_invalid");
+    const priorDraftArtifactChecksum = nonEmptyString(command.payload.priorDraftArtifactChecksum, "department_draft_checksum_invalid");
+    if (!SHA256.test(packageChecksum) || !SHA256.test(priorDraftArtifactChecksum)) fail("department_draft_checksum_invalid");
+    result.packageId = packageId;
+    result.packageChecksum = packageChecksum;
+    result.priorDraftArtifactChecksum = priorDraftArtifactChecksum;
+    result.draft = normalizeDepartmentDraft(command.payload.draft);
+  } else if (commandType === "retract_department_response_v1") {
+    ownKeys(command.payload, RETRACTION_PAYLOAD_KEYS, "payload");
+    result.retraction = normalizeDepartmentRetraction(command.payload.retraction);
   } else {
     ownKeys(command.payload, REVIEW_PAYLOAD_KEYS, "payload");
     result.review = normalizeDepartmentReview(command.payload.review);
@@ -1271,7 +1719,18 @@ export function createCivicCaseCoordinator(
           ? { departmentPackage: normalized.departmentPackage }
           : normalized.commandType === "record_department_draft_v1"
             ? { packageId: normalized.packageId, packageChecksum: normalized.packageChecksum, draft: normalized.draft }
-            : { review: normalized.review },
+            : normalized.commandType === "attest_department_review_v1"
+              ? { review: normalized.review }
+              : normalized.commandType === "derive_citizen_brief_v1"
+                ? { brief: normalized.brief }
+                : normalized.commandType === "correct_department_draft_v1"
+                  ? {
+                      packageId: normalized.packageId,
+                      packageChecksum: normalized.packageChecksum,
+                      priorDraftArtifactChecksum: normalized.priorDraftArtifactChecksum,
+                      draft: normalized.draft,
+                    }
+                  : { retraction: normalized.retraction },
     });
     const previous = idempotency.get(normalized.idempotencyKey);
     if (previous) {
@@ -1291,9 +1750,17 @@ export function createCivicCaseCoordinator(
     } else if (normalized.commandType === "assign_department_package_v1") {
       if (registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
       if (!existing || !normalized.departmentPackage) fail("case_not_found");
-      if (existing.department) fail("department_package_already_recorded");
       const departmentPackage = normalized.departmentPackage;
       if (departmentPackage.suggestionId !== existing.suggestion.id) fail("department_suggestion_mismatch");
+      if (existing.departments.has(departmentPackage.id) || [...existing.departments.values()].some((item) => item.departmentPackage.departmentId === departmentPackage.departmentId)) {
+        fail("department_package_already_recorded");
+      }
+      if (!options.requiredDepartmentIds && existing.departments.size > 0) {
+        fail("department_package_already_recorded");
+      }
+      if (options.requiredDepartmentIds && (!options.requiredDepartmentIds.includes(departmentPackage.departmentId) || existing.departments.size >= options.requiredDepartmentIds.length)) {
+        fail("department_department_not_required");
+      }
       const agent = options.actors.get(departmentPackage.assignedAgentActorId);
       const reviewer = options.actors.get(departmentPackage.assignedReviewerActorId);
       if (
@@ -1306,22 +1773,23 @@ export function createCivicCaseCoordinator(
       ) fail("department_actor_scope_mismatch");
     } else if (normalized.commandType === "record_department_draft_v1") {
       if (registeredActor.actorClass !== "department_agent") fail("actor_role_forbidden");
-      if (!existing?.department || !normalized.draft || !normalized.packageId || !normalized.packageChecksum) {
+      const department = normalized.packageId ? existing?.departments.get(normalized.packageId) : undefined;
+      if (!department || !normalized.draft || !normalized.packageId || !normalized.packageChecksum) {
         fail("department_package_not_assigned");
       }
-      if (existing.department.draft) fail("department_draft_already_recorded");
-      if (normalized.packageId !== existing.department.departmentPackage.id) fail("department_package_mismatch");
-      if (normalized.packageChecksum !== existing.department.packageChecksum) fail("department_package_checksum_invalid");
-      if (normalized.actor.actorId !== existing.department.departmentPackage.assignedAgentActorId) {
+      if (department.draft) fail("department_draft_already_recorded");
+      if (normalized.packageId !== department.departmentPackage.id) fail("department_package_mismatch");
+      if (normalized.packageChecksum !== department.packageChecksum) fail("department_package_checksum_invalid");
+      if (normalized.actor.actorId !== department.departmentPackage.assignedAgentActorId) {
         fail("department_agent_not_assigned");
       }
-      if (registeredActor.departmentId !== existing.department.departmentPackage.departmentId) {
+      if (registeredActor.departmentId !== department.departmentPackage.departmentId) {
         fail("department_actor_scope_mismatch");
       }
-    } else {
+    } else if (normalized.commandType === "attest_department_review_v1") {
       if (registeredActor.actorClass !== "department_reviewer") fail("actor_role_forbidden");
-      if (!existing?.department?.draft || !normalized.review) fail("department_draft_not_recorded");
-      const department = existing.department;
+      const department = normalized.review ? existing?.departments.get(normalized.review.packageId) : undefined;
+      if (!department?.draft || !normalized.review) fail("department_draft_not_recorded");
       const draft = department.draft;
       if (!draft) fail("department_draft_not_recorded");
       if (department.review) fail("department_review_already_recorded");
@@ -1330,6 +1798,32 @@ export function createCivicCaseCoordinator(
       if (registeredActor.departmentId !== department.departmentPackage.departmentId) fail("department_actor_scope_mismatch");
       if (normalized.actor.actorId !== department.departmentPackage.assignedReviewerActorId) fail("department_reviewer_not_assigned");
       if (normalized.actor.actorId === draft.actorBinding.actorId) fail("department_reviewer_not_distinct");
+    } else if (normalized.commandType === "derive_citizen_brief_v1") {
+      if (registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
+      if (!existing || !normalized.brief || !options.requiredDepartmentIds) fail("citizen_brief_departments_incomplete");
+      if (existing.brief && briefIsCurrent(options, existing, existing.brief)) fail("citizen_brief_already_current");
+      validateBriefBindings(normalized.brief.sourceBindings, existing.departments, options);
+    } else if (normalized.commandType === "correct_department_draft_v1") {
+      if (registeredActor.actorClass !== "department_agent") fail("actor_role_forbidden");
+      const department = normalized.packageId ? existing?.departments.get(normalized.packageId) : undefined;
+      if (!department?.draft || !department.review || !normalized.draft || !normalized.packageId || !normalized.packageChecksum || !normalized.priorDraftArtifactChecksum) {
+        fail("department_draft_not_recorded");
+      }
+      if (normalized.packageChecksum !== department.packageChecksum) fail("department_package_checksum_invalid");
+      if (normalized.priorDraftArtifactChecksum !== department.draft.draftArtifactChecksum) fail("department_draft_checksum_invalid");
+      if (department.review.review.decision !== "accepted") fail("department_review_not_accepted");
+      if (normalized.actor.actorId !== department.departmentPackage.assignedAgentActorId) fail("department_agent_not_assigned");
+      if (registeredActor.departmentId !== department.departmentPackage.departmentId) fail("department_actor_scope_mismatch");
+    } else {
+      if (registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
+      const retraction = normalized.retraction;
+      const department = retraction ? existing?.departments.get(retraction.packageId) : undefined;
+      if (!department?.draft || !department.review || !retraction) fail("department_response_not_found");
+      if (retraction.packageChecksum !== department.packageChecksum) fail("department_package_checksum_invalid");
+      if (retraction.targetDraftArtifactChecksum !== department.draft.draftArtifactChecksum || retraction.targetReviewAttestationChecksum !== department.review.attestationChecksum) {
+        fail("department_response_checksum_invalid");
+      }
+      if (department.review.review.decision !== "accepted") fail("department_review_not_accepted");
     }
 
     // Build the complete append on a temporary clone so a later validation
@@ -1370,7 +1864,7 @@ export function createCivicCaseCoordinator(
         draftArtifactChecksum: sha256(normalized.draft),
         authorityBinding: "none" as const,
       } satisfies DepartmentDraftPayload));
-    } else {
+    } else if (normalized.commandType === "attest_department_review_v1") {
       if (!normalized.review) fail("department_review_invalid");
       appended.push(appendEvent(nextState, options, normalized.actor, "department_review_attested_v1", {
         review: clone(normalized.review),
@@ -1382,6 +1876,37 @@ export function createCivicCaseCoordinator(
         }),
         authorityBinding: "none" as const,
       } satisfies DepartmentReviewPayload));
+    } else if (normalized.commandType === "derive_citizen_brief_v1") {
+      if (!existing || !normalized.brief || !options.requiredDepartmentIds) fail("citizen_brief_invalid");
+      const sourceBindings = validateBriefBindings(normalized.brief.sourceBindings, existing.departments, options);
+      const brief = deriveBriefProjection(options, existing.discussion, existing.suggestion, existing.departments, normalized.brief.id, sourceBindings);
+      appended.push(appendEvent(nextState, options, normalized.actor, "citizen_brief_derived_v1", {
+        brief,
+        sourceBindings,
+        briefChecksum: brief.briefChecksum,
+        policyVersion: normalized.policyVersion,
+        authorityBinding: "none" as const,
+      } satisfies CitizenBriefPayload));
+    } else if (normalized.commandType === "correct_department_draft_v1") {
+      if (!existing || !normalized.packageId || !normalized.packageChecksum || !normalized.priorDraftArtifactChecksum || !normalized.draft) fail("department_draft_invalid");
+      const department = existing.departments.get(normalized.packageId);
+      if (!department?.draft) fail("department_draft_not_recorded");
+      appended.push(appendEvent(nextState, options, normalized.actor, "department_draft_corrected_v1", {
+        packageId: normalized.packageId,
+        packageChecksum: normalized.packageChecksum,
+        priorDraftArtifactChecksum: normalized.priorDraftArtifactChecksum,
+        draft: clone(normalized.draft),
+        draftArtifactChecksum: sha256(normalized.draft),
+        authorityBinding: "none" as const,
+      } satisfies DepartmentDraftCorrectionPayload, department.draft.eventId));
+    } else {
+      if (!normalized.retraction || !existing) fail("department_retraction_invalid");
+      const department = existing.departments.get(normalized.retraction.packageId);
+      if (!department?.review) fail("department_response_not_found");
+      appended.push(appendEvent(nextState, options, normalized.actor, "department_response_retracted_v1", {
+        retraction: clone(normalized.retraction),
+        authorityBinding: "none" as const,
+      } satisfies DepartmentRetractionPayload, department.review.eventId));
     }
     const receipt: CommandReceipt = {
       caseVersion: nextState.events.length,
@@ -1409,11 +1934,20 @@ export function createCivicCaseCoordinator(
     if (caseVersion === 0 || !replayed) fail("case_not_found");
     if (normalized.atCaseVersion !== null && normalized.atCaseVersion !== caseVersion) fail("case_version_not_found");
     const projection = buildProjection(options, replayed, normalized.visibility);
+    const projectionChecksum = sha256({
+      schemaVersion: PROJECTION_ENVELOPE_SCHEMA_VERSION,
+      caseId: options.caseId,
+      caseVersion,
+      visibility: normalized.visibility,
+      policyVersion: options.policyVersion,
+      projection,
+    });
     return {
       schemaVersion: PROJECTION_ENVELOPE_SCHEMA_VERSION,
       caseId: options.caseId,
       caseVersion,
       journalHeadChecksum: state.headChecksum,
+      projectionChecksum,
       visibility: normalized.visibility,
       policyVersion: options.policyVersion,
       projection: clone(projection),
