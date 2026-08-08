@@ -21,6 +21,7 @@
     "demo:advisory-participation": "node scripts/run-advisory-participation-flow.mjs",
     "demo:role-scoped-mecky": "node scripts/run-role-scoped-mecky-flow.mjs",
     "demo:role-scoped-meckys": "node scripts/run-role-scoped-mecky-flow.mjs",
+    "demo:public-exchange": "node scripts/run-public-exchange-flow.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "verify:public": "node scripts/verify-public-boundary.mjs"
