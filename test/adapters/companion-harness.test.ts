@@ -76,7 +76,8 @@ test("deterministic local Adapter returns a stable cited worker result without e
   );
   assert.ok(first.answer.length > 0);
   assert.ok(first.citations.length > 0);
-  assert.equal("tools" in first, false);
+  assert.deepEqual(first.tools.deny, ["*"]);
+  assert.deepEqual(first.allowedTools, []);
   assert.equal("effects" in first, false);
   assert.equal("reasoning" in first, false);
 });
@@ -125,7 +126,7 @@ test("result validation rejects missing citations, tool/effect fields, raw reaso
   const valid = createDeterministicLocalCompanionAdapter({ identityPolicy: IDENTITY_POLICY }).resultFor(request);
   const cases: Array<[string, (candidate: Record<string, unknown>) => void, RegExp]> = [
     ["missing citations", (candidate) => (candidate.citations = []), /citations_required/],
-    ["tools", (candidate) => (candidate.tools = []), /field_forbidden:result\.tools/],
+    ["tools", (candidate) => (candidate.tools = []), /worker_result_tool_policy_invalid/],
     ["effects", (candidate) => (candidate.effects = ["publish"]), /field_forbidden:result\.effects/],
     ["reasoning", (candidate) => (candidate.reasoning = "hidden chain of thought"), /field_forbidden:result\.reasoning/],
     ["private leakage", (candidate) => (candidate.answer = "The raw citizen npub1leaked-value is visible."), /private_leakage/],
