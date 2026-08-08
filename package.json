@@ -17,6 +17,7 @@
     "demo:synthetic": "node scripts/run-synthetic-flow.mjs",
     "demo:case-intake": "node scripts/run-case-intake-flow.mjs",
     "demo:department-review": "node scripts/run-department-review-flow.mjs",
+    "demo:citizen-brief": "node scripts/run-citizen-brief-flow.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "verify:public": "node scripts/verify-public-boundary.mjs"
