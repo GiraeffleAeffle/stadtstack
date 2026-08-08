@@ -1,0 +1,34 @@
+Stadtstack NOTICE
+================
+
+Repository-authored code
+-------------------------
+
+Code authored for this repository is released under the MIT License in
+`LICENSE`. Copyright and permission notices must remain with copied portions of
+that code.
+
+Third-party and externally sourced material
+--------------------------------------------
+
+The MIT license for repository-authored code does not relicense third-party,
+externally sourced, generated, or municipality-owned material. Each such item
+must retain its original copyright, license, attribution, and usage conditions.
+Before adding one, record its source, revision, author, license expression,
+attribution text, transformation, checksum, privacy status, and publication
+eligibility in the change review.
+
+The runtime dependency `nostr-tools@2.24.1` is third-party software declared
+under the Unlicense by its package metadata. Its license and transitive
+dependency inventory are recorded in `package-lock.json`; this repository does
+not relicense, vendor, or claim authorship of that dependency.
+
+The development dependency `minimatch@10.2.6` is third-party software declared
+under BlueOak-1.0.0 by its package metadata. Its license and transitive
+dependency inventory are recorded in `package-lock.json`; this repository does
+not relicense, vendor, or claim authorship of that dependency.
+
+City-specific implementations, unlicensed assets, private records, and
+credentials are explicitly excluded. Only reviewed, versioned data contracts
+may cross a product Seam. When a future dependency or asset is added, update
+this notice or the relevant per-file notice before publication.

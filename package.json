@@ -1,0 +1,38 @@
+{
+  "name": "stadtstack",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Municipality-neutral civic coordination contracts and offline reference Implementations.",
+  "author": "GiraeffleAeffle",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GiraeffleAeffle/stadtstack.git"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts test/*/*.test.ts",
+    "demo:synthetic": "node scripts/run-synthetic-flow.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "verify:public": "node scripts/verify-public-boundary.mjs"
+  },
+  "license": "MIT",
+  "keywords": [
+    "civic-coordination",
+    "evidence-review",
+    "city-companion",
+    "nostr"
+  ],
+  "dependencies": {
+    "nostr-tools": "2.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.13",
+    "eslint": "10.8.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.66.0"
+  }
+}
