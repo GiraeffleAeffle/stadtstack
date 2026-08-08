@@ -267,6 +267,39 @@ export type CaseEventV1 = {
   eventChecksum: string;
 };
 
+/** Internal durability port; the public coordinator remains handle/project-only. */
+export type CoordinatorJournalEvent = CaseEventV1 & { payload: unknown };
+
+export type CoordinatorJournalIdempotency = {
+  idempotencyKey: string;
+  fingerprint: string;
+  receipt: CommandReceipt;
+};
+
+export type CoordinatorJournalRecovery = {
+  events: CoordinatorJournalEvent[];
+  idempotency: CoordinatorJournalIdempotency[];
+};
+
+export type CoordinatorJournalAppend = {
+  namespace: string;
+  caseId: string;
+  expectedCaseVersion: number;
+  idempotencyKey: string;
+  fingerprint: string;
+  events: CoordinatorJournalEvent[];
+  receipt: CommandReceipt;
+};
+
+export type CoordinatorJournalPort = {
+  /** Constructor-only hint used by the durable factory; never exposed by the coordinator. */
+  readonly namespace?: string;
+  recover(input: { namespace: string; caseId: string; optionsFingerprint: string }): CoordinatorJournalRecovery;
+  appendAtomic(input: CoordinatorJournalAppend): { status: "appended" | "duplicate"; receipt: CommandReceipt };
+  close(): void;
+  deleteExactSynthetic(): void;
+};
+
 export type DiscussionProjection = {
   schemaVersion: "discussion_projection_v1";
   id: string;
@@ -355,6 +388,9 @@ export type CivicCaseCoordinatorOptions = {
   fixtureSignerPubkey?: string;
   /** Issue #4 synthetic fixture: exactly eight unique departments when configured. */
   requiredDepartmentIds?: readonly string[];
+  /** Internal constructor-only journal port used by the durable Adapter. */
+  journalPort?: CoordinatorJournalPort;
+  journalNamespace?: string;
   [key: string]: unknown;
 };
 
@@ -893,6 +929,8 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     "fixturePubkey",
     "fixtureSignerPubkey",
     "requiredDepartmentIds",
+    "journalPort",
+    "journalNamespace",
   ]), "options");
 
   const rawScope = options.scope ?? (
@@ -994,6 +1032,20 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
 
 function genesisChecksum(caseId: string): string {
   return sha256({ schemaVersion: "case_genesis_v1", caseId });
+}
+
+function durableOptionsFingerprint(options: InternalCoordinatorOptions): string {
+  return sha256({
+    caseId: options.caseId,
+    policyVersion: options.policyVersion,
+    jurisdiction: options.jurisdiction,
+    scope: options.scope,
+    syntheticFixtureOnly: options.syntheticFixtureOnly,
+    allowedKinds: options.allowedKinds,
+    allowedSignerPubkeys: options.allowedSignerPubkeys ? [...options.allowedSignerPubkeys].sort() : null,
+    requiredDepartmentIds: options.requiredDepartmentIds ?? null,
+    actors: [...options.actors.values()].map((actor) => ({ actorId: actor.actorId, actorClass: actor.actorClass, departmentId: actor.departmentId ?? null })).sort((left, right) => left.actorId.localeCompare(right.actorId)),
+  });
 }
 
 function appendEvent(
@@ -2161,13 +2213,49 @@ export function createCivicCaseCoordinator(
   input: CivicCaseCoordinatorOptions = {},
 ): CivicCaseCoordinator {
   const options = normalizeOptions(input);
+  const journalPort = input.journalPort;
+  const journalNamespace = input.journalNamespace ?? journalPort?.namespace ?? "default";
+  if (!journalPort && input.journalNamespace !== undefined) fail("journal_port_invalid");
+  if (journalPort !== undefined) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(journalNamespace) || journalNamespace.includes("..")) {
+      fail("journal_namespace_invalid");
+    }
+  }
+  const optionsFingerprint = durableOptionsFingerprint(options);
   const state: JournalState = {
     events: [],
     headChecksum: genesisChecksum(options.caseId),
   };
   const idempotency = new Map<string, { fingerprint: string; receipt: CommandReceipt }>();
 
+  const loadDurableState = (): void => {
+    if (!journalPort) return;
+    const recovered = journalPort.recover({
+      namespace: journalNamespace,
+      caseId: options.caseId,
+      optionsFingerprint,
+    });
+    const events = recovered.events.map((event) => clone(event) as StoredCaseEvent);
+    const headChecksum = events.length > 0
+      ? events[events.length - 1]!.eventChecksum
+      : genesisChecksum(options.caseId);
+    const nextState: JournalState = { events, headChecksum };
+    if (events.length > 0 && !replayJournal(nextState, options)) fail("journal_chain_invalid");
+    state.events = events;
+    state.headChecksum = headChecksum;
+    idempotency.clear();
+    for (const entry of recovered.idempotency) {
+      idempotency.set(entry.idempotencyKey, {
+        fingerprint: entry.fingerprint,
+        receipt: cloneReceipt(entry.receipt),
+      });
+    }
+  };
+
+  loadDurableState();
+
   const handle = (command: CommandEnvelope): CommandReceipt => {
+    loadDurableState();
     const normalized = normalizeCommand(command);
     if (normalized.caseId !== options.caseId) fail("case_id_invalid");
     if (normalized.policyVersion !== options.policyVersion) fail("policy_version_invalid");
@@ -2439,6 +2527,21 @@ export function createCivicCaseCoordinator(
       eventIds: appended.map((event) => event.eventId),
       journalHeadChecksum: nextState.headChecksum,
     };
+    if (journalPort) {
+      const committed = journalPort.appendAtomic({
+        namespace: journalNamespace,
+        caseId: options.caseId,
+        expectedCaseVersion: state.events.length,
+        idempotencyKey: normalized.idempotencyKey,
+        fingerprint,
+        events: appended as CoordinatorJournalEvent[],
+        receipt,
+      });
+      if (committed.status === "duplicate") {
+        loadDurableState();
+        return cloneReceipt(committed.receipt);
+      }
+    }
     state.events = nextState.events;
     state.headChecksum = nextState.headChecksum;
     idempotency.set(normalized.idempotencyKey, { fingerprint, receipt: cloneReceipt(receipt) });
@@ -2446,6 +2549,7 @@ export function createCivicCaseCoordinator(
   };
 
   const project = (query: QueryEnvelope): ProjectionEnvelope => {
+    loadDurableState();
     const normalized = normalizeQuery(query);
     if (normalized.caseId !== options.caseId) fail("case_id_invalid");
     if (normalized.policyVersion !== options.policyVersion) fail("policy_version_invalid");
@@ -2483,6 +2587,20 @@ export function createCivicCaseCoordinator(
   // Keep the deep Module seam closed: callers can only issue commands or
   // role-bound queries. The journal, adapter, and registries remain private.
   return Object.freeze({ handle, project });
+}
+
+/**
+ * Constructor-only durable variant. The returned object deliberately exposes
+ * the same handle/project seam as the in-memory coordinator.
+ */
+export function createDurableCivicCaseCoordinator(
+  input: CivicCaseCoordinatorOptions,
+  journalPort: CoordinatorJournalPort,
+): CivicCaseCoordinator {
+  if (!journalPort || typeof journalPort.recover !== "function" || typeof journalPort.appendAtomic !== "function") {
+    fail("journal_port_invalid");
+  }
+  return createCivicCaseCoordinator({ ...input, journalPort });
 }
 
 export const createCaseCoordinator = createCivicCaseCoordinator;

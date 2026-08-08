@@ -22,6 +22,7 @@
     "demo:role-scoped-mecky": "node scripts/run-role-scoped-mecky-flow.mjs",
     "demo:role-scoped-meckys": "node scripts/run-role-scoped-mecky-flow.mjs",
     "demo:public-exchange": "node scripts/run-public-exchange-flow.mjs",
+    "demo:durable-journal": "node scripts/run-durable-journal-flow.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "verify:public": "node scripts/verify-public-boundary.mjs"
