@@ -97,6 +97,9 @@ test("administration, council, and public companions receive isolated task conte
     "publish",
     "submit_to_council",
     "vote",
+    "write_source",
+    "write_nostr",
+    "invoke_tool",
   ]);
 });
 

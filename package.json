@@ -19,6 +19,8 @@
     "demo:department-review": "node scripts/run-department-review-flow.mjs",
     "demo:citizen-brief": "node scripts/run-citizen-brief-flow.mjs",
     "demo:advisory-participation": "node scripts/run-advisory-participation-flow.mjs",
+    "demo:role-scoped-mecky": "node scripts/run-role-scoped-mecky-flow.mjs",
+    "demo:role-scoped-meckys": "node scripts/run-role-scoped-mecky-flow.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "verify:public": "node scripts/verify-public-boundary.mjs"
