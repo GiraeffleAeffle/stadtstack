@@ -11,11 +11,23 @@ import type { Event as NostrEvent } from "nostr-tools/pure";
 /** The only authority binding admitted by the municipality-neutral tracer. */
 export type AuthorityBinding = "none";
 
-export type ActorClass = "citizen" | "public" | "administration";
+export type ActorClass =
+  | "citizen"
+  | "public"
+  | "administration"
+  | "council"
+  | "case_steward"
+  | "department_agent"
+  | "department_reviewer";
 
 export type ActorBinding = {
   actorId: string;
   actorClass: ActorClass;
+};
+
+/** Private registry metadata; department scope never crosses the envelope seam. */
+export type ActorRegistration = ActorBinding & {
+  departmentId?: string;
 };
 
 export type CaseJurisdiction = {
@@ -29,19 +41,77 @@ export type SourceReference = {
   ref: string;
 };
 
-export type CommandEnvelope = {
+type CommandEnvelopeBase = {
   schemaVersion: "command_envelope_v1";
-  commandType: "intake_discussion_v1";
   caseId: string;
   actorBinding: ActorBinding;
   expectedCaseVersion: number;
   idempotencyKey: string;
   visibility: "private_case";
   policyVersion: string;
+  [key: string]: unknown;
+};
+
+export type IntakeDiscussionCommand = CommandEnvelopeBase & {
+  commandType: "intake_discussion_v1";
   payload: {
     discussion: DiscussionArtifact;
   };
-  [key: string]: unknown;
+};
+
+export type AssignDepartmentPackageCommand = CommandEnvelopeBase & {
+  commandType: "assign_department_package_v1";
+  payload: {
+    departmentPackage: DepartmentPackageInput;
+  };
+};
+
+export type RecordDepartmentDraftCommand = CommandEnvelopeBase & {
+  commandType: "record_department_draft_v1";
+  payload: {
+    packageId: string;
+    packageChecksum: string;
+    draft: DepartmentDraftInput;
+  };
+};
+
+export type AttestDepartmentReviewCommand = CommandEnvelopeBase & {
+  commandType: "attest_department_review_v1";
+  payload: {
+    review: DepartmentReviewInput;
+  };
+};
+
+export type CommandEnvelope =
+  | IntakeDiscussionCommand
+  | AssignDepartmentPackageCommand
+  | RecordDepartmentDraftCommand
+  | AttestDepartmentReviewCommand;
+
+export type DepartmentPackageInput = {
+  id: string;
+  departmentId: string;
+  suggestionId: string;
+  request: string;
+  assignedAgentActorId: string;
+  assignedReviewerActorId: string;
+  authorityBinding: AuthorityBinding;
+};
+
+export type DepartmentDraftInput = {
+  schemaVersion: "department_draft_v1";
+  id: string;
+  publicSummary: string;
+  publicCitations: string[];
+  privateEvidenceRefs: string[];
+  authorityBinding: AuthorityBinding;
+};
+
+export type DepartmentReviewInput = {
+  packageId: string;
+  draftArtifactChecksum: string;
+  decision: "accepted" | "rejected";
+  reviewedAt: string;
 };
 
 export type QueryEnvelope = {
@@ -49,7 +119,7 @@ export type QueryEnvelope = {
   queryType: "case_projection_v1";
   caseId: string;
   actorBinding: ActorBinding;
-  visibility: "public" | "administration";
+  visibility: "public" | "administration" | "council";
   policyVersion: string;
   atCaseVersion: number | null;
   [key: string]: unknown;
@@ -66,7 +136,12 @@ export type CaseEventV1 = {
   eventId: string;
   caseId: string;
   caseVersion: number;
-  eventType: "case_created_v1" | "discussion_recorded_v1";
+  eventType:
+    | "case_created_v1"
+    | "discussion_recorded_v1"
+    | "department_package_assigned_v1"
+    | "department_draft_recorded_v1"
+    | "department_review_attested_v1";
   priorEventChecksum: string;
   actorBinding: ActorBinding;
   payloadChecksum: string;
@@ -112,6 +187,8 @@ export type CaseProjection = {
   suggestion: SuggestionProjection;
   suggestions: SuggestionProjection[];
   provenance: DiscussionArtifact;
+  /** One bounded package for Issue #3, visible only to administration until accepted. */
+  departmentPackage?: DepartmentPackageProjection;
 };
 
 export type ProjectionEnvelope = {
@@ -119,7 +196,7 @@ export type ProjectionEnvelope = {
   caseId: string;
   caseVersion: number;
   journalHeadChecksum: string;
-  visibility: "public" | "administration";
+  visibility: "public" | "administration" | "council";
   policyVersion: string;
   projection: CaseProjection;
 };
@@ -145,8 +222,8 @@ export type CivicCaseCoordinatorOptions = {
   canonicalCaseId?: string;
   /** The first release uses one policy version for all commands/queries. */
   policyVersion?: string;
-  actors?: readonly ActorBinding[];
-  actorRegistry?: readonly ActorBinding[] | Readonly<Record<string, ActorBinding>>;
+  actors?: readonly ActorRegistration[];
+  actorRegistry?: readonly ActorRegistration[] | Readonly<Record<string, ActorRegistration>>;
   syntheticFixtureOnly?: boolean;
   allowedKinds?: readonly number[];
   allowedSignerPubkeys?: readonly string[];
@@ -163,7 +240,7 @@ type InternalCoordinatorOptions = {
   jurisdiction: CaseJurisdiction;
   caseId: string;
   policyVersion: string;
-  actors: ReadonlyMap<string, ActorBinding>;
+  actors: ReadonlyMap<string, ActorRegistration>;
   syntheticFixtureOnly: boolean;
   allowedKinds: readonly number[];
   allowedSignerPubkeys?: ReadonlySet<string>;
@@ -191,9 +268,69 @@ type DiscussionRecordedPayload = {
   authorityBinding: AuthorityBinding;
 };
 
+type DepartmentPackagePayload = {
+  departmentPackage: DepartmentPackageInput;
+  packageChecksum: string;
+  authorityBinding: AuthorityBinding;
+};
+
+type DepartmentDraftPayload = {
+  packageId: string;
+  packageChecksum: string;
+  draft: DepartmentDraftInput;
+  draftArtifactChecksum: string;
+  authorityBinding: AuthorityBinding;
+};
+
+type DepartmentReviewPayload = {
+  review: DepartmentReviewInput;
+  policyVersion: string;
+  attestationChecksum: string;
+  authorityBinding: AuthorityBinding;
+};
+
 type StoredCaseEvent = CaseEventV1 & {
   /** Immutable payload retained only behind the coordinator seam. */
-  payload: CaseCreatedPayload | DiscussionRecordedPayload;
+  payload:
+    | CaseCreatedPayload
+    | DiscussionRecordedPayload
+    | DepartmentPackagePayload
+    | DepartmentDraftPayload
+    | DepartmentReviewPayload;
+};
+
+export type DepartmentPackageProjection = {
+  schemaVersion: "department_package_projection_v1";
+  id: string;
+  departmentId: string;
+  suggestionId: string;
+  request: string;
+  packageChecksum: string;
+  assignedAgentActorId?: string;
+  assignedReviewerActorId?: string;
+  draft?: {
+    schemaVersion: "department_draft_projection_v1";
+    id: string;
+    publicSummary: string;
+    publicCitations: string[];
+    privateEvidenceRefs?: string[];
+    artifactChecksum: string;
+    actorId?: string;
+  };
+  reviewState: "assigned" | "draft_pending_review" | "accepted" | "rejected";
+  review?: {
+    decision: "accepted" | "rejected";
+    draftArtifactChecksum: string;
+    reviewedAt: string;
+    policyVersion: string;
+    reviewerActorId?: string;
+  };
+  artifactChecksum?: string;
+  reviewedAt?: string;
+  policyVersion?: string;
+  publicSummary?: string;
+  publicCitations?: string[];
+  authorityBinding: AuthorityBinding;
 };
 
 const COMMAND_KEYS = new Set([
@@ -217,7 +354,29 @@ const QUERY_KEYS = new Set([
   "atCaseVersion",
 ]);
 const PAYLOAD_KEYS = new Set(["discussion"]);
+const PACKAGE_PAYLOAD_KEYS = new Set(["departmentPackage"]);
+const DRAFT_PAYLOAD_KEYS = new Set(["packageId", "packageChecksum", "draft"]);
+const REVIEW_PAYLOAD_KEYS = new Set(["review"]);
 const ACTOR_KEYS = new Set(["actorId", "actorClass"]);
+const ACTOR_REGISTRATION_KEYS = new Set(["actorId", "actorClass", "departmentId"]);
+const DEPARTMENT_PACKAGE_KEYS = new Set([
+  "id",
+  "departmentId",
+  "suggestionId",
+  "request",
+  "assignedAgentActorId",
+  "assignedReviewerActorId",
+  "authorityBinding",
+]);
+const DEPARTMENT_DRAFT_KEYS = new Set([
+  "schemaVersion",
+  "id",
+  "publicSummary",
+  "publicCitations",
+  "privateEvidenceRefs",
+  "authorityBinding",
+]);
+const DEPARTMENT_REVIEW_KEYS = new Set(["packageId", "draftArtifactChecksum", "decision", "reviewedAt"]);
 const ARTIFACT_KEYS = new Set([
   "schemaVersion",
   "id",
@@ -246,6 +405,7 @@ const CASE_ID = /^urn:stadtstack:case:test:([A-Za-z0-9._~-]+):([0-9a-f]{8}-[0-9a
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const SECRET_MARKER = /(?:nsec1|private[_ -]?key|secret[_ -]?key|password|credential|token|wallet|ballot|participant[_ -]?id|user[_ -]?id)/i;
 const SECRET_VALUE_MARKER = /(?:\bnsec1[a-z0-9-]{8,}\b|private[_ -]?key|secret[_ -]?key|password\s*[:=]|credential\s*[:=]|wallet\s*[:=]|ballot\s*[:=])/i;
+const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 /** Deterministic fixture UUID-v7. It is intentionally not generated at runtime. */
 export const DEFAULT_SYNTHETIC_UUID_V7 = "018f0000-0000-7000-8000-000000000001";
@@ -332,10 +492,31 @@ function normalizeActor(value: unknown, code = "actor_binding_required"): ActorB
   const actor = value as Record<string, unknown>;
   const actorId = nonEmptyString(actor.actorId, code);
   const actorClass = actor.actorClass;
-  if (actorClass !== "citizen" && actorClass !== "public" && actorClass !== "administration") {
+  if (
+    actorClass !== "citizen" &&
+    actorClass !== "public" &&
+    actorClass !== "administration" &&
+    actorClass !== "council" &&
+    actorClass !== "case_steward" &&
+    actorClass !== "department_agent" &&
+    actorClass !== "department_reviewer"
+  ) {
     fail("actor_role_self_assertion");
   }
-  return { actorId, actorClass };
+  return { actorId, actorClass: actorClass as ActorClass };
+}
+
+function normalizeActorRegistration(value: unknown): ActorRegistration {
+  ownKeys(value, ACTOR_REGISTRATION_KEYS, "actorRegistry");
+  if (!isRecord(value)) fail("actor_registry_invalid");
+  const actor = normalizeActor({ actorId: value.actorId, actorClass: value.actorClass }, "actor_registry_invalid");
+  const departmentId = value.departmentId;
+  if (actor.actorClass === "department_agent" || actor.actorClass === "department_reviewer") {
+    if (departmentId === undefined) fail("actor_registry_invalid");
+    return { ...actor, departmentId: nonEmptyString(departmentId, "actor_registry_invalid") };
+  }
+  if (departmentId !== undefined) fail("actor_registry_invalid");
+  return actor;
 }
 
 function normalizeArtifactShape(value: unknown): DiscussionArtifact {
@@ -470,12 +651,13 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     { actorId: "synthetic:citizen-1", actorClass: "citizen" },
     { actorId: "synthetic:public-1", actorClass: "public" },
     { actorId: "synthetic:administration-1", actorClass: "administration" },
+    { actorId: "synthetic:council-1", actorClass: "council" },
   ];
   const actorList = Array.isArray(actorValues) ? actorValues : Object.values(actorValues);
   if (actorList.length === 0) fail("actor_registry_required");
-  const actors = new Map<string, ActorBinding>();
+  const actors = new Map<string, ActorRegistration>();
   for (const actor of actorList) {
-    const normalized = normalizeActor(actor, "actor_registry_invalid");
+    const normalized = normalizeActorRegistration(actor);
     if (actors.has(normalized.actorId)) fail("actor_registry_unique");
     actors.set(normalized.actorId, normalized);
   }
@@ -536,20 +718,121 @@ function appendEvent(
   const event: StoredCaseEvent = {
     ...eventWithoutChecksum,
     eventChecksum: sha256(eventWithoutChecksum),
-    payload: clone(payload) as CaseCreatedPayload | DiscussionRecordedPayload,
+    payload: clone(payload) as StoredCaseEvent["payload"],
   };
   state.events.push(event);
   state.headChecksum = event.eventChecksum;
   return clone(event);
 }
 
+const PRIVATE_DEPARTMENT_VALUE_MARKER = /(?:\bnsec1[a-z0-9-]{8,}\b|\bnpub1[a-z0-9-]{8,}\b|\b0x[a-f0-9]{40,}\b|private[_ -]?key|secret[_ -]?key|password|credential|wallet|ballot|participant[_ -]?id|employee|prompt|reasoning|tool[_ -]?trace|user[_ -]?id)/i;
+export const DETERMINISTIC_REVIEWED_AT = "2026-08-08T00:00:05.000Z";
+
+function departmentSafeString(value: unknown, code: string): string {
+  const result = nonEmptyString(value, code);
+  if (PRIVATE_DEPARTMENT_VALUE_MARKER.test(result)) fail(`private_field_forbidden:${code}`);
+  return result;
+}
+
+function boundedDepartmentString(value: unknown, code: string, limit: number): string {
+  const result = departmentSafeString(value, code);
+  if (result.length > limit) fail(`department_value_too_large:${code}`);
+  return result;
+}
+
+function normalizeDepartmentPackage(value: unknown): DepartmentPackageInput {
+  ownKeys(value, DEPARTMENT_PACKAGE_KEYS, "departmentPackage");
+  if (!isRecord(value)) fail("department_package_invalid");
+  const result: DepartmentPackageInput = {
+    id: boundedDepartmentString(value.id, "department_package_invalid", 512),
+    departmentId: boundedDepartmentString(value.departmentId, "department_package_invalid", 256),
+    suggestionId: boundedDepartmentString(value.suggestionId, "department_package_invalid", 512),
+    request: boundedDepartmentString(value.request, "department_package_invalid", 4000),
+    assignedAgentActorId: boundedDepartmentString(value.assignedAgentActorId, "department_package_invalid", 256),
+    assignedReviewerActorId: boundedDepartmentString(value.assignedReviewerActorId, "department_package_invalid", 256),
+    authorityBinding: value.authorityBinding === "none" ? "none" : fail("authority_field_forbidden:departmentPackage.authorityBinding"),
+  };
+  if (!result.suggestionId.startsWith("urn:stadtstack:suggestion:")) fail("department_suggestion_invalid");
+  if (result.assignedAgentActorId === result.assignedReviewerActorId) fail("department_reviewer_not_distinct");
+  return result;
+}
+
+function normalizeDepartmentDraft(value: unknown): DepartmentDraftInput {
+  ownKeys(value, DEPARTMENT_DRAFT_KEYS, "draft");
+  if (!isRecord(value)) fail("department_draft_invalid");
+  if (value.schemaVersion !== "department_draft_v1") fail("department_draft_schema_invalid");
+  if (value.authorityBinding !== "none") fail("authority_field_forbidden:draft.authorityBinding");
+  const citations = value.publicCitations;
+  const privateRefs = value.privateEvidenceRefs;
+  if (!Array.isArray(citations) || citations.some((item) => typeof item !== "string")) fail("department_draft_invalid");
+  if (!Array.isArray(privateRefs) || privateRefs.some((item) => typeof item !== "string")) fail("department_draft_invalid");
+  if (citations.length > 64 || privateRefs.length > 64) fail("department_draft_too_large");
+  const publicCitations = citations.map((item) => boundedDepartmentString(item, "department_draft_invalid", 2048));
+  const privateEvidenceRefs = privateRefs.map((item) => boundedDepartmentString(item, "department_draft_invalid", 2048));
+  if (publicCitations.some((item) => item.trim() === "") || privateEvidenceRefs.some((item) => item.trim() === "")) {
+    fail("department_draft_invalid");
+  }
+  const referencePattern = /^synthetic:\/\/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]{1,2040}$/;
+  if (publicCitations.some((item) => !referencePattern.test(item)) || privateEvidenceRefs.some((item) => !referencePattern.test(item))) {
+    fail("department_reference_invalid");
+  }
+  return {
+    schemaVersion: "department_draft_v1",
+    id: boundedDepartmentString(value.id, "department_draft_invalid", 512),
+    publicSummary: boundedDepartmentString(value.publicSummary, "department_draft_invalid", 4000),
+    publicCitations,
+    privateEvidenceRefs,
+    authorityBinding: "none",
+  };
+}
+
+function normalizeDepartmentReview(value: unknown): DepartmentReviewInput {
+  ownKeys(value, DEPARTMENT_REVIEW_KEYS, "review");
+  if (!isRecord(value)) fail("department_review_invalid");
+  const reviewedAt = value.reviewedAt;
+  if (typeof reviewedAt !== "string" || !RFC3339_UTC.test(reviewedAt) || reviewedAt !== DETERMINISTIC_REVIEWED_AT) {
+    fail("department_review_time_invalid");
+  }
+  if (value.decision !== "accepted" && value.decision !== "rejected") fail("department_review_decision_invalid");
+  const draftArtifactChecksum = nonEmptyString(value.draftArtifactChecksum, "department_review_invalid");
+  if (!SHA256.test(draftArtifactChecksum)) fail("department_review_checksum_invalid");
+  return {
+    packageId: nonEmptyString(value.packageId, "department_review_invalid"),
+    draftArtifactChecksum,
+    decision: value.decision,
+    reviewedAt,
+  };
+}
+
+type ReplayedDepartmentState = {
+  departmentPackage: DepartmentPackageInput;
+  packageChecksum: string;
+  draft?: {
+    draft: DepartmentDraftInput;
+    draftArtifactChecksum: string;
+    actorBinding: ActorBinding;
+  };
+  review?: {
+    review: DepartmentReviewInput;
+    policyVersion: string;
+    actorBinding: ActorBinding;
+  };
+};
+
+type ReplayedCaseState = {
+  discussion: DiscussionArtifact;
+  suggestion: DiscussionRecordedPayload["suggestion"];
+  department?: ReplayedDepartmentState;
+};
+
 function replayJournal(
   state: JournalState,
   options: InternalCoordinatorOptions,
-): { discussion: DiscussionArtifact; suggestion: DiscussionRecordedPayload["suggestion"] } | undefined {
+): ReplayedCaseState | undefined {
   let prior = genesisChecksum(options.caseId);
   let discussion: DiscussionArtifact | undefined;
   let suggestion: DiscussionRecordedPayload["suggestion"] | undefined;
+  let department: ReplayedDepartmentState | undefined;
   for (const [index, event] of state.events.entries()) {
     const expectedVersion = index + 1;
     if (
@@ -589,13 +872,78 @@ function replayJournal(
       }
       discussion = clone(candidate);
       suggestion = clone(discussionPayload.suggestion);
+    } else if (event.eventType === "department_package_assigned_v1") {
+      if (index < 2 || !discussion || !suggestion || department) fail("journal_chain_invalid");
+      const packagePayload = payload as DepartmentPackagePayload;
+      const departmentPackage = normalizeDepartmentPackage(packagePayload.departmentPackage);
+      const stewardRegistration = options.actors.get(event.actorBinding.actorId);
+      if (
+        packagePayload.authorityBinding !== "none" ||
+        packagePayload.packageChecksum !== sha256(departmentPackage) ||
+        departmentPackage.suggestionId !== suggestion.id ||
+        event.actorBinding.actorClass !== "case_steward" ||
+        !stewardRegistration ||
+        stewardRegistration.actorClass !== "case_steward"
+      ) fail("journal_chain_invalid");
+      department = {
+        departmentPackage,
+        packageChecksum: packagePayload.packageChecksum,
+      };
+    } else if (event.eventType === "department_draft_recorded_v1") {
+      if (!department || department.draft) fail("journal_chain_invalid");
+      const draftPayload = payload as DepartmentDraftPayload;
+      const draft = normalizeDepartmentDraft(draftPayload.draft);
+      const registration = options.actors.get(event.actorBinding.actorId);
+      if (
+        draftPayload.authorityBinding !== "none" ||
+        draftPayload.packageId !== department.departmentPackage.id ||
+        draftPayload.packageChecksum !== department.packageChecksum ||
+        draftPayload.draftArtifactChecksum !== sha256(draft) ||
+        event.actorBinding.actorClass !== "department_agent" ||
+        !registration ||
+        registration.actorClass !== "department_agent" ||
+        registration.departmentId !== department.departmentPackage.departmentId ||
+        event.actorBinding.actorId !== department.departmentPackage.assignedAgentActorId
+      ) fail("journal_chain_invalid");
+      department.draft = {
+        draft,
+        draftArtifactChecksum: draftPayload.draftArtifactChecksum,
+        actorBinding: clone(event.actorBinding),
+      };
+    } else if (event.eventType === "department_review_attested_v1") {
+      if (!department?.draft || department.review) fail("journal_chain_invalid");
+      const reviewPayload = payload as DepartmentReviewPayload;
+      const review = normalizeDepartmentReview(reviewPayload.review);
+      const registration = options.actors.get(event.actorBinding.actorId);
+      if (
+        reviewPayload.authorityBinding !== "none" ||
+        reviewPayload.policyVersion !== options.policyVersion ||
+        reviewPayload.attestationChecksum !== sha256({
+          review,
+          policyVersion: reviewPayload.policyVersion,
+          actorBinding: event.actorBinding,
+        }) ||
+        review.packageId !== department.departmentPackage.id ||
+        review.draftArtifactChecksum !== department.draft.draftArtifactChecksum ||
+        event.actorBinding.actorClass !== "department_reviewer" ||
+        !registration ||
+        registration.actorClass !== "department_reviewer" ||
+        registration.departmentId !== department.departmentPackage.departmentId ||
+        event.actorBinding.actorId === department.draft.actorBinding.actorId ||
+        event.actorBinding.actorId !== department.departmentPackage.assignedReviewerActorId
+      ) fail("journal_chain_invalid");
+      department.review = {
+        review,
+        policyVersion: reviewPayload.policyVersion,
+        actorBinding: clone(event.actorBinding),
+      };
     } else {
       fail("journal_chain_invalid");
     }
     prior = eventChecksum;
   }
   if (state.headChecksum !== prior) fail("journal_chain_invalid");
-  return discussion && suggestion ? { discussion, suggestion } : undefined;
+  return discussion && suggestion ? { discussion, suggestion, department } : undefined;
 }
 
 function normalizeAndVerifyDiscussion(
@@ -694,14 +1042,75 @@ function suggestionPayload(artifact: DiscussionArtifact): DiscussionRecordedPayl
   };
 }
 
+function departmentPackageProjection(
+  department: ReplayedDepartmentState,
+  visibility: QueryEnvelope["visibility"],
+): DepartmentPackageProjection | undefined {
+  const review = department.review;
+  if (visibility !== "administration" && (!review || review.review.decision !== "accepted")) return undefined;
+  if (visibility !== "administration" && review) {
+    const draft = department.draft;
+    if (!draft) return undefined;
+    return {
+      schemaVersion: "department_package_projection_v1",
+      id: department.departmentPackage.id,
+      departmentId: department.departmentPackage.departmentId,
+      suggestionId: department.departmentPackage.suggestionId,
+      request: department.departmentPackage.request,
+      packageChecksum: department.packageChecksum,
+      reviewState: "accepted",
+      artifactChecksum: review.review.draftArtifactChecksum,
+      reviewedAt: review.review.reviewedAt,
+      policyVersion: review.policyVersion,
+      publicSummary: draft.draft.publicSummary,
+      publicCitations: clone(draft.draft.publicCitations),
+      authorityBinding: "none",
+    };
+  }
+  const result: DepartmentPackageProjection = {
+    schemaVersion: "department_package_projection_v1",
+    id: department.departmentPackage.id,
+    departmentId: department.departmentPackage.departmentId,
+    suggestionId: department.departmentPackage.suggestionId,
+    request: department.departmentPackage.request,
+    packageChecksum: department.packageChecksum,
+    assignedAgentActorId: department.departmentPackage.assignedAgentActorId,
+    assignedReviewerActorId: department.departmentPackage.assignedReviewerActorId,
+    reviewState: department.review?.review.decision ?? (department.draft ? "draft_pending_review" : "assigned"),
+    authorityBinding: "none",
+  };
+  if (department.draft) {
+    result.draft = {
+      schemaVersion: "department_draft_projection_v1",
+      id: department.draft.draft.id,
+      publicSummary: department.draft.draft.publicSummary,
+      publicCitations: clone(department.draft.draft.publicCitations),
+      privateEvidenceRefs: clone(department.draft.draft.privateEvidenceRefs),
+      artifactChecksum: department.draft.draftArtifactChecksum,
+      actorId: department.draft.actorBinding.actorId,
+    };
+  }
+  if (department.review) {
+    result.review = {
+      decision: department.review.review.decision,
+      draftArtifactChecksum: department.review.review.draftArtifactChecksum,
+      reviewedAt: department.review.review.reviewedAt,
+      policyVersion: department.review.policyVersion,
+      reviewerActorId: department.review.actorBinding.actorId,
+    };
+  }
+  return result;
+}
+
 function buildProjection(
   options: InternalCoordinatorOptions,
-  replayed: { discussion: DiscussionArtifact; suggestion: DiscussionRecordedPayload["suggestion"] },
+  replayed: ReplayedCaseState,
+  visibility: QueryEnvelope["visibility"],
 ): CaseProjection {
   const { discussion } = replayed;
   const projectedDiscussion = discussionProjection(discussion);
   const projectedSuggestion = suggestionProjection(discussion, replayed.suggestion);
-  return {
+  const result: CaseProjection = {
     schemaVersion: "case_projection_v1",
     caseId: options.caseId,
     jurisdiction: clone(options.jurisdiction),
@@ -715,19 +1124,38 @@ function buildProjection(
     suggestions: [clone(projectedSuggestion)],
     provenance: clone(discussion),
   };
+  if ("department" in replayed && replayed.department) {
+    const departmentProjection = departmentPackageProjection(replayed.department, visibility);
+    if (departmentProjection) result.departmentPackage = departmentProjection;
+  }
+  return result;
 }
 
-function normalizeCommand(command: CommandEnvelope): {
+type NormalizedCommand = {
   actor: ActorBinding;
-  discussion: DiscussionArtifact;
   expectedCaseVersion: number;
   idempotencyKey: string;
   caseId: string;
   policyVersion: string;
-} {
+  commandType: CommandEnvelope["commandType"];
+  discussion?: DiscussionArtifact;
+  departmentPackage?: DepartmentPackageInput;
+  packageId?: string;
+  packageChecksum?: string;
+  draft?: DepartmentDraftInput;
+  review?: DepartmentReviewInput;
+};
+
+function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
   ownKeys(command, COMMAND_KEYS, "envelope");
   if (!isRecord(command) || command.schemaVersion !== COMMAND_ENVELOPE_SCHEMA_VERSION) fail("schema_version_unsupported");
-  if (command.commandType !== "intake_discussion_v1") fail("command_type_invalid");
+  const commandType = command.commandType;
+  if (
+    commandType !== "intake_discussion_v1" &&
+    commandType !== "assign_department_package_v1" &&
+    commandType !== "record_department_draft_v1" &&
+    commandType !== "attest_department_review_v1"
+  ) fail("command_type_invalid");
   const caseId = nonEmptyString(command.caseId, "case_id_required");
   const actor = normalizeActor(command.actorBinding);
   const expectedCaseVersion = safeInteger(command.expectedCaseVersion, "expected_case_version_invalid");
@@ -737,23 +1165,40 @@ function normalizeCommand(command: CommandEnvelope): {
   if (command.visibility !== "private_case") fail("visibility_invalid");
   const policyVersion = nonEmptyString(command.policyVersion, "policy_version_invalid");
   if (!isRecord(command.payload)) fail("payload_invalid");
-  ownKeys(command.payload, PAYLOAD_KEYS, "payload");
-  const discussion = normalizeArtifactShape(command.payload.discussion);
-  return {
+  const result: NormalizedCommand = {
     actor,
-    discussion,
     expectedCaseVersion,
     idempotencyKey,
     caseId,
     policyVersion,
+    commandType,
   };
+  if (commandType === "intake_discussion_v1") {
+    ownKeys(command.payload, PAYLOAD_KEYS, "payload");
+    result.discussion = normalizeArtifactShape(command.payload.discussion);
+  } else if (commandType === "assign_department_package_v1") {
+    ownKeys(command.payload, PACKAGE_PAYLOAD_KEYS, "payload");
+    result.departmentPackage = normalizeDepartmentPackage(command.payload.departmentPackage);
+  } else if (commandType === "record_department_draft_v1") {
+    ownKeys(command.payload, DRAFT_PAYLOAD_KEYS, "payload");
+    const packageId = nonEmptyString(command.payload.packageId, "department_package_invalid");
+    const packageChecksum = nonEmptyString(command.payload.packageChecksum, "department_package_checksum_invalid");
+    if (!SHA256.test(packageChecksum)) fail("department_package_checksum_invalid");
+    result.packageId = packageId;
+    result.packageChecksum = packageChecksum;
+    result.draft = normalizeDepartmentDraft(command.payload.draft);
+  } else {
+    ownKeys(command.payload, REVIEW_PAYLOAD_KEYS, "payload");
+    result.review = normalizeDepartmentReview(command.payload.review);
+  }
+  return result;
 }
 
 function normalizeQuery(query: QueryEnvelope): {
   query: Record<string, unknown>;
   actor: ActorBinding;
   caseId: string;
-  visibility: "public" | "administration";
+  visibility: "public" | "administration" | "council";
   policyVersion: string;
   atCaseVersion: number | null;
 } {
@@ -763,7 +1208,7 @@ function normalizeQuery(query: QueryEnvelope): {
   const caseId = nonEmptyString(query.caseId, "case_id_required");
   const actor = normalizeActor(query.actorBinding);
   const visibility = query.visibility;
-  if (visibility !== "public" && visibility !== "administration") fail("visibility_invalid");
+  if (visibility !== "public" && visibility !== "administration" && visibility !== "council") fail("visibility_invalid");
   const policyVersion = nonEmptyString(query.policyVersion, "policy_version_invalid");
   if (query.atCaseVersion !== null && query.atCaseVersion !== undefined) {
     const atCaseVersion = safeInteger(query.atCaseVersion, "expected_case_version_invalid");
@@ -801,7 +1246,6 @@ export function createCivicCaseCoordinator(
     headChecksum: genesisChecksum(options.caseId),
   };
   const idempotency = new Map<string, { fingerprint: string; receipt: CommandReceipt }>();
-  let initialAppendDone = false;
 
   const handle = (command: CommandEnvelope): CommandReceipt => {
     const normalized = normalizeCommand(command);
@@ -810,17 +1254,24 @@ export function createCivicCaseCoordinator(
     const registeredActor = options.actors.get(normalized.actor.actorId);
     if (!registeredActor) fail("actor_not_registered");
     if (registeredActor.actorClass !== normalized.actor.actorClass) fail("actor_binding_mismatch");
-    if (registeredActor.actorClass !== "citizen") fail("actor_role_forbidden");
-    const discussion = normalizeAndVerifyDiscussion(normalized.discussion, options);
+    const discussion = normalized.commandType === "intake_discussion_v1"
+      ? normalizeAndVerifyDiscussion(normalized.discussion, options)
+      : undefined;
     const fingerprint = sha256({
       schemaVersion: COMMAND_ENVELOPE_SCHEMA_VERSION,
-      commandType: "intake_discussion_v1",
+      commandType: normalized.commandType,
       caseId: normalized.caseId,
       actorBinding: normalized.actor,
       expectedCaseVersion: normalized.expectedCaseVersion,
       visibility: "private_case",
       policyVersion: normalized.policyVersion,
-      payload: { discussion },
+      payload: normalized.commandType === "intake_discussion_v1"
+        ? { discussion }
+        : normalized.commandType === "assign_department_package_v1"
+          ? { departmentPackage: normalized.departmentPackage }
+          : normalized.commandType === "record_department_draft_v1"
+            ? { packageId: normalized.packageId, packageChecksum: normalized.packageChecksum, draft: normalized.draft }
+            : { review: normalized.review },
     });
     const previous = idempotency.get(normalized.idempotencyKey);
     if (previous) {
@@ -828,12 +1279,58 @@ export function createCivicCaseCoordinator(
       return cloneReceipt(previous.receipt);
     }
     if (normalized.expectedCaseVersion !== state.events.length) fail("case_version_conflict");
-    const existingDiscussion = replayJournal(state, options);
-    if (existingDiscussion) {
-      if (canonicalJson(existingDiscussion.discussion) === canonicalJson(discussion)) fail("discussion_already_recorded");
-      fail("discussion_conflict");
+    const existing = replayJournal(state, options);
+    if (normalized.commandType === "intake_discussion_v1") {
+      if (registeredActor.actorClass !== "citizen") fail("actor_role_forbidden");
+      if (!discussion) fail("discussion_proof_invalid");
+      if (existing) {
+        if (canonicalJson(existing.discussion) === canonicalJson(discussion)) fail("discussion_already_recorded");
+        fail("discussion_conflict");
+      }
+      if (state.events.length !== 0) fail("case_version_conflict");
+    } else if (normalized.commandType === "assign_department_package_v1") {
+      if (registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
+      if (!existing || !normalized.departmentPackage) fail("case_not_found");
+      if (existing.department) fail("department_package_already_recorded");
+      const departmentPackage = normalized.departmentPackage;
+      if (departmentPackage.suggestionId !== existing.suggestion.id) fail("department_suggestion_mismatch");
+      const agent = options.actors.get(departmentPackage.assignedAgentActorId);
+      const reviewer = options.actors.get(departmentPackage.assignedReviewerActorId);
+      if (
+        !agent ||
+        agent.actorClass !== "department_agent" ||
+        agent.departmentId !== departmentPackage.departmentId ||
+        !reviewer ||
+        reviewer.actorClass !== "department_reviewer" ||
+        reviewer.departmentId !== departmentPackage.departmentId
+      ) fail("department_actor_scope_mismatch");
+    } else if (normalized.commandType === "record_department_draft_v1") {
+      if (registeredActor.actorClass !== "department_agent") fail("actor_role_forbidden");
+      if (!existing?.department || !normalized.draft || !normalized.packageId || !normalized.packageChecksum) {
+        fail("department_package_not_assigned");
+      }
+      if (existing.department.draft) fail("department_draft_already_recorded");
+      if (normalized.packageId !== existing.department.departmentPackage.id) fail("department_package_mismatch");
+      if (normalized.packageChecksum !== existing.department.packageChecksum) fail("department_package_checksum_invalid");
+      if (normalized.actor.actorId !== existing.department.departmentPackage.assignedAgentActorId) {
+        fail("department_agent_not_assigned");
+      }
+      if (registeredActor.departmentId !== existing.department.departmentPackage.departmentId) {
+        fail("department_actor_scope_mismatch");
+      }
+    } else {
+      if (registeredActor.actorClass !== "department_reviewer") fail("actor_role_forbidden");
+      if (!existing?.department?.draft || !normalized.review) fail("department_draft_not_recorded");
+      const department = existing.department;
+      const draft = department.draft;
+      if (!draft) fail("department_draft_not_recorded");
+      if (department.review) fail("department_review_already_recorded");
+      if (normalized.review.packageId !== department.departmentPackage.id) fail("department_package_mismatch");
+      if (normalized.review.draftArtifactChecksum !== draft.draftArtifactChecksum) fail("department_draft_checksum_invalid");
+      if (registeredActor.departmentId !== department.departmentPackage.departmentId) fail("department_actor_scope_mismatch");
+      if (normalized.actor.actorId !== department.departmentPackage.assignedReviewerActorId) fail("department_reviewer_not_assigned");
+      if (normalized.actor.actorId === draft.actorBinding.actorId) fail("department_reviewer_not_distinct");
     }
-    if (initialAppendDone) fail("case_version_conflict");
 
     // Build the complete append on a temporary clone so a later validation
     // failure cannot leave a partial journal behind.
@@ -841,20 +1338,51 @@ export function createCivicCaseCoordinator(
       events: state.events.map((event) => clone(event)),
       headChecksum: state.headChecksum,
     };
-    const payloadCase = {
-      caseId: options.caseId,
-      jurisdiction: options.jurisdiction,
-      authorityBinding: "none" as const,
-    };
-    const payloadDiscussion = {
-      discussion: clone(discussion),
-      suggestion: suggestionPayload(discussion),
-      authorityBinding: "none" as const,
-    };
-    const appended = [
-      appendEvent(nextState, options, normalized.actor, "case_created_v1", payloadCase),
-      appendEvent(nextState, options, normalized.actor, "discussion_recorded_v1", payloadDiscussion),
-    ];
+    const appended: StoredCaseEvent[] = [];
+    if (normalized.commandType === "intake_discussion_v1") {
+      if (!discussion) fail("discussion_proof_invalid");
+      const payloadCase = {
+        caseId: options.caseId,
+        jurisdiction: options.jurisdiction,
+        authorityBinding: "none" as const,
+      };
+      const payloadDiscussion = {
+        discussion: clone(discussion),
+        suggestion: suggestionPayload(discussion),
+        authorityBinding: "none" as const,
+      };
+      appended.push(appendEvent(nextState, options, normalized.actor, "case_created_v1", payloadCase));
+      appended.push(appendEvent(nextState, options, normalized.actor, "discussion_recorded_v1", payloadDiscussion));
+    } else if (normalized.commandType === "assign_department_package_v1") {
+      if (!normalized.departmentPackage) fail("department_package_invalid");
+      const departmentPackage = clone(normalized.departmentPackage);
+      appended.push(appendEvent(nextState, options, normalized.actor, "department_package_assigned_v1", {
+        departmentPackage,
+        packageChecksum: sha256(departmentPackage),
+        authorityBinding: "none" as const,
+      } satisfies DepartmentPackagePayload));
+    } else if (normalized.commandType === "record_department_draft_v1") {
+      if (!normalized.packageId || !normalized.packageChecksum || !normalized.draft) fail("department_draft_invalid");
+      appended.push(appendEvent(nextState, options, normalized.actor, "department_draft_recorded_v1", {
+        packageId: normalized.packageId,
+        packageChecksum: normalized.packageChecksum,
+        draft: clone(normalized.draft),
+        draftArtifactChecksum: sha256(normalized.draft),
+        authorityBinding: "none" as const,
+      } satisfies DepartmentDraftPayload));
+    } else {
+      if (!normalized.review) fail("department_review_invalid");
+      appended.push(appendEvent(nextState, options, normalized.actor, "department_review_attested_v1", {
+        review: clone(normalized.review),
+        policyVersion: normalized.policyVersion,
+        attestationChecksum: sha256({
+          review: normalized.review,
+          policyVersion: normalized.policyVersion,
+          actorBinding: normalized.actor,
+        }),
+        authorityBinding: "none" as const,
+      } satisfies DepartmentReviewPayload));
+    }
     const receipt: CommandReceipt = {
       caseVersion: nextState.events.length,
       eventIds: appended.map((event) => event.eventId),
@@ -862,7 +1390,6 @@ export function createCivicCaseCoordinator(
     };
     state.events = nextState.events;
     state.headChecksum = nextState.headChecksum;
-    initialAppendDone = true;
     idempotency.set(normalized.idempotencyKey, { fingerprint, receipt: cloneReceipt(receipt) });
     return cloneReceipt(receipt);
   };
@@ -876,11 +1403,12 @@ export function createCivicCaseCoordinator(
     if (registeredActor.actorClass !== normalized.actor.actorClass) fail("actor_binding_mismatch");
     if (normalized.visibility === "public" && registeredActor.actorClass !== "public") fail("projection_visibility_forbidden");
     if (normalized.visibility === "administration" && registeredActor.actorClass !== "administration") fail("projection_visibility_forbidden");
+    if (normalized.visibility === "council" && registeredActor.actorClass !== "council") fail("projection_visibility_forbidden");
     const caseVersion = state.events.length;
     const replayed = replayJournal(state, options);
     if (caseVersion === 0 || !replayed) fail("case_not_found");
     if (normalized.atCaseVersion !== null && normalized.atCaseVersion !== caseVersion) fail("case_version_not_found");
-    const projection = buildProjection(options, replayed);
+    const projection = buildProjection(options, replayed, normalized.visibility);
     return {
       schemaVersion: PROJECTION_ENVELOPE_SCHEMA_VERSION,
       caseId: options.caseId,

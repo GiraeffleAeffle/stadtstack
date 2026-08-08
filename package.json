@@ -16,6 +16,7 @@
     "test": "node --test test/*.test.ts test/*/*.test.ts",
     "demo:synthetic": "node scripts/run-synthetic-flow.mjs",
     "demo:case-intake": "node scripts/run-case-intake-flow.mjs",
+    "demo:department-review": "node scripts/run-department-review-flow.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "verify:public": "node scripts/verify-public-boundary.mjs"
