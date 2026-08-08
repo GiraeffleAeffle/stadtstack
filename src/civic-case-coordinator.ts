@@ -18,7 +18,8 @@ export type ActorClass =
   | "council"
   | "case_steward"
   | "department_agent"
-  | "department_reviewer";
+  | "department_reviewer"
+  | "participation_reviewer";
 
 export type ActorBinding = {
   actorId: string;
@@ -82,6 +83,69 @@ export type AttestDepartmentReviewCommand = CommandEnvelopeBase & {
   };
 };
 
+export type ParticipationOptionAggregate = {
+  optionId: string;
+  label: string;
+  aggregateCount: number;
+};
+
+export type ParticipationRepresentationAudit = {
+  targetPopulationDescription: string;
+  recruitmentMethod: string;
+  samplingMethod: string | null;
+  totalInvited: number | null;
+  totalStarted: number;
+  totalCompleted: number;
+  limitations: string[];
+};
+
+export type ParticipationResultInput = {
+  schemaVersion: "participation_result_v1";
+  id: string;
+  contractId: string;
+  contractVersion: number;
+  methodKind: string;
+  methodVersion: string;
+  ruleId: string;
+  ruleVersion: string;
+  authorityBinding: AuthorityBinding;
+  question: string;
+  options: ParticipationOptionAggregate[];
+  totalAccepted: number;
+  resultSummary: string;
+  unresolvedDissent: string[];
+  representationAudit: ParticipationRepresentationAudit;
+  limitations: string[];
+  openedAt: string;
+  closedAt: string;
+  reviewedAt: string;
+  resultArtifactRef: string;
+  minorityReportRef: string | null;
+  correctionState: "current";
+  checksum: string;
+};
+
+export type RecordAdvisoryParticipationCommand = CommandEnvelopeBase & {
+  commandType: "record_advisory_participation_v1";
+  payload: {
+    participation: ParticipationResultInput;
+    sourceBrief: {
+      id: string;
+      briefChecksum: string;
+    };
+  };
+};
+
+export type RetractAdvisoryParticipationCommand = CommandEnvelopeBase & {
+  commandType: "retract_advisory_participation_v1";
+  payload: {
+    retraction: {
+      participationId: string;
+      participationChecksum: string;
+    };
+  };
+};
+
 export type DeriveCitizenBriefCommand = CommandEnvelopeBase & {
   commandType: "derive_citizen_brief_v1";
   payload: {
@@ -111,6 +175,8 @@ export type CommandEnvelope =
   | AssignDepartmentPackageCommand
   | RecordDepartmentDraftCommand
   | AttestDepartmentReviewCommand
+  | RecordAdvisoryParticipationCommand
+  | RetractAdvisoryParticipationCommand
   | DeriveCitizenBriefCommand
   | CorrectDepartmentDraftCommand
   | RetractDepartmentResponseCommand;
@@ -191,7 +257,9 @@ export type CaseEventV1 = {
     | "department_review_attested_v1"
     | "citizen_brief_derived_v1"
     | "department_draft_corrected_v1"
-    | "department_response_retracted_v1";
+    | "department_response_retracted_v1"
+    | "advisory_participation_recorded_v1"
+    | "advisory_participation_retracted_v1";
   priorEventChecksum: string;
   actorBinding: ActorBinding;
   payloadChecksum: string;
@@ -242,6 +310,8 @@ export type CaseProjection = {
   /** Canonical Issue #4 package set; private/admin only until a brief is current. */
   departmentPackages?: DepartmentPackageProjection[];
   reviewedCitizenBrief?: ReviewedCitizenBriefProjection;
+  participationResult?: AdvisoryParticipationProjection;
+  councilDryRunBrief?: CouncilDryRunBrief;
 };
 
 export type ProjectionEnvelope = {
@@ -368,6 +438,29 @@ type DepartmentRetractionPayload = {
   authorityBinding: AuthorityBinding;
 };
 
+type AdvisoryParticipationSourceBinding = {
+  id: string;
+  briefChecksum: string;
+  briefEventId: string;
+};
+
+type AdvisoryParticipationPayload = {
+  participation: ParticipationResultInput;
+  sourceBrief: AdvisoryParticipationSourceBinding;
+  policyVersion: string;
+  reviewerActorBinding: ActorBinding;
+  reviewAttestationChecksum: string;
+  authorityBinding: AuthorityBinding;
+};
+
+type AdvisoryParticipationRetractionPayload = {
+  retraction: {
+    participationId: string;
+    participationChecksum: string;
+  };
+  authorityBinding: AuthorityBinding;
+};
+
 type StoredCaseEvent = CaseEventV1 & {
   /** Immutable payload retained only behind the coordinator seam. */
   payload:
@@ -378,7 +471,9 @@ type StoredCaseEvent = CaseEventV1 & {
     | DepartmentReviewPayload
     | CitizenBriefPayload
     | DepartmentDraftCorrectionPayload
-    | DepartmentRetractionPayload;
+    | DepartmentRetractionPayload
+    | AdvisoryParticipationPayload
+    | AdvisoryParticipationRetractionPayload;
 };
 
 export type DepartmentPackageProjection = {
@@ -441,6 +536,31 @@ export type ReviewedCitizenBriefProjection = {
   authorityBinding: AuthorityBinding;
 };
 
+export type AdvisoryParticipationProjection = Omit<ParticipationResultInput, "correctionState"> & {
+  correctionState: "current" | "invalidated" | "retracted";
+  advisory: true;
+  sourceBrief?: {
+    id: string;
+    briefChecksum: string;
+    briefEventId: string;
+  };
+  reviewerActorBinding?: ActorBinding;
+  reviewAttestationChecksum?: string;
+};
+
+export type CouncilDryRunBrief = {
+  schemaVersion: "council_dry_run_brief_v1";
+  state: "dry_run_not_submitted";
+  authorityBinding: AuthorityBinding;
+  summary: string;
+  citizenSignal: ParticipationResultInput | null;
+  reviewedDepartmentResponseCount: number;
+  formalDecision: null;
+  councilSubmissionCreated: false;
+  formalVoteStarted: false;
+  publicWrite: false;
+};
+
 const COMMAND_KEYS = new Set([
   "schemaVersion",
   "commandType",
@@ -468,6 +588,8 @@ const REVIEW_PAYLOAD_KEYS = new Set(["review"]);
 const BRIEF_PAYLOAD_KEYS = new Set(["brief"]);
 const CORRECTION_PAYLOAD_KEYS = new Set(["packageId", "packageChecksum", "priorDraftArtifactChecksum", "draft"]);
 const RETRACTION_PAYLOAD_KEYS = new Set(["retraction"]);
+const PARTICIPATION_PAYLOAD_KEYS = new Set(["participation", "sourceBrief"]);
+const PARTICIPATION_RETRACTION_PAYLOAD_KEYS = new Set(["retraction"]);
 const ACTOR_KEYS = new Set(["actorId", "actorClass"]);
 const ACTOR_REGISTRATION_KEYS = new Set(["actorId", "actorClass", "departmentId"]);
 const DEPARTMENT_PACKAGE_KEYS = new Set([
@@ -491,6 +613,43 @@ const DEPARTMENT_REVIEW_KEYS = new Set(["packageId", "draftArtifactChecksum", "d
 const BRIEF_KEYS = new Set(["id", "sourceBindings", "authorityBinding"]);
 const SOURCE_BINDING_KEYS = new Set(["packageId", "packageChecksum", "draftArtifactChecksum", "reviewAttestationChecksum"]);
 const RETRACTION_KEYS = new Set(["packageId", "packageChecksum", "targetDraftArtifactChecksum", "targetReviewAttestationChecksum"]);
+const PARTICIPATION_KEYS = new Set([
+  "schemaVersion",
+  "id",
+  "contractId",
+  "contractVersion",
+  "methodKind",
+  "methodVersion",
+  "ruleId",
+  "ruleVersion",
+  "authorityBinding",
+  "question",
+  "options",
+  "totalAccepted",
+  "resultSummary",
+  "unresolvedDissent",
+  "representationAudit",
+  "limitations",
+  "openedAt",
+  "closedAt",
+  "reviewedAt",
+  "resultArtifactRef",
+  "minorityReportRef",
+  "correctionState",
+  "checksum",
+]);
+const PARTICIPATION_OPTION_KEYS = new Set(["optionId", "label", "aggregateCount"]);
+const REPRESENTATION_AUDIT_KEYS = new Set([
+  "targetPopulationDescription",
+  "recruitmentMethod",
+  "samplingMethod",
+  "totalInvited",
+  "totalStarted",
+  "totalCompleted",
+  "limitations",
+]);
+const SOURCE_BRIEF_KEYS = new Set(["id", "briefChecksum"]);
+const PARTICIPATION_RETRACTION_KEYS = new Set(["participationId", "participationChecksum"]);
 const ARTIFACT_KEYS = new Set([
   "schemaVersion",
   "id",
@@ -520,6 +679,9 @@ const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const SECRET_MARKER = /(?:nsec1|private[_ -]?key|secret[_ -]?key|password|credential|token|wallet|ballot|participant[_ -]?id|user[_ -]?id)/i;
 const SECRET_VALUE_MARKER = /(?:\bnsec1[a-z0-9-]{8,}\b|private[_ -]?key|secret[_ -]?key|password\s*[:=]|credential\s*[:=]|wallet\s*[:=]|ballot\s*[:=])/i;
 const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+const PARTICIPATION_VALUE_MARKER = /(?:\b(?:npub|nsec)1[a-z0-9-]{8,}\b|\b0x[a-f0-9]{40}\b|\b(?:ballot|eligibility|identity|wallet|credential)\b|\b(?:participant|account|user)(?:[_ -]?id)?\s*[:=]|\b(?:private[_ -]?key|prompt|reasoning|tool[_ -]?trace)\b)/i;
+const SYNTHETIC_REFERENCE = /^synthetic:\/\/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]{1,2040}$/;
+const DETERMINISTIC_PARTICIPATION_REVIEWED_AT = "2026-08-08T00:00:05.000Z";
 
 /** Deterministic fixture UUID-v7. It is intentionally not generated at runtime. */
 export const DEFAULT_SYNTHETIC_UUID_V7 = "018f0000-0000-7000-8000-000000000001";
@@ -613,7 +775,8 @@ function normalizeActor(value: unknown, code = "actor_binding_required"): ActorB
     actorClass !== "council" &&
     actorClass !== "case_steward" &&
     actorClass !== "department_agent" &&
-    actorClass !== "department_reviewer"
+    actorClass !== "department_reviewer" &&
+    actorClass !== "participation_reviewer"
   ) {
     fail("actor_role_self_assertion");
   }
@@ -946,6 +1109,155 @@ function normalizeDepartmentReview(value: unknown): DepartmentReviewInput {
   };
 }
 
+function participationString(value: unknown, code: string, limit = 4000): string {
+  const normalized = nonEmptyString(value, code);
+  if (normalized.length > limit) fail(`participation_value_too_large:${code}`);
+  if (PARTICIPATION_VALUE_MARKER.test(normalized)) fail(`raw_participation_data_forbidden:${code}`);
+  return normalized;
+}
+
+function participationStringArray(value: unknown, code: string, limit = 64): string[] {
+  if (!Array.isArray(value) || value.length > limit || value.some((item) => typeof item !== "string")) {
+    fail(`participation_result_shape_invalid:${code}`);
+  }
+  return value.map((item) => participationString(item, code, 2048)).sort();
+}
+
+function participationCount(value: unknown, code: string): number {
+  const result = safeInteger(value, code);
+  if (result < 0) fail(`participation_count_invalid:${code}`);
+  return result;
+}
+
+function normalizeParticipationResult(value: unknown): ParticipationResultInput {
+  ownKeys(value, PARTICIPATION_KEYS, "participation");
+  if (!isRecord(value)) fail("participation_result_shape_invalid:participation");
+  if (value.schemaVersion !== "participation_result_v1") fail("participation_result_schema_invalid");
+  if (value.authorityBinding !== "none") fail("participation_result_authority_invalid");
+  if (value.correctionState !== "current") fail("participation_correction_state_invalid");
+  const optionsValue = value.options;
+  if (!Array.isArray(optionsValue) || optionsValue.length > 64) fail("participation_result_shape_invalid:options");
+  const options = optionsValue.map((option, index) => {
+    ownKeys(option, PARTICIPATION_OPTION_KEYS, `participation.options[${index}]`);
+    if (!isRecord(option)) fail(`participation_result_shape_invalid:options[${index}]`);
+    return {
+      optionId: participationString(option.optionId, `participation.options[${index}].optionId`, 256),
+      label: participationString(option.label, `participation.options[${index}].label`, 1000),
+      aggregateCount: participationCount(option.aggregateCount, `participation.options[${index}].aggregateCount`),
+    };
+  }).sort((left, right) => left.optionId < right.optionId ? -1 : left.optionId > right.optionId ? 1 : 0);
+  if (new Set(options.map((option) => option.optionId)).size !== options.length) fail("participation_option_duplicate");
+  ownKeys(value.representationAudit, REPRESENTATION_AUDIT_KEYS, "participation.representationAudit");
+  if (!isRecord(value.representationAudit)) fail("participation_result_shape_invalid:representationAudit");
+  const audit = value.representationAudit;
+  const totalInvited = audit.totalInvited === null ? null : participationCount(audit.totalInvited, "representationAudit.totalInvited");
+  const normalizedAudit: ParticipationRepresentationAudit = {
+    targetPopulationDescription: participationString(audit.targetPopulationDescription, "representationAudit.targetPopulationDescription"),
+    recruitmentMethod: participationString(audit.recruitmentMethod, "representationAudit.recruitmentMethod"),
+    samplingMethod: audit.samplingMethod === null ? null : participationString(audit.samplingMethod, "representationAudit.samplingMethod"),
+    totalInvited,
+    totalStarted: participationCount(audit.totalStarted, "representationAudit.totalStarted"),
+    totalCompleted: participationCount(audit.totalCompleted, "representationAudit.totalCompleted"),
+    limitations: participationStringArray(audit.limitations, "representationAudit.limitations"),
+  };
+  if (
+    (totalInvited !== null && totalInvited < normalizedAudit.totalStarted) ||
+    normalizedAudit.totalCompleted > normalizedAudit.totalStarted
+  ) fail("representation_count_inconsistent");
+  const contractVersion = participationCount(value.contractVersion, "participation.contractVersion");
+  if (contractVersion < 1) fail("participation_version_invalid:contractVersion");
+  const totalAccepted = participationCount(value.totalAccepted, "totalAccepted");
+  if (normalizedAudit.totalCompleted < totalAccepted) fail("representation_count_inconsistent");
+  const aggregateTotal = options.reduce((total, option) => total + option.aggregateCount, 0);
+  if (aggregateTotal !== totalAccepted) fail("participation_option_count_inconsistent");
+  const timestamps = [value.openedAt, value.closedAt, value.reviewedAt];
+  if (timestamps.some((timestamp) => typeof timestamp !== "string" || !RFC3339_UTC.test(timestamp))) fail("participation_timestamp_invalid");
+  const timestampMillis = timestamps.map((timestamp) => Date.parse(timestamp as string));
+  if (timestampMillis.some((timestamp) => !Number.isFinite(timestamp))) fail("participation_timestamp_invalid");
+  if (timestampMillis[0]! > timestampMillis[1]! || timestampMillis[1]! > timestampMillis[2]!) fail("participation_timestamp_order_invalid");
+  if (value.reviewedAt !== DETERMINISTIC_PARTICIPATION_REVIEWED_AT) fail("participation_review_time_invalid");
+  const resultArtifactRef = participationString(value.resultArtifactRef, "participation.resultArtifactRef", 2048);
+  const minorityReportRef = value.minorityReportRef === null ? null : participationString(value.minorityReportRef, "participation.minorityReportRef", 2048);
+  if (!SYNTHETIC_REFERENCE.test(resultArtifactRef) || (minorityReportRef !== null && !SYNTHETIC_REFERENCE.test(minorityReportRef))) fail("participation_reference_invalid");
+  const checksum = nonEmptyString(value.checksum, "participation_checksum_required");
+  if (!SHA256.test(checksum)) fail("participation_checksum_invalid");
+  return {
+    schemaVersion: "participation_result_v1",
+    id: participationString(value.id, "participation.id", 512),
+    contractId: participationString(value.contractId, "participation.contractId", 512),
+    contractVersion,
+    methodKind: participationString(value.methodKind, "participation.methodKind", 256),
+    methodVersion: participationString(value.methodVersion, "participation.methodVersion", 256),
+    ruleId: participationString(value.ruleId, "participation.ruleId", 256),
+    ruleVersion: participationString(value.ruleVersion, "participation.ruleVersion", 256),
+    authorityBinding: "none",
+    question: participationString(value.question, "participation.question"),
+    options,
+    totalAccepted,
+    resultSummary: participationString(value.resultSummary, "participation.resultSummary"),
+    unresolvedDissent: participationStringArray(value.unresolvedDissent, "participation.unresolvedDissent"),
+    representationAudit: normalizedAudit,
+    limitations: participationStringArray(value.limitations, "participation.limitations"),
+    openedAt: timestamps[0] as string,
+    closedAt: timestamps[1] as string,
+    reviewedAt: timestamps[2] as string,
+    resultArtifactRef,
+    minorityReportRef,
+    correctionState: "current",
+    checksum,
+  };
+}
+
+function participationWithoutChecksum(result: ParticipationResultInput): Omit<ParticipationResultInput, "checksum"> {
+  return Object.fromEntries(
+    Object.entries(result).filter(([key]) => key !== "checksum"),
+  ) as Omit<ParticipationResultInput, "checksum">;
+}
+
+function participationChecksumFor(
+  result: ParticipationResultInput,
+  sourceBrief: AdvisoryParticipationSourceBinding,
+  policyVersion: string,
+  actorBinding: ActorBinding,
+  reviewedAt: string,
+): string {
+  return sha256({
+    participation: participationWithoutChecksum(result),
+    sourceBrief,
+    policyVersion,
+    actorBinding,
+    reviewedAt,
+  });
+}
+
+function participationAttestationChecksumFor(
+  participationChecksum: string,
+  sourceBrief: AdvisoryParticipationSourceBinding,
+  policyVersion: string,
+  actorBinding: ActorBinding,
+  reviewedAt: string,
+): string {
+  return sha256({ participationChecksum, sourceBrief, policyVersion, actorBinding, reviewedAt });
+}
+
+function normalizeParticipationSourceBrief(value: unknown): { id: string; briefChecksum: string } {
+  ownKeys(value, SOURCE_BRIEF_KEYS, "sourceBrief");
+  if (!isRecord(value)) fail("participation_source_brief_invalid");
+  const id = nonEmptyString(value.id, "participation_source_brief_invalid");
+  const briefChecksum = nonEmptyString(value.briefChecksum, "participation_source_brief_invalid");
+  if (!SHA256.test(briefChecksum)) fail("participation_source_brief_checksum_invalid");
+  return { id, briefChecksum };
+}
+
+function normalizeParticipationRetraction(value: unknown): { participationId: string; participationChecksum: string } {
+  ownKeys(value, PARTICIPATION_RETRACTION_KEYS, "retraction");
+  if (!isRecord(value)) fail("participation_retraction_invalid");
+  const participationId = nonEmptyString(value.participationId, "participation_retraction_invalid");
+  const participationChecksum = nonEmptyString(value.participationChecksum, "participation_retraction_checksum_invalid");
+  if (!SHA256.test(participationChecksum)) fail("participation_retraction_checksum_invalid");
+  return { participationId, participationChecksum };
+}
+
 function normalizeSourceBinding(value: unknown): BriefSourceBinding {
   ownKeys(value, SOURCE_BINDING_KEYS, "brief.sourceBindings");
   if (!isRecord(value)) fail("citizen_brief_binding_invalid");
@@ -1104,7 +1416,19 @@ type ReplayedCaseState = {
   departments: Map<string, ReplayedDepartmentState>;
   department?: ReplayedDepartmentState;
   brief?: ReviewedCitizenBriefProjection;
+  briefEventId?: string;
   briefSourceEventIds?: Map<string, { draftEventId: string; reviewEventId: string }>;
+  participation?: ReplayedParticipationState;
+};
+
+type ReplayedParticipationState = {
+  participation: ParticipationResultInput;
+  sourceBrief: AdvisoryParticipationSourceBinding;
+  policyVersion: string;
+  reviewerActorBinding: ActorBinding;
+  reviewAttestationChecksum: string;
+  eventId: string;
+  retracted: boolean;
 };
 
 function replayJournal(
@@ -1116,7 +1440,9 @@ function replayJournal(
   let suggestion: DiscussionRecordedPayload["suggestion"] | undefined;
   const departments = new Map<string, ReplayedDepartmentState>();
   let brief: ReviewedCitizenBriefProjection | undefined;
+  let briefEventId: string | undefined;
   let briefSourceEventIds: Map<string, { draftEventId: string; reviewEventId: string }> | undefined;
+  let participation: ReplayedParticipationState | undefined;
   for (const [index, event] of state.events.entries()) {
     const expectedVersion = index + 1;
     if (
@@ -1296,6 +1622,7 @@ function replayJournal(
         briefPayload.briefChecksum !== briefPayload.brief.briefChecksum
       ) fail("journal_chain_invalid");
       brief = clone(briefPayload.brief);
+      briefEventId = event.eventId;
       briefSourceEventIds = new Map(
         validatedBindings.map((binding) => {
           const department = departments.get(binding.packageId);
@@ -1303,6 +1630,68 @@ function replayJournal(
           return [binding.packageId, { draftEventId: department.draft.eventId, reviewEventId: department.review.eventId }] as const;
         }),
       );
+    } else if (event.eventType === "advisory_participation_recorded_v1") {
+      const participationPayload = payload as AdvisoryParticipationPayload;
+      const registration = options.actors.get(event.actorBinding.actorId);
+      if (event.correctionOf !== null || participation || !discussion || !suggestion || !brief || !briefEventId || !briefSourceEventIds) fail("journal_chain_invalid");
+      const snapshot: ReplayedCaseState = {
+        discussion,
+        suggestion,
+        departments,
+        brief,
+        briefEventId,
+        briefSourceEventIds,
+      };
+      if (!briefIsCurrent(options, snapshot, brief)) fail("journal_chain_invalid");
+      const normalizedParticipation = normalizeParticipationResult(participationPayload.participation);
+      if (
+        participationPayload.authorityBinding !== "none" ||
+        participationPayload.policyVersion !== options.policyVersion ||
+        event.actorBinding.actorClass !== "participation_reviewer" ||
+        canonicalJson(participationPayload.reviewerActorBinding) !== canonicalJson(event.actorBinding) ||
+        !registration ||
+        registration.actorClass !== "participation_reviewer" ||
+        participationPayload.sourceBrief.id !== brief.id ||
+        participationPayload.sourceBrief.briefChecksum !== brief.briefChecksum ||
+        participationPayload.sourceBrief.briefEventId !== briefEventId ||
+        participationPayload.reviewAttestationChecksum !== participationAttestationChecksumFor(
+          normalizedParticipation.checksum,
+          participationPayload.sourceBrief,
+          participationPayload.policyVersion,
+          event.actorBinding,
+          normalizedParticipation.reviewedAt,
+        ) ||
+        normalizedParticipation.checksum !== participationChecksumFor(
+          normalizedParticipation,
+          participationPayload.sourceBrief,
+          participationPayload.policyVersion,
+          event.actorBinding,
+          normalizedParticipation.reviewedAt,
+        )
+      ) fail("journal_chain_invalid");
+      participation = {
+        participation: normalizedParticipation,
+        sourceBrief: clone(participationPayload.sourceBrief),
+        policyVersion: participationPayload.policyVersion,
+        reviewerActorBinding: clone(event.actorBinding),
+        reviewAttestationChecksum: participationPayload.reviewAttestationChecksum,
+        eventId: event.eventId,
+        retracted: false,
+      };
+    } else if (event.eventType === "advisory_participation_retracted_v1") {
+      const retractionPayload = payload as AdvisoryParticipationRetractionPayload;
+      if (!participation || participation.retracted || event.correctionOf !== participation.eventId) fail("journal_chain_invalid");
+      const retraction = normalizeParticipationRetraction(retractionPayload.retraction);
+      const registration = options.actors.get(event.actorBinding.actorId);
+      if (
+        retractionPayload.authorityBinding !== "none" ||
+        event.actorBinding.actorClass !== "case_steward" ||
+        !registration ||
+        registration.actorClass !== "case_steward" ||
+        retraction.participationId !== participation.participation.id ||
+        retraction.participationChecksum !== participation.participation.checksum
+      ) fail("journal_chain_invalid");
+      participation.retracted = true;
     } else {
       fail("journal_chain_invalid");
     }
@@ -1312,7 +1701,7 @@ function replayJournal(
   if (options.requiredDepartmentIds && departments.size > options.requiredDepartmentIds.length) fail("journal_chain_invalid");
   if (!discussion || !suggestion) return undefined;
   const department = departments.size === 1 ? [...departments.values()][0] : undefined;
-  return { discussion, suggestion, departments, department, brief, briefSourceEventIds };
+  return { discussion, suggestion, departments, department, brief, briefEventId, briefSourceEventIds, participation };
 }
 
 function normalizeAndVerifyDiscussion(
@@ -1507,6 +1896,45 @@ function invalidatedBriefProjection(brief: ReviewedCitizenBriefProjection): Revi
   };
 }
 
+function participationIsCurrent(
+  options: InternalCoordinatorOptions,
+  replayed: ReplayedCaseState,
+  participation: ReplayedParticipationState,
+): boolean {
+  if (participation.retracted || !replayed.brief || !replayed.briefEventId) return false;
+  if (!briefIsCurrent(options, replayed, replayed.brief)) return false;
+  if (
+    participation.sourceBrief.id !== replayed.brief.id ||
+    participation.sourceBrief.briefChecksum !== replayed.brief.briefChecksum ||
+    participation.sourceBrief.briefEventId !== replayed.briefEventId
+  ) return false;
+  return participation.participation.checksum === participationChecksumFor(
+    participation.participation,
+    participation.sourceBrief,
+    participation.policyVersion,
+    participation.reviewerActorBinding,
+    participation.participation.reviewedAt,
+  );
+}
+
+function participationProjection(
+  participation: ReplayedParticipationState,
+  correctionState: AdvisoryParticipationProjection["correctionState"],
+  administration: boolean,
+): AdvisoryParticipationProjection {
+  const projected: AdvisoryParticipationProjection = {
+    ...clone(participation.participation),
+    correctionState,
+    advisory: true,
+  };
+  if (administration) {
+    projected.sourceBrief = clone(participation.sourceBrief);
+    projected.reviewerActorBinding = clone(participation.reviewerActorBinding);
+    projected.reviewAttestationChecksum = participation.reviewAttestationChecksum;
+  }
+  return projected;
+}
+
 function buildProjection(
   options: InternalCoordinatorOptions,
   replayed: ReplayedCaseState,
@@ -1554,6 +1982,38 @@ function buildProjection(
       result.reviewedCitizenBrief = invalidatedBriefProjection(replayed.brief);
     }
   }
+  if (replayed.participation) {
+    const current = participationIsCurrent(options, replayed, replayed.participation);
+    if (visibility === "administration") {
+      result.participationResult = participationProjection(
+        replayed.participation,
+        replayed.participation.retracted ? "retracted" : current ? "current" : "invalidated",
+        true,
+      );
+    } else if (current) {
+      result.participationResult = participationProjection(replayed.participation, "current", false);
+    }
+  }
+  if (visibility === "council" && replayed.brief && briefIsCurrent(options, replayed, replayed.brief)) {
+    const currentParticipation = replayed.participation && participationIsCurrent(options, replayed, replayed.participation)
+      ? clone(replayed.participation.participation)
+      : null;
+    const reviewedDepartmentResponseCount = [...replayed.departments.values()].filter(
+      (department) => department.review?.review.decision === "accepted" && department.correctionState === "current",
+    ).length;
+    result.councilDryRunBrief = {
+      schemaVersion: "council_dry_run_brief_v1",
+      state: "dry_run_not_submitted",
+      authorityBinding: "none",
+      summary: replayed.brief.summary,
+      citizenSignal: currentParticipation,
+      reviewedDepartmentResponseCount,
+      formalDecision: null,
+      councilSubmissionCreated: false,
+      formalVoteStarted: false,
+      publicWrite: false,
+    };
+  }
   return result;
 }
 
@@ -1573,6 +2033,9 @@ type NormalizedCommand = {
   review?: DepartmentReviewInput;
   brief?: CitizenBriefInput;
   retraction?: DepartmentRetractionInput;
+  participation?: ParticipationResultInput;
+  sourceBrief?: { id: string; briefChecksum: string };
+  participationRetraction?: { participationId: string; participationChecksum: string };
 };
 
 function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
@@ -1584,6 +2047,8 @@ function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
     commandType !== "assign_department_package_v1" &&
     commandType !== "record_department_draft_v1" &&
     commandType !== "attest_department_review_v1" &&
+    commandType !== "record_advisory_participation_v1" &&
+    commandType !== "retract_advisory_participation_v1" &&
     commandType !== "derive_citizen_brief_v1" &&
     commandType !== "correct_department_draft_v1" &&
     commandType !== "retract_department_response_v1"
@@ -1622,6 +2087,13 @@ function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
   } else if (commandType === "derive_citizen_brief_v1") {
     ownKeys(command.payload, BRIEF_PAYLOAD_KEYS, "payload");
     result.brief = normalizeCitizenBrief(command.payload.brief);
+  } else if (commandType === "record_advisory_participation_v1") {
+    ownKeys(command.payload, PARTICIPATION_PAYLOAD_KEYS, "payload");
+    result.participation = normalizeParticipationResult(command.payload.participation);
+    result.sourceBrief = normalizeParticipationSourceBrief(command.payload.sourceBrief);
+  } else if (commandType === "retract_advisory_participation_v1") {
+    ownKeys(command.payload, PARTICIPATION_RETRACTION_PAYLOAD_KEYS, "payload");
+    result.participationRetraction = normalizeParticipationRetraction(command.payload.retraction);
   } else if (commandType === "correct_department_draft_v1") {
     ownKeys(command.payload, CORRECTION_PAYLOAD_KEYS, "payload");
     const packageId = nonEmptyString(command.payload.packageId, "department_package_invalid");
@@ -1721,6 +2193,10 @@ export function createCivicCaseCoordinator(
             ? { packageId: normalized.packageId, packageChecksum: normalized.packageChecksum, draft: normalized.draft }
             : normalized.commandType === "attest_department_review_v1"
               ? { review: normalized.review }
+              : normalized.commandType === "record_advisory_participation_v1"
+                ? { participation: normalized.participation, sourceBrief: normalized.sourceBrief }
+                : normalized.commandType === "retract_advisory_participation_v1"
+                  ? { retraction: normalized.participationRetraction }
               : normalized.commandType === "derive_citizen_brief_v1"
                 ? { brief: normalized.brief }
                 : normalized.commandType === "correct_department_draft_v1"
@@ -1798,6 +2274,22 @@ export function createCivicCaseCoordinator(
       if (registeredActor.departmentId !== department.departmentPackage.departmentId) fail("department_actor_scope_mismatch");
       if (normalized.actor.actorId !== department.departmentPackage.assignedReviewerActorId) fail("department_reviewer_not_assigned");
       if (normalized.actor.actorId === draft.actorBinding.actorId) fail("department_reviewer_not_distinct");
+    } else if (normalized.commandType === "record_advisory_participation_v1") {
+      if (registeredActor.actorClass !== "participation_reviewer") fail("actor_role_forbidden");
+      if (!existing || !normalized.participation || !normalized.sourceBrief || !existing.brief || !existing.briefEventId) fail("participation_source_brief_required");
+      if (!briefIsCurrent(options, existing, existing.brief)) fail("participation_source_brief_stale");
+      if (existing.participation) fail(existing.participation.retracted ? "participation_retracted" : "participation_already_recorded");
+      if (normalized.sourceBrief.id !== existing.brief.id || normalized.sourceBrief.briefChecksum !== existing.brief.briefChecksum) {
+        fail("participation_source_brief_mismatch");
+      }
+      const sourceBrief: AdvisoryParticipationSourceBinding = {
+        ...normalized.sourceBrief,
+        briefEventId: existing.briefEventId,
+      };
+      if (normalized.participation.reviewedAt !== DETERMINISTIC_PARTICIPATION_REVIEWED_AT) fail("participation_review_time_invalid");
+      if (normalized.participation.checksum !== participationChecksumFor(normalized.participation, sourceBrief, normalized.policyVersion, normalized.actor, normalized.participation.reviewedAt)) {
+        fail("participation_checksum_invalid");
+      }
     } else if (normalized.commandType === "derive_citizen_brief_v1") {
       if (registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
       if (!existing || !normalized.brief || !options.requiredDepartmentIds) fail("citizen_brief_departments_incomplete");
@@ -1814,6 +2306,14 @@ export function createCivicCaseCoordinator(
       if (department.review.review.decision !== "accepted") fail("department_review_not_accepted");
       if (normalized.actor.actorId !== department.departmentPackage.assignedAgentActorId) fail("department_agent_not_assigned");
       if (registeredActor.departmentId !== department.departmentPackage.departmentId) fail("department_actor_scope_mismatch");
+    } else if (normalized.commandType === "retract_advisory_participation_v1") {
+      if (registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
+      if (!existing?.participation || !normalized.participationRetraction) fail("participation_not_found");
+      if (existing.participation.retracted) fail("participation_already_retracted");
+      if (
+        normalized.participationRetraction.participationId !== existing.participation.participation.id ||
+        normalized.participationRetraction.participationChecksum !== existing.participation.participation.checksum
+      ) fail("participation_retraction_checksum_invalid");
     } else {
       if (registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
       const retraction = normalized.retraction;
@@ -1876,6 +2376,26 @@ export function createCivicCaseCoordinator(
         }),
         authorityBinding: "none" as const,
       } satisfies DepartmentReviewPayload));
+    } else if (normalized.commandType === "record_advisory_participation_v1") {
+      if (!existing || !existing.brief || !existing.briefEventId || !normalized.participation || !normalized.sourceBrief) fail("participation_source_brief_required");
+      const sourceBrief: AdvisoryParticipationSourceBinding = {
+        ...normalized.sourceBrief,
+        briefEventId: existing.briefEventId,
+      };
+      appended.push(appendEvent(nextState, options, normalized.actor, "advisory_participation_recorded_v1", {
+        participation: clone(normalized.participation),
+        sourceBrief,
+        policyVersion: normalized.policyVersion,
+        reviewerActorBinding: clone(normalized.actor),
+        reviewAttestationChecksum: participationAttestationChecksumFor(
+          normalized.participation.checksum,
+          sourceBrief,
+          normalized.policyVersion,
+          normalized.actor,
+          normalized.participation.reviewedAt,
+        ),
+        authorityBinding: "none" as const,
+      } satisfies AdvisoryParticipationPayload));
     } else if (normalized.commandType === "derive_citizen_brief_v1") {
       if (!existing || !normalized.brief || !options.requiredDepartmentIds) fail("citizen_brief_invalid");
       const sourceBindings = validateBriefBindings(normalized.brief.sourceBindings, existing.departments, options);
@@ -1899,6 +2419,12 @@ export function createCivicCaseCoordinator(
         draftArtifactChecksum: sha256(normalized.draft),
         authorityBinding: "none" as const,
       } satisfies DepartmentDraftCorrectionPayload, department.draft.eventId));
+    } else if (normalized.commandType === "retract_advisory_participation_v1") {
+      if (!existing?.participation || !normalized.participationRetraction) fail("participation_retraction_invalid");
+      appended.push(appendEvent(nextState, options, normalized.actor, "advisory_participation_retracted_v1", {
+        retraction: clone(normalized.participationRetraction),
+        authorityBinding: "none" as const,
+      } satisfies AdvisoryParticipationRetractionPayload, existing.participation.eventId));
     } else {
       if (!normalized.retraction || !existing) fail("department_retraction_invalid");
       const department = existing.departments.get(normalized.retraction.packageId);
