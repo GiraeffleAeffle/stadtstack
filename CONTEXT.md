@@ -100,6 +100,19 @@ council work. Each context sees only the information and capabilities allowed
 for that role.
 _Avoid_: shared chatbot, autonomous city agent
 
+**Public Mecky answer**:
+An attributable agent contribution produced only after an explicit request
+and grounded in cited, current, reviewed public artifacts plus the attributed
+signed discussion. Its facts, uncertainty, and concise reasoning are separate.
+The reviewed artifacts—not every generated answer—carry human review.
+_Avoid_: official municipal answer, uncited chatbot reply, review attestation
+
+**Citizen-signed suggestion candidate**:
+A Mecky-assisted suggestion that a resident adopted or edited and then signed
+as an exact NIP-01 event. It awaits human Case admission and has not been
+published, submitted, voted on, or accepted into the Case journal.
+_Avoid_: automatic proposal, submitted motion, Case event
+
 **Signed discussion record**:
 A public contribution with a verifiable author and provenance that can be
 shared between communities. It is input to review, not the administration

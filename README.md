@@ -16,6 +16,9 @@ private operations, or personal data.
 - a NIP-01 discussion Adapter and a policy-bounded local relay Adapter;
 - role-scoped public, administration, and council companion contexts;
 - deterministic worker and transport seams that never invoke a model or tool;
+- an explicit-invocation public Mecky Module that answers from attributed
+  discussion and reviewed citations, then prepares a citizen-owned signing
+  request without submitting it; and
 - synthetic tests and architecture decisions describing the authority and
   privacy boundaries.
 
@@ -41,6 +44,7 @@ Requirements: Node.js 22.18 or newer.
 npm ci
 npm test
 npm run demo:synthetic
+npm run demo:public-mecky
 ```
 
 The test suite is offline and deterministic. It uses generated keys only in
