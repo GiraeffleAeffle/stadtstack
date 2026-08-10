@@ -86,6 +86,14 @@ and corrections form the private **Case journal**. A reviewed artifact may be
 represented as a **Public exchange record**, but that record does not reveal
 the Case journal or transfer authority.
 
+A **Citizen-signed suggestion candidate** becomes an **Admitted citizen
+suggestion** only through an accountable human Case event. Its reviewed public
+line is represented once as the **Public knowledge projection**. Public Mecky
+and the **Mitmachen view** consume that same version and checksum. A
+**Reviewed public outcome** can close the public information loop back to the
+signed Discussion, while any formal governance vote remains a separate
+Authority transition.
+
 ## Boundary and companion language
 
 **Civic Federation Envelope**:
@@ -112,6 +120,31 @@ A Mecky-assisted suggestion that a resident adopted or edited and then signed
 as an exact NIP-01 event. It awaits human Case admission and has not been
 published, submitted, voted on, or accepted into the Case journal.
 _Avoid_: automatic proposal, submitted motion, Case event
+
+**Admitted citizen suggestion**:
+A citizen-signed suggestion candidate whose exact signature, discussion,
+municipality, Case, and Mecky receipt bindings were checked and then admitted
+to the Case journal by an accountable human steward. Admission starts review;
+it does not create a formal proposal, publication, or vote.
+_Avoid_: approved proposal, automatic intake, adopted motion
+
+**Public knowledge projection**:
+The single versioned, checksum-bound public read model shared by public Mecky
+and Mitmachen. It contains only the current signed discussion, admitted
+suggestion, reviewed Citizen Brief, advisory aggregate, and reviewed outcome.
+_Avoid_: public Case journal, chatbot memory, parallel content store
+
+**Mitmachen view**:
+A public rendering of the Public knowledge projection that shows the Citizen
+Brief, provenance, participation window, advisory options and result, and the
+reviewed outcome. It is not a ballot and exposes no formal vote operation.
+_Avoid_: governance vote, referendum, legally binding poll
+
+**Reviewed public outcome**:
+An accountable, checksum-bound public Case projection of what followed the
+reviewed Citizen Brief and advisory participation. It links back to the
+original signed discussion and disappears when a bound source becomes stale.
+_Avoid_: external publication receipt, council decision, enacted measure
 
 **Signed discussion record**:
 A public contribution with a verifiable author and provenance that can be

@@ -25,6 +25,7 @@
     "demo:durable-journal": "node scripts/run-durable-journal-flow.mjs",
     "demo:reference-browser": "node scripts/run-reference-browser-flow.mjs",
     "demo:public-mecky": "node scripts/run-public-mecky-flow.mjs",
+    "demo:civic-outcome-loop": "node scripts/run-civic-outcome-loop.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "verify:public": "node scripts/verify-public-boundary.mjs"
