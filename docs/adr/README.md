@@ -24,6 +24,9 @@ publication, runtime operations, public relay writes, or civic effects.
   discussion and reviewed public exchange, not private case state.
 - [ADR 0010](./0010-reference-surfaces-and-role-identities.md) — keep
   reference surfaces and agent identities role-scoped.
+- [ADR 0011](./0011-cited-public-mecky-and-citizen-signing.md) — let public
+  Mecky answer explicit questions from cited reviewed knowledge and let the
+  resident sign an edited suggestion without submitting it.
 
 ## Historical
 
