@@ -110,7 +110,7 @@ export type ReferenceViewV1 = {
   authorityBinding: "none";
   flow: {
     discussion: { id: string; sourceRef: string; verified: true; content: string };
-    suggestion: { id: string; title: string; status: "draft" };
+    suggestion: { id: string; title: string; status: "draft" | "admitted" };
     reviewedDepartments: readonly ReferenceDepartmentView[];
     reviewedCitizenBrief: {
       id: string;
@@ -540,7 +540,7 @@ function buildReferenceViewFromTask(
       suggestion: {
         id: requireString(suggestion.id, "projection_unavailable_v1"),
         title: requireString(suggestion.title, "projection_unavailable_v1"),
-        status: suggestion.status === "draft" ? "draft" : failProjection(),
+        status: suggestion.status === "draft" || suggestion.status === "admitted" ? suggestion.status : failProjection(),
       },
       reviewedDepartments: departments.safe,
       reviewedCitizenBrief: brief,

@@ -35,6 +35,7 @@ const IDEMPOTENCY_COLUMNS = ["namespace", "idempotency_key", "fingerprint", "rec
 const EVENT_TYPES = new Set([
   "case_created_v1",
   "discussion_recorded_v1",
+  "signed_suggestion_admitted_v1",
   "department_package_assigned_v1",
   "department_draft_recorded_v1",
   "department_review_attested_v1",
@@ -43,6 +44,7 @@ const EVENT_TYPES = new Set([
   "citizen_brief_derived_v1",
   "advisory_participation_recorded_v1",
   "advisory_participation_retracted_v1",
+  "reviewed_outcome_recorded_v1",
 ]);
 
 export type SqliteJournalStoreOptions = {

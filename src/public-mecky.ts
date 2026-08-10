@@ -14,6 +14,21 @@ import type {
   WorkerResultV1,
 } from "./adapters/companion-harness.ts";
 import type { CompanionRuntime, CompanionTask } from "./companion-runtime.ts";
+import {
+  publicKnowledgeChecksum,
+  type PublicKnowledgeReader,
+} from "./public-knowledge.ts";
+import type {
+  CitizenSignedSuggestionV1,
+  PublicMeckySigningRequestV1,
+  PublicMeckySuggestionDraftV1,
+} from "./citizen-suggestion.ts";
+
+export type {
+  CitizenSignedSuggestionV1,
+  PublicMeckySigningRequestV1,
+  PublicMeckySuggestionDraftV1,
+} from "./citizen-suggestion.ts";
 
 export type PublicMeckyRequestV1 = {
   schemaVersion: "public_mecky_request_v1";
@@ -35,23 +50,6 @@ export type PublicMeckyFactV1 = {
   citationRefs: readonly string[];
 };
 
-export type PublicMeckySuggestionDraftV1 = {
-  schemaVersion: "public_mecky_suggestion_draft_v1";
-  draftId: string;
-  sourceAnswerReceiptId: string;
-  sourceDiscussionId: string;
-  sourceDiscussionRef: string;
-  municipalityId: string;
-  sourceCaseId: string;
-  caseId: string;
-  citizenPubkey: string;
-  title: string;
-  summary: string;
-  entryState: "citizen_signature_required";
-  authorityBinding: "none";
-  submittedToCivicWorkflow: false;
-};
-
 export type PublicMeckyAnswerReceiptV1 = {
   schemaVersion: "public_mecky_answer_receipt_v1";
   receiptId: string;
@@ -63,6 +61,7 @@ export type PublicMeckyAnswerReceiptV1 = {
   caseVersion: number;
   journalHeadChecksum: string;
   projectionChecksum: string;
+  publicKnowledgeChecksum?: string;
   contextChecksum: string;
   workerIdentityId: string;
   availableCitationRefs: readonly string[];
@@ -114,42 +113,6 @@ export type PublicMeckyTurnV1 =
       authorityBinding: "none";
     };
 
-export type PublicMeckySigningRequestV1 = {
-  schemaVersion: "public_mecky_signing_request_v1";
-  citizenPubkey: string;
-  sourceAnswerReceiptId: string;
-  draft: PublicMeckySuggestionDraftV1;
-  unsignedEvent: {
-    kind: 1;
-    created_at: number;
-    tags: string[][];
-    content: string;
-  };
-};
-
-export type CitizenSignedSuggestionV1 = {
-  schemaVersion: "citizen_signed_suggestion_v1";
-  candidateId: string;
-  signerPubkey: string;
-  draft: PublicMeckySuggestionDraftV1;
-  event: {
-    id: string;
-    pubkey: string;
-    createdAt: number;
-    kind: 1;
-    tags: string[][];
-    content: string;
-    signature: string;
-  };
-  verification: {
-    kind: "nostr_nip01";
-    verified: true;
-  };
-  entryState: "awaiting_human_case_admission";
-  authorityBinding: "none";
-  submittedToCivicWorkflow: false;
-};
-
 export type PublicMecky = {
   answer(request: PublicMeckyRequestV1): Promise<PublicMeckyTurnV1>;
   prepareSuggestion(input: {
@@ -167,6 +130,7 @@ export type PublicMecky = {
 export type PublicMeckyConfig = {
   runtime: Pick<CompanionRuntime, "prepareTask">;
   worker: Pick<CompanionHarnessAdapter, "run">;
+  knowledge?: PublicKnowledgeReader;
 };
 
 type EvidenceSnapshot = {
@@ -590,6 +554,7 @@ function answeredTurn(value: PublicMeckyTurnV1): Extract<PublicMeckyTurnV1, { st
     "caseVersion", "journalHeadChecksum", "projectionChecksum", "contextChecksum", "workerIdentityId",
     "availableCitationRefs", "usedCitationRefs", "administrationAnswerReviewRequired", "sourceArtifactReviewRequired",
     "answerValidity", "authorityBinding", "effects", "receiptChecksum",
+    ...(receipt.publicKnowledgeChecksum === undefined ? [] : ["publicKnowledgeChecksum"]),
   ], "public_mecky_answer_receipt_invalid");
   const { receiptId, receiptChecksum, ...receiptCore } = receipt;
   if (isRecord(receipt.effects)) {
@@ -601,6 +566,7 @@ function answeredTurn(value: PublicMeckyTurnV1): Extract<PublicMeckyTurnV1, { st
     receipt.administrationAnswerReviewRequired !== false ||
     receipt.sourceArtifactReviewRequired !== true ||
     receipt.answerValidity !== "current_projection_only" ||
+    (receipt.publicKnowledgeChecksum !== undefined && !/^sha256:[a-f0-9]{64}$/.test(String(receipt.publicKnowledgeChecksum))) ||
     !isRecord(receipt.effects) ||
     Object.values(receipt.effects).some((effect) => effect !== false) ||
     sha256(receiptCore) !== receiptChecksum ||
@@ -768,6 +734,23 @@ export function createPublicMecky(config: PublicMeckyConfig): PublicMecky {
         const task = config.runtime.prepareTask({ profile: "public", question });
         assertSafePlainData(task);
         const evidence = evidenceFor(task, discussion);
+        const knowledge = config.knowledge?.project();
+        if (knowledge) {
+          assertSafePlainData(knowledge);
+          const { knowledgeChecksum, ...knowledgeCore } = knowledge;
+          if (
+            knowledge.caseId !== evidence.caseId ||
+            knowledge.municipalityId !== evidence.municipalityId ||
+            knowledge.sourceCaseId !== evidence.sourceCaseId ||
+            knowledge.caseVersion !== evidence.caseVersion ||
+            knowledge.journalHeadChecksum !== evidence.journalHeadChecksum ||
+            knowledge.sourceProjectionChecksum !== evidence.projectionChecksum ||
+            knowledge.discussion.id !== discussion.id ||
+            knowledge.discussion.sourceRef !== discussion.sourceRef ||
+            knowledge.authorityBinding !== "none" ||
+            knowledgeChecksum !== publicKnowledgeChecksum(knowledgeCore)
+          ) throw new Error("stale_evidence");
+        }
         const result = await config.worker.run(task);
         assertSafePlainData(result);
         validateWorkerBinding(result, task, evidence);
@@ -783,6 +766,7 @@ export function createPublicMecky(config: PublicMeckyConfig): PublicMecky {
           caseVersion: evidence.caseVersion,
           journalHeadChecksum: evidence.journalHeadChecksum,
           projectionChecksum: evidence.projectionChecksum,
+          ...(knowledge ? { publicKnowledgeChecksum: knowledge.knowledgeChecksum } : {}),
           contextChecksum: result.contextChecksum,
           workerIdentityId: result.aiAttribution.workerIdentityId,
           availableCitationRefs: [...evidence.citations.keys()].sort(),

@@ -18,7 +18,9 @@ private operations, or personal data.
 - deterministic worker and transport seams that never invoke a model or tool;
 - an explicit-invocation public Mecky Module that answers from attributed
   discussion and reviewed citations, then prepares a citizen-owned signing
-  request without submitting it; and
+  request without submitting it;
+- a human admission event plus one checksum-bound public knowledge projection
+  shared by public Mecky and the read-only advisory Mitmachen surface; and
 - synthetic tests and architecture decisions describing the authority and
   privacy boundaries.
 
@@ -45,6 +47,7 @@ npm ci
 npm test
 npm run demo:synthetic
 npm run demo:public-mecky
+npm run demo:civic-outcome-loop
 ```
 
 The test suite is offline and deterministic. It uses generated keys only in

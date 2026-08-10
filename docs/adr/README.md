@@ -27,6 +27,10 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0011](./0011-cited-public-mecky-and-citizen-signing.md) — let public
   Mecky answer explicit questions from cited reviewed knowledge and let the
   resident sign an edited suggestion without submitting it.
+- [ADR 0012](./0012-citizen-brief-mitmachen-outcome-loop.md) — admit an exact
+  citizen signature through a human steward, then carry one reviewed public
+  projection through Citizen Brief, advisory Mitmachen, and the outcome
+  backlink without creating voting authority.
 
 ## Historical
 
