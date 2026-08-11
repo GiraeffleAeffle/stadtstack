@@ -93,6 +93,14 @@ Private operations owns those mounted files, persistent volume, backup and
 restore, Services, NetworkPolicies, immutable output digest, and apply receipt.
 See [ADR 0013](docs/adr/0013-permanent-roebel-runtime-and-publication-boundary.md).
 
+The same image provides `permanent-journal-backup-cli.ts`. Its `snapshot`
+command uses SQLite's online backup API and emits a checksum-bound receipt with
+the Case version, journal head, event and idempotency counts, byte length, and
+snapshot SHA-256. `restore` accepts only that immutable SHA-256 and an empty
+owned journal directory. Both commands reject symlinks, namespace drift,
+unsafe paths, sidecars, checksum drift, and an existing target. Upload and
+download remain private-operations responsibilities.
+
 The public verification workflow also checks dependency closure, forbidden
 paths/imports, secret-shaped text, license attribution, Markdown links, and
 Git object integrity. A check that is not configured is reported as a gap; it

@@ -141,6 +141,14 @@ The release is not ready to apply until private operations binds:
 - a rollback plan that preserves the retained journal and backup unless the
   operator explicitly selects the separately reviewed data-destruction step.
 
+The runtime image supplies a narrow snapshot/restore CLI for this purpose. A
+snapshot uses SQLite's online backup API and is bound to the namespace, Case,
+version, journal head, event and idempotency counts, byte length, and SHA-256.
+Restore requires that exact digest and a completely empty owned journal root.
+The CLI never contacts object storage; private operations owns the pinned
+transport image, versioned bucket/prefix, credentials, schedule, retention,
+readback, restore rehearsal, and monitoring.
+
 The Terraform/OpenTofu state may later move to its own dedicated, versioned
 Hetzner Object Storage backend. That migration is a separate infrastructure
 operation; it must not share this runtime's bucket, credentials, or lifecycle.
