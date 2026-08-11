@@ -31,6 +31,10 @@ publication, runtime operations, public relay writes, or civic effects.
   citizen signature through a human steward, then carry one reviewed public
   projection through Citizen Brief, advisory Mitmachen, and the outcome
   backlink without creating voting authority.
+- [ADR 0013](./0013-permanent-roebel-runtime-and-publication-boundary.md) —
+  publish one checksum-bound reviewed Case to Röbel-App and Public Mecky,
+  isolate the control plane, and require a retained single-writer journal plus
+  tested object-storage recovery for the permanent Talos release.
 
 ## Historical
 

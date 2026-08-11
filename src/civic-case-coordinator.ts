@@ -40,7 +40,7 @@ export type ActorRegistration = ActorBinding & {
 };
 
 export type CaseJurisdiction = {
-  scheme: "test";
+  scheme: "test" | "municipality";
   value: string;
 };
 
@@ -432,6 +432,8 @@ export type CivicCaseCoordinatorOptions = {
   actors?: readonly ActorRegistration[];
   actorRegistry?: readonly ActorRegistration[] | Readonly<Record<string, ActorRegistration>>;
   syntheticFixtureOnly?: boolean;
+  /** Explicitly separates disposable fixtures from signed public Nostr intake. */
+  discussionTrustMode?: "synthetic_fixture" | "verified_public_nostr";
   allowedKinds?: readonly number[];
   allowedSignerPubkeys?: readonly string[];
   fixturePubkey?: string;
@@ -455,6 +457,7 @@ type InternalCoordinatorOptions = {
   caseId: string;
   policyVersion: string;
   actors: ReadonlyMap<string, ActorRegistration>;
+  discussionTrustMode: "synthetic_fixture" | "verified_public_nostr";
   syntheticFixtureOnly: boolean;
   allowedKinds: readonly number[];
   allowedSignerPubkeys?: ReadonlySet<string>;
@@ -840,7 +843,7 @@ const SIGNED_SUGGESTION_EVENT_KEYS = new Set([
 const SIGNED_SUGGESTION_VERIFICATION_KEYS = new Set(["kind", "verified"]);
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const CASE_ID = /^urn:stadtstack:case:test:([A-Za-z0-9._~-]+):([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
+const CASE_ID = /^urn:stadtstack:case:(test|municipality):([A-Za-z0-9._~-]+):([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const SECRET_MARKER = /(?:nsec1|private[_ -]?key|secret[_ -]?key|password|credential|token|wallet|ballot|participant[_ -]?id|user[_ -]?id)/i;
 const SECRET_VALUE_MARKER = /(?:\bnsec1[a-z0-9-]{8,}\b|private[_ -]?key|secret[_ -]?key|password\s*[:=]|credential\s*[:=]|wallet\s*[:=]|ballot\s*[:=])/i;
@@ -1055,6 +1058,7 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     "actors",
     "actorRegistry",
     "syntheticFixtureOnly",
+    "discussionTrustMode",
     "allowedKinds",
     "allowedSignerPubkeys",
     "fixturePubkey",
@@ -1075,21 +1079,32 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
   );
   const scope = rawScope === undefined ? undefined : normalizeScope(rawScope, "scope_required");
   if (options.municipalityId !== undefined && scope && options.municipalityId !== scope.municipalityId) fail("scope_invalid");
+  const discussionTrustMode = options.discussionTrustMode ?? "synthetic_fixture";
+  if (discussionTrustMode !== "synthetic_fixture" && discussionTrustMode !== "verified_public_nostr") {
+    fail("discussion_trust_mode_invalid");
+  }
+  if (
+    (discussionTrustMode === "synthetic_fixture" && options.syntheticFixtureOnly === false) ||
+    (discussionTrustMode === "verified_public_nostr" && options.syntheticFixtureOnly === true)
+  ) fail("discussion_trust_mode_invalid");
   const jurisdictionObject = options.jurisdiction;
   if (jurisdictionObject !== undefined) {
     if (!isRecord(jurisdictionObject)) fail("jurisdiction_invalid");
     ownKeys(jurisdictionObject, new Set(["scheme", "value"]), "jurisdiction");
-    if (jurisdictionObject.scheme !== undefined && jurisdictionObject.scheme !== "test") fail("synthetic_case_namespace_forbidden");
+    if (jurisdictionObject.scheme !== undefined && jurisdictionObject.scheme !== "test" && jurisdictionObject.scheme !== "municipality") fail("jurisdiction_invalid");
   }
   const jurisdictionValue = nonEmptyString(
     options.jurisdictionValue ?? jurisdictionObject?.value ?? scope?.municipalityId ?? "synthetic",
     "jurisdiction_value_required",
   );
   if (!/^[A-Za-z0-9._~-]+$/.test(jurisdictionValue)) fail("jurisdiction_value_invalid");
-  const jurisdiction: CaseJurisdiction = { scheme: "test", value: jurisdictionValue };
+  const expectedScheme: CaseJurisdiction["scheme"] = discussionTrustMode === "synthetic_fixture" ? "test" : "municipality";
+  const jurisdictionScheme = jurisdictionObject?.scheme ?? expectedScheme;
+  if (jurisdictionScheme !== expectedScheme) fail("discussion_trust_namespace_invalid");
+  const jurisdiction: CaseJurisdiction = { scheme: jurisdictionScheme, value: jurisdictionValue };
   const configuredUuid = options.uuidV7 ?? options.caseUuidV7 ?? DEFAULT_SYNTHETIC_UUID_V7;
   if (typeof configuredUuid !== "string" || !UUID_V7.test(configuredUuid)) fail("case_id_invalid");
-  const derivedCaseId = `urn:stadtstack:case:test:${jurisdiction.value}:${configuredUuid}`;
+  const derivedCaseId = `urn:stadtstack:case:${jurisdiction.scheme}:${jurisdiction.value}:${configuredUuid}`;
   const configuredCaseId = options.canonicalCaseId ?? options.caseId ?? derivedCaseId;
   if (typeof configuredCaseId !== "string" || !CASE_ID.test(configuredCaseId) || configuredCaseId !== derivedCaseId) {
     fail("case_id_invalid");
@@ -1134,7 +1149,6 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
       if (!hasAgent || !hasReviewer) fail("department_registry_incomplete");
     }
   }
-  if (options.syntheticFixtureOnly === false) fail("synthetic_fixture_required");
   if (
     options.requireSignedSuggestionAdmission !== undefined &&
     typeof options.requireSignedSuggestionAdmission !== "boolean"
@@ -1159,7 +1173,8 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     caseId: configuredCaseId,
     policyVersion,
     actors,
-    syntheticFixtureOnly: true,
+    discussionTrustMode,
+    syntheticFixtureOnly: discussionTrustMode === "synthetic_fixture",
     allowedKinds: [...allowedKinds],
     allowedSignerPubkeys,
     requiredDepartmentIds,
@@ -1177,6 +1192,7 @@ function durableOptionsFingerprint(options: InternalCoordinatorOptions): string 
     policyVersion: options.policyVersion,
     jurisdiction: options.jurisdiction,
     scope: options.scope,
+    discussionTrustMode: options.discussionTrustMode,
     syntheticFixtureOnly: options.syntheticFixtureOnly,
     allowedKinds: options.allowedKinds,
     allowedSignerPubkeys: options.allowedSignerPubkeys ? [...options.allowedSignerPubkeys].sort() : null,
@@ -2153,13 +2169,17 @@ function normalizeAndVerifyDiscussion(
     fail("discussion_scope_invalid");
   }
   const fixtureMarkers = artifact.event.tags.filter((tag) => tag[0] === STADTSTACK_E2E_FIXTURE_TAG[0]);
-  if (fixtureMarkers.length !== 1 || fixtureMarkers[0]?.length !== 2 || fixtureMarkers[0]?.[1] !== STADTSTACK_E2E_FIXTURE_TAG[1]) {
-    fail("discussion_fixture_marker_required");
+  if (options.discussionTrustMode === "synthetic_fixture") {
+    if (fixtureMarkers.length !== 1 || fixtureMarkers[0]?.length !== 2 || fixtureMarkers[0]?.[1] !== STADTSTACK_E2E_FIXTURE_TAG[1]) {
+      fail("discussion_fixture_marker_required");
+    }
+  } else if (fixtureMarkers.length > 0) {
+    fail("discussion_fixture_marker_forbidden");
   }
   if (options.allowedSignerPubkeys && !options.allowedSignerPubkeys.has(artifact.event.pubkey)) {
     fail("discussion_signer_not_allowed");
   }
-  if (!options.allowedSignerPubkeys) {
+  if (!options.allowedSignerPubkeys && options.discussionTrustMode === "synthetic_fixture") {
     fail("discussion_signer_not_allowed");
   }
   const adapter = createNostrDiscussionAdapter({
