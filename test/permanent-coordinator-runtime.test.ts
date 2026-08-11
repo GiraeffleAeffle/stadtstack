@@ -44,6 +44,7 @@ function config(rootDir: string): PermanentCoordinatorRuntimeConfig {
     requiredDepartmentIds: [...departments],
     actors: actors(),
     publicActor: { actorId: "roebel:public-reader", actorClass: "public" },
+    publicMecky: { pubkey: "a".repeat(64), agentName: "mecky", nodeId: "roebel" },
     municipality: { id: municipalityId, name: "Röbel/Müritz", state: "Mecklenburg-Vorpommern", country: "DE" },
     decisionCaseSlug: sourceCaseId,
     publicCasePath: "/kommunen/roebel-mueritz/entscheidungen/marienfelder-strasse",

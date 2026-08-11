@@ -13,6 +13,7 @@ import {
   createPermanentPublicRuntime,
   type PermanentPublicRuntime,
 } from "./permanent-public-runtime.ts";
+import { createPermanentNostrIntake } from "./permanent-nostr-intake.ts";
 
 const ACTION_ROLES = new Set([
   "citizen", "case_steward", "department_agent", "department_reviewer", "participation_reviewer",
@@ -29,11 +30,12 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,119}$/;
 const DEPARTMENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const ACTOR_ID = /^[a-z0-9][a-z0-9:._-]{0,159}$/;
 const POLICY_VERSION = /^[a-z0-9][a-z0-9._-]{0,79}$/;
+const HEX_64 = /^[0-9a-f]{64}$/;
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const HOST = /^(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|localhost|127\.0\.0\.1|::1)$/;
 const TOP_LEVEL_KEYS = [
   "schemaVersion", "scope", "canonicalCaseId", "policyVersion", "journal", "requiredDepartmentIds",
-  "actors", "publicActor", "municipality", "decisionCaseSlug", "publicCasePath", "owner", "publicHttp", "controlHttp",
+  "actors", "publicActor", "publicMecky", "municipality", "decisionCaseSlug", "publicCasePath", "owner", "publicHttp", "controlHttp",
 ] as const;
 
 export type PermanentCoordinatorRuntimeConfig = {
@@ -45,6 +47,7 @@ export type PermanentCoordinatorRuntimeConfig = {
   requiredDepartmentIds: string[];
   actors: ActorRegistration[];
   publicActor: { actorId: string; actorClass: "public" };
+  publicMecky: { pubkey: string; agentName: string; nodeId: string };
   municipality: { id: string; name: string; state: string; country: string };
   decisionCaseSlug: string;
   publicCasePath: string;
@@ -147,6 +150,16 @@ function validateConfig(config: PermanentCoordinatorRuntimeConfig): void {
   if (config.publicActor.actorClass !== "public" || !actorIds.has(config.publicActor.actorId)) throw new Error("permanent_runtime_public_actor_invalid");
   const registeredPublic = config.actors.find((actor) => actor.actorId === config.publicActor.actorId);
   if (registeredPublic?.actorClass !== "public") throw new Error("permanent_runtime_public_actor_invalid");
+  exactKeys(config.publicMecky, ["pubkey", "agentName", "nodeId"], "permanent_runtime_public_mecky_invalid");
+  if (
+    !HEX_64.test(text(config.publicMecky.pubkey, "permanent_runtime_public_mecky_invalid")) ||
+    !SLUG.test(text(config.publicMecky.agentName, "permanent_runtime_public_mecky_invalid")) ||
+    !SLUG.test(text(config.publicMecky.nodeId, "permanent_runtime_public_mecky_invalid"))
+  ) throw new Error("permanent_runtime_public_mecky_invalid");
+  if (
+    config.actors.find((actor) => actor.actorId === "roebel:nostr-ingestor")?.actorClass !== "citizen" ||
+    config.actors.find((actor) => actor.actorId === "roebel:case-steward")?.actorClass !== "case_steward"
+  ) throw new Error("permanent_runtime_nostr_actors_invalid");
   exactKeys(config.municipality, ["id", "name", "state", "country"], "permanent_runtime_municipality_invalid");
   if (config.municipality.id !== municipalityId || !text(config.municipality.name, "permanent_runtime_municipality_invalid") || !text(config.municipality.state, "permanent_runtime_municipality_invalid") || !/^[A-Z]{2}$/.test(config.municipality.country)) throw new Error("permanent_runtime_municipality_invalid");
   if (config.publicCasePath !== `/kommunen/${municipalityId}/entscheidungen/${sourceCaseId}`) throw new Error("permanent_runtime_scope_invalid");
@@ -325,6 +338,14 @@ export function createPermanentCoordinatorRuntime(
     throw error;
   }
   const controlHosts = new Set(config.controlHttp.allowedHosts.map((host) => host.toLowerCase()));
+  const nostrIntake = createPermanentNostrIntake({
+    scope: structuredClone(config.scope),
+    canonicalCaseId: config.canonicalCaseId,
+    policyVersion: config.policyVersion,
+    discussionActorId: "roebel:nostr-ingestor",
+    caseStewardActorId: "roebel:case-steward",
+    publicMecky: structuredClone(config.publicMecky),
+  });
   const controlServer = createServer((request, response) => {
     void (async () => {
       const host = requestHost(request.headers.host);
@@ -332,7 +353,10 @@ export function createPermanentCoordinatorRuntime(
       const url = request.url ?? "";
       if (url.includes("?") || url.includes("#")) return send(response, 400, { error: "invalid_request" });
       if (request.method === "GET" && (url === "/healthz" || url === "/readyz")) return send(response, 200, { status: url === "/healthz" ? "ok" : "ready", mode: "actor_bound_control" });
-      if (url !== "/v1/commands") return send(response, 404, { error: "not_found" });
+      const commandRoute = url === "/v1/commands";
+      const discussionRoute = url === "/v1/nostr/discussions";
+      const suggestionRoute = url === "/v1/nostr/suggestions/admit";
+      if (!commandRoute && !discussionRoute && !suggestionRoute) return send(response, 404, { error: "not_found" });
       if (request.method !== "POST") return send(response, 405, { error: "method_not_allowed" });
       const actorId = authorizedActor(request, digests);
       if (!actorId) return send(response, 401, { error: "unauthorized" });
@@ -343,17 +367,24 @@ export function createPermanentCoordinatorRuntime(
       } catch {
         return send(response, 413, { error: "body_too_large" });
       }
-      let commandValue: unknown;
+      let requestValue: unknown;
       try {
-        commandValue = JSON.parse(raw) as unknown;
+        requestValue = JSON.parse(raw) as unknown;
       } catch {
         return send(response, 400, { error: "invalid_json" });
       }
-      if (!isPlainRecord(commandValue) || !isPlainRecord(commandValue.actorBinding) || commandValue.actorBinding.actorId !== actorId) {
+      if (commandRoute && (!isPlainRecord(requestValue) || !isPlainRecord(requestValue.actorBinding) || requestValue.actorBinding.actorId !== actorId)) {
         return send(response, 401, { error: "actor_binding_mismatch" });
       }
+      if (discussionRoute && actorId !== nostrIntake.discussionActorId) return send(response, 403, { error: "actor_forbidden" });
+      if (suggestionRoute && actorId !== nostrIntake.caseStewardActorId) return send(response, 403, { error: "actor_forbidden" });
       try {
-        return send(response, 200, coordinator.handle(commandValue as CommandEnvelope));
+        const commandValue = commandRoute
+          ? requestValue as CommandEnvelope
+          : discussionRoute
+            ? nostrIntake.discussionCommand(requestValue)
+            : nostrIntake.suggestionAdmissionCommand(requestValue);
+        return send(response, 200, coordinator.handle(commandValue));
       } catch {
         return send(response, 422, { error: "command_rejected" });
       }

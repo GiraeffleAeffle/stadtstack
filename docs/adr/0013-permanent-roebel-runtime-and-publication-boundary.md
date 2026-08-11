@@ -85,6 +85,27 @@ may not impersonate another actor. The control Adapter may only call the
 coordinator's existing `handle` operation; it does not receive public
 publication or infrastructure capabilities.
 
+The Röbel Nostr bridge uses two exact actor-bound control routes:
+
+- `POST /v1/nostr/discussions` belongs only to `roebel:nostr-ingestor`. It
+  accepts the exact NIP-01 citizen event, requires the configured Public Mecky
+  `p` tag plus the municipality/source/canonical Case tags, preserves reviewed
+  relay references, and records the discussion idempotently before Mecky
+  answers.
+- `POST /v1/nostr/suggestions/admit` belongs only to
+  `roebel:case-steward`. It accepts the original discussion, Public Mecky's
+  signed reply, and the citizen-signed candidate. It verifies Mecky's pinned
+  pubkey and agent identity, one to three checksum-bound HTTPS evidence tags,
+  the reply and Case bindings, and the final citizen signature. A successful
+  call is therefore an explicit human admission, never a consequence of the
+  model answer or citizen publication alone.
+
+The Public Mecky watcher may hold only its inference key, its node identity
+secret, and the `roebel:nostr-ingestor` token. It cannot receive the steward or
+administration credentials. If discussion intake is unavailable, it leaves the
+question unanswered and retries rather than publishing an answer detached from
+the canonical Case.
+
 Röbel-App, Stadtstack, and private operations stay separate:
 
 - `Roebel-App` owns the discussion UI, Mitmachen UI, Nostr integration, and

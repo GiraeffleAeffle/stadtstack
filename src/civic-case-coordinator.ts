@@ -2168,7 +2168,9 @@ function normalizeAndVerifyDiscussion(
   if (artifact.event.tags.some((tag) => (tag[0] === "municipality_id" || tag[0] === "municipalityId" || tag[0] === "case_id" || tag[0] === "caseId"))) {
     fail("discussion_scope_invalid");
   }
-  const fixtureMarkers = artifact.event.tags.filter((tag) => tag[0] === STADTSTACK_E2E_FIXTURE_TAG[0]);
+  const fixtureMarkers = artifact.event.tags.filter(
+    (tag) => tag[0] === STADTSTACK_E2E_FIXTURE_TAG[0] && tag[1] === STADTSTACK_E2E_FIXTURE_TAG[1],
+  );
   if (options.discussionTrustMode === "synthetic_fixture") {
     if (fixtureMarkers.length !== 1 || fixtureMarkers[0]?.length !== 2 || fixtureMarkers[0]?.[1] !== STADTSTACK_E2E_FIXTURE_TAG[1]) {
       fail("discussion_fixture_marker_required");
@@ -2189,7 +2191,10 @@ function normalizeAndVerifyDiscussion(
   });
   let normalized: DiscussionArtifact;
   try {
-    normalized = adapter.normalize(artifactToNip01Event(artifact) as NostrEvent);
+    normalized = adapter.normalize({
+      event: artifactToNip01Event(artifact) as NostrEvent,
+      relayRefs: [...artifact.event.relayRefs],
+    });
   } catch (error) {
     if (error instanceof Error) throw error;
     throw new Error("discussion_event_invalid");

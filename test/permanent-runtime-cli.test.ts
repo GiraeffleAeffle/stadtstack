@@ -34,6 +34,7 @@ function runtimeConfig(rootDir: string): PermanentCoordinatorRuntimeConfig {
     requiredDepartmentIds: departments,
     actors,
     publicActor: { actorId: "roebel:public-reader", actorClass: "public" },
+    publicMecky: { pubkey: "a".repeat(64), agentName: "mecky", nodeId: "roebel" },
     municipality: { id: "roebel-mueritz", name: "Röbel/Müritz", state: "Mecklenburg-Vorpommern", country: "DE" },
     decisionCaseSlug: "marienfelder-strasse",
     publicCasePath: "/kommunen/roebel-mueritz/entscheidungen/marienfelder-strasse",

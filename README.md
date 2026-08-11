@@ -69,6 +69,16 @@ server has no Ingress contract and rejects a token whose actor does not match
 the command envelope. Tokens are read from a distinct regular JSON file,
 hashed in memory, and never placed in the public runtime configuration.
 
+The control server also exposes two closed Nostr bridge routes. The
+`roebel:nostr-ingestor` actor may call `POST /v1/nostr/discussions` with the
+signature-valid civic discussion and its relay references. Only the distinct
+`roebel:case-steward` actor may call
+`POST /v1/nostr/suggestions/admit`. Admission verifies the original citizen
+discussion, the configured Public Mecky identity and its cited signed answer,
+and the final citizen signature as one chain before invoking the coordinator.
+Neither route publishes to Nostr, runs a model, admits automatically, or grants
+proposal/vote authority.
+
 The production container recipe is
 [`container/permanent-runtime/Dockerfile`](container/permanent-runtime/Dockerfile).
 It requires a reviewed immutable Node base digest and contains neither a city
