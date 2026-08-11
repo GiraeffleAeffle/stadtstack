@@ -1,10 +1,13 @@
+# syntax=docker/dockerfile:1.7
+
 ARG NODE_BASE_IMAGE=docker.io/library/node
 ARG NODE_BASE_DIGEST
 
 FROM ${NODE_BASE_IMAGE}@${NODE_BASE_DIGEST} AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts --omit=dev && npm cache clean --force
+RUN --mount=type=bind,from=npm-cache,source=.,target=/npm-cache,ro \
+    npm ci --ignore-scripts --omit=dev --offline --cache=/npm-cache --logs-dir=/tmp/npm-logs
 
 FROM ${NODE_BASE_IMAGE}@${NODE_BASE_DIGEST} AS runtime
 ARG SOURCE_REVISION
