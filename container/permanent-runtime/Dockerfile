@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 ARG NODE_BASE_IMAGE=docker.io/library/node
 ARG NODE_BASE_DIGEST
 
