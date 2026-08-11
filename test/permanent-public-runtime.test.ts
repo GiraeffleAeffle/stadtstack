@@ -116,6 +116,7 @@ export function config(project: () => PublicKnowledgeProjectionV1) {
       bindHost: "127.0.0.1" as const,
       port: 0,
       allowedHosts: ["127.0.0.1", "localhost", "roebel-stadtstack.agentcart.eu"],
+      allowedOrigins: ["https://roebel.app", "http://localhost:3000"],
     },
   };
 }
@@ -139,6 +140,21 @@ test("projects one reviewed Case into the exact federation, Mitmachen and artifa
     const indexResponse = await fetch(`${origin}/api/federation/v1/municipalities/roebel-mueritz/cases`);
     assert.equal(indexResponse.status, 200);
     assert.deepEqual(await indexResponse.json(), snapshot.index);
+
+    const corsResponse = await fetch(`${origin}/api/federation/v1/municipalities/roebel-mueritz/cases`, {
+      headers: { origin: "https://roebel.app" },
+    });
+    assert.equal(corsResponse.status, 200);
+    assert.equal(corsResponse.headers.get("access-control-allow-origin"), "https://roebel.app");
+    assert.equal((await fetch(`${origin}/api/federation/v1/municipalities/roebel-mueritz/cases`, {
+      headers: { origin: "https://outside.example" },
+    })).status, 403);
+    const preflight = await fetch(`${origin}/api/federation/v1/municipalities/roebel-mueritz/cases`, {
+      method: "OPTIONS",
+      headers: { origin: "https://roebel.app" },
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("access-control-allow-methods"), "GET, OPTIONS");
 
     const manifestResponse = await fetch(`${origin}/api/federation/v1/municipalities/roebel-mueritz/cases/marienfelder-strasse/manifest`);
     assert.equal(manifestResponse.status, 200);

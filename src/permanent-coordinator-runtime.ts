@@ -53,7 +53,7 @@ export type PermanentCoordinatorRuntimeConfig = {
     label: string;
     kind: "municipal_body" | "committee" | "local_advisory_board" | "department" | "operator_role" | "independent_evaluator" | "other";
   };
-  publicHttp: { bindHost: "127.0.0.1" | "0.0.0.0"; port: number; allowedHosts: string[] };
+  publicHttp: { bindHost: "127.0.0.1" | "0.0.0.0"; port: number; allowedHosts: string[]; allowedOrigins: string[] };
   controlHttp: { bindHost: "127.0.0.1" | "0.0.0.0"; port: number; allowedHosts: string[]; maxBodyBytes: number };
 };
 
@@ -152,7 +152,7 @@ function validateConfig(config: PermanentCoordinatorRuntimeConfig): void {
   if (config.publicCasePath !== `/kommunen/${municipalityId}/entscheidungen/${sourceCaseId}`) throw new Error("permanent_runtime_scope_invalid");
   exactKeys(config.owner, ["id", "label", "kind"], "permanent_runtime_owner_invalid");
   if (!ACTOR_ID.test(text(config.owner.id, "permanent_runtime_owner_invalid")) || !text(config.owner.label, "permanent_runtime_owner_invalid") || !OWNER_KINDS.has(config.owner.kind)) throw new Error("permanent_runtime_owner_invalid");
-  exactKeys(config.publicHttp, ["bindHost", "port", "allowedHosts"], "permanent_runtime_http_invalid");
+  exactKeys(config.publicHttp, ["bindHost", "port", "allowedHosts", "allowedOrigins"], "permanent_runtime_http_invalid");
   exactKeys(config.controlHttp, ["bindHost", "port", "allowedHosts", "maxBodyBytes"], "permanent_runtime_http_invalid");
   for (const http of [config.publicHttp, config.controlHttp]) {
     if ((http.bindHost !== "127.0.0.1" && http.bindHost !== "0.0.0.0") || !Number.isInteger(http.port) || http.port < 0 || http.port > 65_535 || !Array.isArray(http.allowedHosts) || http.allowedHosts.length === 0) {
@@ -161,6 +161,19 @@ function validateConfig(config: PermanentCoordinatorRuntimeConfig): void {
     exactArray(http.allowedHosts, "permanent_runtime_http_invalid");
     const normalizedHosts = http.allowedHosts.map((host) => text(host, "permanent_runtime_http_invalid").toLowerCase());
     if (normalizedHosts.some((host) => !HOST.test(host)) || new Set(normalizedHosts).size !== normalizedHosts.length) throw new Error("permanent_runtime_http_invalid");
+  }
+  exactArray(config.publicHttp.allowedOrigins, "permanent_runtime_http_invalid");
+  if (config.publicHttp.allowedOrigins.length === 0 || new Set(config.publicHttp.allowedOrigins).size !== config.publicHttp.allowedOrigins.length) throw new Error("permanent_runtime_http_invalid");
+  for (const origin of config.publicHttp.allowedOrigins) {
+    if (typeof origin !== "string") throw new Error("permanent_runtime_http_invalid");
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error("permanent_runtime_http_invalid");
+    }
+    const local = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
+    if (parsed.origin !== origin || parsed.username || parsed.password || (parsed.protocol !== "https:" && !(local && parsed.protocol === "http:"))) throw new Error("permanent_runtime_http_invalid");
   }
   if (config.publicHttp.port !== 0 && config.publicHttp.port === config.controlHttp.port) throw new Error("permanent_http_ports_not_distinct");
   if (!Number.isSafeInteger(config.controlHttp.maxBodyBytes) || config.controlHttp.maxBodyBytes < 1_024 || config.controlHttp.maxBodyBytes > 1_048_576) throw new Error("permanent_runtime_http_invalid");

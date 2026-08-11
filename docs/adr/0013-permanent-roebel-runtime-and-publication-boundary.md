@@ -44,7 +44,10 @@ The public projection is adapted to Röbel-App's pinned
 `civic_federation_case_index_v1`, `civic_federation_manifest_v1`, and
 `civic_case_stage_snapshot_v1` contracts. The Case, manifest, stage map,
 Mitmachen page, and Public Mecky therefore have one source of truth. Root-
-relative URLs remain confined to the configured Stadtstack origin.
+relative URLs remain confined to the configured Stadtstack origin. Browser
+access is limited to an exact HTTPS origin allowlist (with explicit loopback
+origins permitted for local development); preflight permits only `GET` and
+`OPTIONS`, and the cluster-internal command server never emits CORS headers.
 
 ### The visible civic flow
 

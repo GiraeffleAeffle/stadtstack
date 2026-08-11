@@ -190,6 +190,7 @@ export type PermanentPublicRuntimeConfig = {
     bindHost: "127.0.0.1" | "0.0.0.0";
     port: number;
     allowedHosts: readonly string[];
+    allowedOrigins: readonly string[];
   };
   now?: () => string;
 };
@@ -595,7 +596,7 @@ function validateConfig(config: PermanentPublicRuntimeConfig): void {
   if (typeof config.knowledge.project !== "function" || utilTypes.isProxy(config.knowledge.project)) throw new Error("permanent_public_config_invalid");
   exactKeys(config.municipality, ["id", "name", "state", "country"], "permanent_public_config_invalid");
   exactKeys(config.owner, ["id", "label", "kind"], "permanent_public_config_invalid");
-  exactKeys(config.http, ["bindHost", "port", "allowedHosts"], "permanent_public_config_invalid");
+  exactKeys(config.http, ["bindHost", "port", "allowedHosts", "allowedOrigins"], "permanent_public_config_invalid");
   if (config.now !== undefined && (typeof config.now !== "function" || utilTypes.isProxy(config.now))) throw new Error("permanent_public_config_invalid");
   if (!CASE_SLUG.test(config.municipality.id) || !CASE_SLUG.test(config.decisionCaseSlug)) throw new Error("permanent_public_config_invalid");
   if (!config.municipality.name.trim() || config.municipality.name !== config.municipality.name.trim() || !config.municipality.state.trim() || config.municipality.state !== config.municipality.state.trim() || !COUNTRY.test(config.municipality.country)) throw new Error("permanent_public_config_invalid");
@@ -608,6 +609,19 @@ function validateConfig(config: PermanentPublicRuntimeConfig): void {
   exactArray(config.http.allowedHosts, "permanent_public_config_invalid");
   if (config.http.allowedHosts.length === 0 || new Set(config.http.allowedHosts.map((host) => host.toLowerCase())).size !== config.http.allowedHosts.length) throw new Error("permanent_public_config_invalid");
   for (const host of config.http.allowedHosts) if (typeof host !== "string" || !HOST.test(host.toLowerCase())) throw new Error("permanent_public_config_invalid");
+  exactArray(config.http.allowedOrigins, "permanent_public_config_invalid");
+  if (config.http.allowedOrigins.length === 0 || new Set(config.http.allowedOrigins).size !== config.http.allowedOrigins.length) throw new Error("permanent_public_config_invalid");
+  for (const origin of config.http.allowedOrigins) {
+    if (typeof origin !== "string") throw new Error("permanent_public_config_invalid");
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error("permanent_public_config_invalid");
+    }
+    const local = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
+    if (parsed.origin !== origin || parsed.username || parsed.password || (parsed.protocol !== "https:" && !(local && parsed.protocol === "http:"))) throw new Error("permanent_public_config_invalid");
+  }
 }
 
 function requestHost(header: string | undefined): string | null {
@@ -653,11 +667,16 @@ export function createPermanentPublicRuntime(config: PermanentPublicRuntimeConfi
     policyVersion: config.policyVersion,
     publicCasePath: config.publicCasePath,
     owner: structuredClone(config.owner),
-    http: { ...structuredClone(config.http), allowedHosts: [...config.http.allowedHosts] },
+    http: {
+      ...structuredClone(config.http),
+      allowedHosts: [...config.http.allowedHosts],
+      allowedOrigins: [...config.http.allowedOrigins],
+    },
     ...(config.now === undefined ? {} : { now: config.now }),
   };
   const emptyGeneratedAt = iso((config.now ?? (() => new Date().toISOString()))(), "permanent_public_clock_invalid");
   const allowedHosts = new Set(config.http.allowedHosts.map((host) => host.toLowerCase()));
+  const allowedOrigins = new Set(config.http.allowedOrigins);
   const snapshot = () => buildSnapshot(config, emptyGeneratedAt);
   snapshot();
 
@@ -665,10 +684,25 @@ export function createPermanentPublicRuntime(config: PermanentPublicRuntimeConfi
     try {
       const host = requestHost(request.headers.host);
       if (!host || !allowedHosts.has(host)) return sendJson(response, 400, { error: "invalid_host" });
+      const origin = request.headers.origin;
+      if (origin !== undefined) {
+        if (typeof origin !== "string" || !allowedOrigins.has(origin)) return sendJson(response, 403, { error: "invalid_origin" });
+        response.setHeader("access-control-allow-origin", origin);
+        response.setHeader("vary", "Origin");
+      }
       const url = request.url ?? "";
       if (url.includes("?") || url.includes("#")) return sendJson(response, 400, { error: "invalid_request" });
+      const known = url === "/healthz" || url === "/readyz" || url === "/mitmachen" || url === config.publicCasePath || url.startsWith("/api/federation/v1/");
+      if (request.method === "OPTIONS" && origin !== undefined) {
+        if (!known) return sendJson(response, 404, { error: "not_found" });
+        response.writeHead(204, {
+          "access-control-allow-methods": "GET, OPTIONS",
+          "access-control-max-age": "600",
+          "content-length": "0",
+        });
+        return response.end();
+      }
       if (request.method !== "GET") {
-        const known = url === "/healthz" || url === "/readyz" || url === "/mitmachen" || url === config.publicCasePath || url.startsWith("/api/federation/v1/");
         return sendJson(response, known ? 405 : 404, { error: known ? "method_not_allowed" : "not_found" });
       }
       if (url === "/healthz" || url === "/readyz") return sendJson(response, 200, { status: url === "/healthz" ? "ok" : "ready", mode: "reviewed_public_read_only" });

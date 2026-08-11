@@ -38,7 +38,7 @@ function runtimeConfig(rootDir: string): PermanentCoordinatorRuntimeConfig {
     decisionCaseSlug: "marienfelder-strasse",
     publicCasePath: "/kommunen/roebel-mueritz/entscheidungen/marienfelder-strasse",
     owner: { id: "stadt-roebel-mueritz", label: "Stadt Röbel/Müritz", kind: "municipal_body" },
-    publicHttp: { bindHost: "127.0.0.1", port: 18080, allowedHosts: ["127.0.0.1", "localhost"] },
+    publicHttp: { bindHost: "127.0.0.1", port: 18080, allowedHosts: ["127.0.0.1", "localhost"], allowedOrigins: ["https://roebel.app"] },
     controlHttp: { bindHost: "127.0.0.1", port: 18081, allowedHosts: ["127.0.0.1", "localhost"], maxBodyBytes: 262_144 },
   };
 }
