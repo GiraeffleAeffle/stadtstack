@@ -49,17 +49,29 @@ export function parsePermanentJournalBackupArgs(argv: readonly string[]): Perman
   return { ...common, command: "restore", expectedSnapshotSha256 };
 }
 
+export async function runPermanentJournalBackup(args: PermanentJournalBackupArgs) {
+  const keys = Object.keys(args).sort().join(",");
+  const expectedKeys = args.command === "snapshot"
+    ? "command,namespace,rootDir,snapshotPath"
+    : "command,expectedSnapshotSha256,namespace,rootDir,snapshotPath";
+  if (keys !== expectedKeys) fail("args_invalid");
+  const input = {
+    rootDir: args.rootDir,
+    namespace: args.namespace,
+    snapshotPath: args.snapshotPath,
+  };
+  return args.command === "snapshot"
+    ? createPermanentJournalSnapshot(input)
+    : restorePermanentJournalSnapshot({
+        ...input,
+        expectedSnapshotSha256: args.expectedSnapshotSha256!,
+      });
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   try {
     const args = parsePermanentJournalBackupArgs(argv);
-    const receipt = args.command === "snapshot"
-      ? await createPermanentJournalSnapshot(args)
-      : await restorePermanentJournalSnapshot({
-          rootDir: args.rootDir,
-          namespace: args.namespace,
-          snapshotPath: args.snapshotPath,
-          expectedSnapshotSha256: args.expectedSnapshotSha256!,
-        });
+    const receipt = await runPermanentJournalBackup(args);
     process.stdout.write(`${JSON.stringify(receipt)}\n`);
     return 0;
   } catch (error) {
