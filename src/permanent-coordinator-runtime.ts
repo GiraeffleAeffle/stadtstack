@@ -14,6 +14,7 @@ import {
   type PermanentPublicRuntime,
 } from "./permanent-public-runtime.ts";
 import { createPermanentNostrIntake } from "./permanent-nostr-intake.ts";
+import { completePermanentSyntheticE2e, projectPermanentSyntheticE2e } from "./permanent-synthetic-e2e.ts";
 
 const ACTION_ROLES = new Set([
   "citizen", "case_steward", "department_agent", "department_reviewer", "participation_reviewer",
@@ -62,6 +63,7 @@ export type PermanentCoordinatorRuntimeConfig = {
 
 export type PermanentCoordinatorRuntimeOptions = {
   actorTokens: Readonly<Record<string, string>>;
+  syntheticE2e?: boolean;
 };
 
 export type PermanentCoordinatorRuntime = {
@@ -198,7 +200,12 @@ export function parsePermanentCoordinatorRuntimeConfig(value: unknown): Permanen
 }
 
 function tokenDigests(config: PermanentCoordinatorRuntimeConfig, options: PermanentCoordinatorRuntimeOptions): Map<string, Buffer> {
-  exactKeys(options, ["actorTokens"], "permanent_actor_tokens_invalid");
+  exactKeys(
+    options,
+    options.syntheticE2e === undefined ? ["actorTokens"] : ["actorTokens", "syntheticE2e"],
+    "permanent_actor_tokens_invalid",
+  );
+  if (options.syntheticE2e !== undefined && typeof options.syntheticE2e !== "boolean") throw new Error("permanent_actor_tokens_invalid");
   if (!isPlainRecord(options.actorTokens)) throw new Error("permanent_actor_tokens_invalid");
   const expectedActors = config.actors.filter((actor) => ACTION_ROLES.has(actor.actorClass)).map((actor) => actor.actorId).sort();
   const actualActors = Object.keys(options.actorTokens).sort();
@@ -356,7 +363,9 @@ export function createPermanentCoordinatorRuntime(
       const commandRoute = url === "/v1/commands";
       const discussionRoute = url === "/v1/nostr/discussions";
       const suggestionRoute = url === "/v1/nostr/suggestions/admit";
-      if (!commandRoute && !discussionRoute && !suggestionRoute) return send(response, 404, { error: "not_found" });
+      const syntheticE2eRoute = options.syntheticE2e === true && url === "/v1/e2e/complete";
+      const syntheticE2eViewRoute = options.syntheticE2e === true && url === "/v1/e2e/view";
+      if (!commandRoute && !discussionRoute && !suggestionRoute && !syntheticE2eRoute && !syntheticE2eViewRoute) return send(response, 404, { error: "not_found" });
       if (request.method !== "POST") return send(response, 405, { error: "method_not_allowed" });
       const actorId = authorizedActor(request, digests);
       if (!actorId) return send(response, 401, { error: "unauthorized" });
@@ -378,7 +387,25 @@ export function createPermanentCoordinatorRuntime(
       }
       if (discussionRoute && actorId !== nostrIntake.discussionActorId) return send(response, 403, { error: "actor_forbidden" });
       if (suggestionRoute && actorId !== nostrIntake.caseStewardActorId) return send(response, 403, { error: "actor_forbidden" });
+      if (syntheticE2eRoute && actorId !== nostrIntake.caseStewardActorId) return send(response, 403, { error: "actor_forbidden" });
+      if (syntheticE2eViewRoute && actorId !== nostrIntake.caseStewardActorId) return send(response, 403, { error: "actor_forbidden" });
       try {
+        if (syntheticE2eRoute) {
+          if (!isPlainRecord(requestValue) || Reflect.ownKeys(requestValue).length !== 0) throw new Error("synthetic_e2e_input_invalid");
+          return send(response, 200, completePermanentSyntheticE2e(coordinator, {
+            caseId: config.canonicalCaseId,
+            policyVersion: config.policyVersion,
+          }));
+        }
+        if (syntheticE2eViewRoute) {
+          if (!isPlainRecord(requestValue) || Reflect.ownKeys(requestValue).length !== 1) throw new Error("synthetic_e2e_view_invalid");
+          const profile = requestValue.profile;
+          if (profile !== "public" && profile !== "administration" && profile !== "council") throw new Error("synthetic_e2e_view_invalid");
+          return send(response, 200, projectPermanentSyntheticE2e(coordinator, {
+            caseId: config.canonicalCaseId,
+            policyVersion: config.policyVersion,
+          }, profile));
+        }
         const commandValue = commandRoute
           ? requestValue as CommandEnvelope
           : discussionRoute

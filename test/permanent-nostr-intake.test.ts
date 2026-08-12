@@ -180,7 +180,7 @@ async function post(origin: string, path: string, actorId: string, token: string
 test("bridges a signed Röbel discussion and Mecky-backed citizen suggestion through distinct actor boundaries", async () => {
   const root = mkdtempSync(join(tmpdir(), "stadtstack-permanent-nostr-intake-"));
   const tokens = actorTokens();
-  const runtime = createPermanentCoordinatorRuntime(runtimeConfig(root), { actorTokens: tokens });
+  const runtime = createPermanentCoordinatorRuntime(runtimeConfig(root), { actorTokens: tokens, syntheticE2e: true });
   try {
     const address = await runtime.start();
     const origin = `http://${address.control.host}:${address.control.port}`;
@@ -230,6 +230,36 @@ test("bridges a signed Röbel discussion and Mecky-backed citizen suggestion thr
     });
     if (replay.status !== 200) throw new Error(await replay.text());
     assert.deepEqual(await replay.json(), receipt);
+
+    const completed = await post(origin, "/v1/e2e/complete", "roebel:case-steward", tokens["roebel:case-steward"]!, {});
+    if (completed.status !== 200) throw new Error(await completed.text());
+    const completedReceipt = await completed.json() as {
+      caseVersion: number;
+      reviewedDepartmentCount: number;
+      formalVoteStarted: boolean;
+      externalPublication: boolean;
+      projectionChecksums: Record<string, string>;
+    };
+    assert.equal(completedReceipt.caseVersion, 30);
+    assert.equal(completedReceipt.reviewedDepartmentCount, 8);
+    assert.equal(completedReceipt.formalVoteStarted, false);
+    assert.equal(completedReceipt.externalPublication, false);
+    assert.deepEqual(Object.keys(completedReceipt.projectionChecksums).sort(), ["administration", "council", "public"]);
+
+    const completedReplay = await post(origin, "/v1/e2e/complete", "roebel:case-steward", tokens["roebel:case-steward"]!, {});
+    assert.equal(completedReplay.status, 200);
+    assert.deepEqual(await completedReplay.json(), completedReceipt);
+
+    const [publicView, administrationView, councilView] = await Promise.all([
+      post(origin, "/v1/e2e/view", "roebel:case-steward", tokens["roebel:case-steward"]!, { profile: "public" }),
+      post(origin, "/v1/e2e/view", "roebel:case-steward", tokens["roebel:case-steward"]!, { profile: "administration" }),
+      post(origin, "/v1/e2e/view", "roebel:case-steward", tokens["roebel:case-steward"]!, { profile: "council" }),
+    ]);
+    assert.deepEqual([publicView.status, administrationView.status, councilView.status], [200, 200, 200]);
+    const [publicJson, administrationJson, councilJson] = await Promise.all([publicView.json(), administrationView.json(), councilView.json()]);
+    assert.doesNotMatch(JSON.stringify(publicJson), /privateEvidenceRefs|assignedAgentActorId|reviewerActorId/);
+    assert.match(JSON.stringify(administrationJson), /privateEvidenceRefs/);
+    assert.doesNotMatch(JSON.stringify(councilJson), /privateEvidenceRefs|assignedAgentActorId|reviewerActorId/);
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });

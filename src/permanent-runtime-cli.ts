@@ -18,6 +18,7 @@ export type PermanentRuntimeCliArgs = {
   command: "serve";
   configPath: string;
   actorTokensPath: string;
+  syntheticE2e: boolean;
 };
 
 function fail(code: string): never {
@@ -31,13 +32,14 @@ function jsonPath(value: unknown): string {
 
 export function parsePermanentRuntimeCliArgs(argv: readonly string[]): PermanentRuntimeCliArgs {
   if (
-    !Array.isArray(argv) || argv.length !== 5 || argv[0] !== "serve" ||
-    argv[1] !== "--config" || argv[3] !== "--actor-tokens"
+    !Array.isArray(argv) || (argv.length !== 5 && argv.length !== 6) || argv[0] !== "serve" ||
+    argv[1] !== "--config" || argv[3] !== "--actor-tokens" ||
+    (argv.length === 6 && argv[5] !== "--enable-synthetic-e2e")
   ) fail("args_invalid");
   const configPath = jsonPath(argv[2]);
   const actorTokensPath = jsonPath(argv[4]);
   if (configPath === actorTokensPath) fail("paths_not_distinct");
-  return Object.freeze({ command: "serve", configPath, actorTokensPath });
+  return Object.freeze({ command: "serve", configPath, actorTokensPath, syntheticE2e: argv.length === 6 });
 }
 
 async function readJson(path: string, limit: number): Promise<unknown> {
@@ -84,7 +86,7 @@ export async function readPermanentRuntimeInputs(args: PermanentRuntimeCliArgs):
   ]);
   return {
     config: parsePermanentCoordinatorRuntimeConfig(configValue),
-    options: { actorTokens: actorTokens(tokenValue) },
+    options: { actorTokens: actorTokens(tokenValue), syntheticE2e: args.syntheticE2e },
   };
 }
 

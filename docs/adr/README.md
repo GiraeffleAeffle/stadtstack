@@ -39,6 +39,10 @@ publication, runtime operations, public relay writes, or civic effects.
   run Public Mecky on a pinned embedded Pi agent core behind the closed worker
   contract while keeping relay transport, reviewed knowledge, and civic
   authority outside the harness.
+- [ADR 0015](./0015-isolated-roebel-e2e-sandbox-and-promotion.md) — prove the
+  full workflow in a disposable synthetic Talos namespace with separate
+  Citizen and Agent relays, then promote only configuration and reviewed
+  artifacts into the permanent release.
 
 ## Historical
 

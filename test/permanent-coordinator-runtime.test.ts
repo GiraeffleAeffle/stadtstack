@@ -110,6 +110,7 @@ test("keeps writes on an actor-bound internal server and replays them durably", 
     const controlOrigin = `http://${firstAddress.control.host}:${firstAddress.control.port}`;
     try {
       assert.equal((await fetch(`${publicOrigin}/v1/commands`, { method: "POST" })).status, 404);
+      assert.equal((await fetch(`${controlOrigin}/v1/e2e/complete`, { method: "POST" })).status, 404);
       assert.equal((await command(controlOrigin, "roebel:nostr-ingestor", "wrong-token-that-is-long-enough-000000", retryCommand)).status, 401);
       assert.equal((await command(controlOrigin, "roebel:case-steward", actorTokens["roebel:nostr-ingestor"]!, retryCommand)).status, 401);
 

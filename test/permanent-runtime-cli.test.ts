@@ -57,7 +57,11 @@ test("accepts only the closed serve/config/actor-token file interface", () => {
     command: "serve",
     configPath: "/etc/stadtstack/runtime.json",
     actorTokensPath: "/var/run/secrets/stadtstack/actor-tokens.json",
+    syntheticE2e: false,
   });
+  assert.equal(parsePermanentRuntimeCliArgs([
+    "serve", "--config", "/etc/stadtstack/runtime.json", "--actor-tokens", "/var/run/secrets/stadtstack/actor-tokens.json", "--enable-synthetic-e2e",
+  ]).syntheticE2e, true);
   assert.throws(() => parsePermanentRuntimeCliArgs(["serve"]), /stadtstack_permanent_cli_args_invalid/);
   assert.throws(() => parsePermanentRuntimeCliArgs(["serve", "--config", "relative.json", "--actor-tokens", "/tmp/tokens.json"]), /stadtstack_permanent_cli_path_invalid/);
   assert.throws(() => parsePermanentRuntimeCliArgs(["serve", "--config", "/tmp/same.json", "--actor-tokens", "/tmp/same.json"]), /stadtstack_permanent_cli_paths_not_distinct/);
@@ -72,7 +76,7 @@ test("reads exact regular JSON files and never places secret values in the publi
     const tokens = actorTokens(config);
     writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
     writeFileSync(tokenPath, JSON.stringify(tokens), { mode: 0o600 });
-    const result = await readPermanentRuntimeInputs({ command: "serve", configPath, actorTokensPath: tokenPath });
+    const result = await readPermanentRuntimeInputs({ command: "serve", configPath, actorTokensPath: tokenPath, syntheticE2e: false });
     assert.deepEqual(result.config, config);
     assert.deepEqual(result.options.actorTokens, tokens);
     assert.doesNotMatch(JSON.stringify(result.config), /00-s{8}|actor-tokens/i);
@@ -80,7 +84,7 @@ test("reads exact regular JSON files and never places secret values in the publi
     const linkPath = join(root, "tokens-link.json");
     symlinkSync(tokenPath, linkPath);
     await assert.rejects(
-      readPermanentRuntimeInputs({ command: "serve", configPath, actorTokensPath: linkPath }),
+      readPermanentRuntimeInputs({ command: "serve", configPath, actorTokensPath: linkPath, syntheticE2e: false }),
       /stadtstack_permanent_cli_file_invalid/,
     );
   } finally {
