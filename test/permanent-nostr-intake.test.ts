@@ -80,7 +80,7 @@ function answer(sourceDiscussion: ReturnType<typeof discussion>) {
       ["stadtstack-case", canonicalCaseId],
       ["evidence", `sha256:${"a".repeat(64)}`, "https://roebel.app/mitmachen/marienfelder-strasse"],
     ],
-    content: "Geprüfte Hinweise sprechen für eine sichere Querungsvariante; eine amtliche Entscheidung ist das nicht.",
+    content: "Geprüfte Hinweise sprechen für eine sichere Querungsvariante; eine amtliche Entscheidung ist das nicht.\n\nGeprüfte Quelle: Öffentliche Falldokumentation.",
   }, meckySecret);
 }
 
@@ -211,6 +211,15 @@ test("bridges a signed Röbel discussion and Mecky-backed citizen suggestion thr
       signedSuggestion: candidate,
     });
     assert.equal(rejected.status, 422);
+
+    const controlCharacterAnswer = finalizeEvent({ ...sourceAnswer, content: "Geprüfte Antwort\rVerbotene Steuersequenz" }, meckySecret);
+    const rejectedControlCharacter = await post(origin, "/v1/nostr/suggestions/admit", "roebel:case-steward", tokens["roebel:case-steward"]!, {
+      expectedCaseVersion: 2,
+      sourceDiscussion,
+      sourceAnswer: controlCharacterAnswer,
+      signedSuggestion: candidate,
+    });
+    assert.equal(rejectedControlCharacter.status, 422);
 
     const admitted = await post(origin, "/v1/nostr/suggestions/admit", "roebel:case-steward", tokens["roebel:case-steward"]!, {
       expectedCaseVersion: 2,

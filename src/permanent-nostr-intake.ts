@@ -85,6 +85,17 @@ function nonEmpty(value: unknown, code: string, max = 2_000): string {
   return value;
 }
 
+function answerContent(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value !== value.trim() ||
+    value.length === 0 ||
+    value.length > 2_000 ||
+    /[\u0000-\u0009\u000b-\u001f\u007f]/.test(value)
+  ) fail("answer_content_invalid");
+  return value;
+}
+
 function exactEvent(value: unknown, code: string): NostrEvent {
   exactKeys(value, EVENT_KEYS, code);
   if (
@@ -167,7 +178,7 @@ function meckyAnswer(
     !ANSWER_RECEIPT.test(receipt) ||
     event.tags.length !== expectedPrefix.length + expectedMiddle.length + evidence.length ||
     JSON.stringify(event.tags) !== JSON.stringify([...expectedPrefix, ...expectedMiddle, ...evidence]) ||
-    nonEmpty(event.content, "answer_content_invalid", 2_000).length === 0
+    answerContent(event.content).length === 0
   ) fail("answer_binding_invalid");
   return receipt;
 }
