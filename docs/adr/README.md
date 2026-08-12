@@ -35,6 +35,10 @@ publication, runtime operations, public relay writes, or civic effects.
   publish one checksum-bound reviewed Case to Röbel-App and Public Mecky,
   isolate the control plane, and require a retained single-writer journal plus
   tested object-storage recovery for the permanent Talos release.
+- [ADR 0014](./0014-pi-agent-harness-behind-closed-companion-interface.md) —
+  run Public Mecky on a pinned embedded Pi agent core behind the closed worker
+  contract while keeping relay transport, reviewed knowledge, and civic
+  authority outside the harness.
 
 ## Historical
 
