@@ -43,6 +43,10 @@ publication, runtime operations, public relay writes, or civic effects.
   full workflow in a disposable synthetic Talos namespace with separate
   Citizen and Agent relays, then promote only configuration and reviewed
   artifacts into the permanent release.
+- [ADR 0016](./0016-flux-pull-based-application-delivery.md) — build and push
+  each application digest once, promote it through private reviewed desired
+  state, and let a namespace-scoped read-only Flux pull path reconcile it
+  without giving application CI cluster authority.
 
 ## Historical
 
