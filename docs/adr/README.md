@@ -31,6 +31,22 @@ publication, runtime operations, public relay writes, or civic effects.
   citizen signature through a human steward, then carry one reviewed public
   projection through Citizen Brief, advisory Mitmachen, and the outcome
   backlink without creating voting authority.
+- [ADR 0013](./0013-permanent-roebel-runtime-and-publication-boundary.md) —
+  publish one checksum-bound reviewed Case to Röbel-App and Public Mecky,
+  isolate the control plane, and require a retained single-writer journal plus
+  tested object-storage recovery for the permanent Talos release.
+- [ADR 0014](./0014-pi-agent-harness-behind-closed-companion-interface.md) —
+  run Public Mecky on a pinned embedded Pi agent core behind the closed worker
+  contract while keeping relay transport, reviewed knowledge, and civic
+  authority outside the harness.
+- [ADR 0015](./0015-isolated-roebel-e2e-sandbox-and-promotion.md) — prove the
+  full workflow in a disposable synthetic Talos namespace with separate
+  Citizen and Agent relays, then promote only configuration and reviewed
+  artifacts into the permanent release.
+- [ADR 0016](./0016-flux-pull-based-application-delivery.md) — build and push
+  each application digest once, promote it through private reviewed desired
+  state, and let a namespace-scoped read-only Flux pull path reconcile it
+  without giving application CI cluster authority.
 
 ## Historical
 

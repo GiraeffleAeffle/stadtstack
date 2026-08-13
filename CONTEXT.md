@@ -72,6 +72,20 @@ scope, and inputs are attributable. It cannot serve as a human review
 attestation or Authority transition.
 _Avoid_: autonomous decision, municipal answer, anonymous content
 
+**Agent harness**:
+A replaceable runtime that executes a bounded reasoning loop for one prepared
+Agent contribution, including provider streaming, cancellation, limits,
+session events, and result handoff. It receives no civic command or
+publication authority merely because it can call a model.
+_Avoid_: municipal workflow engine, source of truth, autonomous authority
+
+**Companion transport adapter**:
+The narrow integration that carries an explicit request and an attributable
+answer between a city surface and a Mecky context. It owns relay or HTTP
+transport, identity binding, retry, and idempotency; it does not own reasoning,
+reviewed knowledge, or the Civic case.
+_Avoid_: agent harness, chatbot brain, civic coordinator
+
 ## Relationships
 
 A **Discussion** may be shaped into a **Suggestion**. A **Suggestion** may
@@ -93,6 +107,12 @@ and the **Mitmachen view** consume that same version and checksum. A
 **Reviewed public outcome** can close the public information loop back to the
 signed Discussion, while any formal governance vote remains a separate
 Authority transition.
+
+An **Agent harness** may produce an **Agent contribution** from an exact,
+role-scoped task. A **Companion transport adapter** may carry that task and
+result, but neither may change the Case journal, admit a suggestion, approve a
+Department package, publish an institutional outcome, or create an Authority
+transition.
 
 ## Boundary and companion language
 

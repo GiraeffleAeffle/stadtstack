@@ -21,8 +21,11 @@ private operations, or personal data.
   request without submitting it;
 - a human admission event plus one checksum-bound public knowledge projection
   shared by public Mecky and the read-only advisory Mitmachen surface; and
-- synthetic tests and architecture decisions describing the authority and
-  privacy boundaries.
+- a production NIP-01 intake mode, actor-bound internal command server,
+  SQLite-WAL coordinator composition, and reviewed-public federation server
+  for the separately operated permanent Röbel release; and
+- synthetic and production-boundary tests plus architecture decisions
+  describing the authority, persistence, and privacy boundaries.
 
 The checked-in fixture uses `sample-municipality` and `sample-case` identifiers.
 All fixture identities and content are synthetic. A fixture is not a city
@@ -51,9 +54,52 @@ npm run demo:civic-outcome-loop
 ```
 
 The test suite is offline and deterministic. It uses generated keys only in
-process-local synthetic tests; no key is read from the environment or written
-to disk. There is no network call, model request, relay publication, database
-write, deployment, or civic effect.
+process-local tests; no key is read from the environment or written to disk.
+Durability tests write only to a freshly created operating-system temporary
+directory and remove it afterward. There is no external network call, model
+request, relay publication, deployment, or civic effect.
+
+## Permanent runtime boundary
+
+`createPermanentCoordinatorRuntime` composes the existing two-operation
+coordinator with the SQLite journal, one read-only public server, and one
+separate actor-bound control server. The public server exposes reviewed
+federation, Mitmachen, Case, health, and readiness routes only. The control
+server has no Ingress contract and rejects a token whose actor does not match
+the command envelope. Tokens are read from a distinct regular JSON file,
+hashed in memory, and never placed in the public runtime configuration.
+
+The control server also exposes two closed Nostr bridge routes. The
+`roebel:nostr-ingestor` actor may call `POST /v1/nostr/discussions` with the
+signature-valid civic discussion and its relay references. Only the distinct
+`roebel:case-steward` actor may call
+`POST /v1/nostr/suggestions/admit`. Admission verifies the original citizen
+discussion, the configured Public Mecky identity and its cited signed answer,
+and the final citizen signature as one chain before invoking the coordinator.
+Neither route publishes to Nostr, runs a model, admits automatically, or grants
+proposal/vote authority.
+
+The production container recipe is
+[`container/permanent-runtime/Dockerfile`](container/permanent-runtime/Dockerfile).
+It requires a reviewed immutable Node base digest and contains neither a city
+configuration nor a Secret. The runtime accepts exactly:
+
+```text
+serve --config /etc/stadtstack/runtime.json \
+  --actor-tokens /var/run/secrets/stadtstack/actor-tokens.json
+```
+
+Private operations owns those mounted files, persistent volume, backup and
+restore, Services, NetworkPolicies, immutable output digest, and apply receipt.
+See [ADR 0013](docs/adr/0013-permanent-roebel-runtime-and-publication-boundary.md).
+
+The same image provides `permanent-journal-backup-cli.ts`. Its `snapshot`
+command uses SQLite's online backup API and emits a checksum-bound receipt with
+the Case version, journal head, event and idempotency counts, byte length, and
+snapshot SHA-256. `restore` accepts only that immutable SHA-256 and an empty
+owned journal directory. Both commands reject symlinks, namespace drift,
+unsafe paths, sidecars, checksum drift, and an existing target. Upload and
+download remain private-operations responsibilities.
 
 The public verification workflow also checks dependency closure, forbidden
 paths/imports, secret-shaped text, license attribution, Markdown links, and
