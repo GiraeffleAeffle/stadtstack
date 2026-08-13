@@ -65,6 +65,24 @@ function discussion() {
   }, citizenSecret);
 }
 
+function discussionWithArgumentTreeRoot() {
+  const meckyPubkey = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: "key" }, meckySecret).pubkey;
+  return finalizeEvent({
+    kind: 1,
+    created_at: 1_786_454_410,
+    tags: [
+      ["p", meckyPubkey],
+      ["t", "stadtstack-civic-discussion"],
+      ["municipality", municipalityId],
+      ["case", sourceCaseId],
+      ["stadtstack-case", canonicalCaseId],
+      ["stance", "root"],
+      ["argument-root", "self"],
+    ],
+    content: "@Mecky Welche geprüften Informationen gehören in diesen Pro/Contra-Baum?",
+  }, citizenSecret);
+}
+
 function answer(sourceDiscussion: ReturnType<typeof discussion>) {
   const receiptId = `urn:stadtstack:mecky-answer:${"b".repeat(64)}`;
   return finalizeEvent({
@@ -299,6 +317,28 @@ test("rejects unknown intake fields and a Mecky key that is not the configured p
       relayRefs: [],
     });
     assert.equal(rejected.status, 422);
+  } finally {
+    await runtime.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("admits the exact signed discussion root used by the Röbel pro/con feed", async () => {
+  const root = mkdtempSync(join(tmpdir(), "stadtstack-permanent-nostr-tree-root-"));
+  const tokens = actorTokens();
+  const runtime = createPermanentCoordinatorRuntime(runtimeConfig(root), { actorTokens: tokens });
+  try {
+    const address = await runtime.start();
+    const response = await post(
+      `http://${address.control.host}:${address.control.port}`,
+      "/v1/nostr/discussions",
+      "roebel:nostr-ingestor",
+      tokens["roebel:nostr-ingestor"]!,
+      { event: discussionWithArgumentTreeRoot(), relayRefs: ["wss://relay.roebel.app"] },
+    );
+    const responseBody = await response.json() as { caseVersion?: number; error?: string };
+    assert.equal(response.status, 200, JSON.stringify(responseBody));
+    assert.equal(responseBody.caseVersion, 2);
   } finally {
     await runtime.close();
     rmSync(root, { recursive: true, force: true });

@@ -123,16 +123,20 @@ function singleTag(event: NostrEvent, name: string): string | null {
 }
 
 function civicDiscussion(event: NostrEvent, config: PermanentNostrIntakeConfig): void {
-  const expected = [
+  const required = [
     ["p", config.publicMecky.pubkey],
     ["t", "stadtstack-civic-discussion"],
     ["municipality", config.scope.municipalityId],
     ["case", config.scope.sourceCaseId],
     ["stadtstack-case", config.canonicalCaseId],
   ];
+  const treeRoot = [
+    ["stance", "root"],
+    ["argument-root", "self"],
+  ];
   if (
-    event.tags.length !== expected.length ||
-    JSON.stringify(event.tags) !== JSON.stringify(expected) ||
+    (JSON.stringify(event.tags) !== JSON.stringify(required) &&
+      JSON.stringify(event.tags) !== JSON.stringify([...required, ...treeRoot])) ||
     !/@mecky\b/i.test(event.content)
   ) fail("discussion_binding_invalid");
 }
