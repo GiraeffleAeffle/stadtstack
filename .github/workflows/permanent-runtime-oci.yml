@@ -1,0 +1,124 @@
+name: Stadtstack permanent runtime OCI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/permanent-runtime-oci.yml"
+      - "container/permanent-runtime/**"
+      - "scripts/verify-permanent-runtime-oci.mjs"
+      - "scripts/verify-permanent-runtime-oci.test.mjs"
+      - "src/**"
+      - "LICENSE"
+      - "NOTICE"
+      - "package.json"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: permanent-runtime-oci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build one verified CRI-ready runtime archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      NODE_BASE_DIGEST: sha256:a17d50af28002a160548bd4225b3cfcb12c5efcb171f79e68758f2885fb1b066
+      MAX_CONTEXT_BYTES: "8388608"
+      MAX_NPM_CACHE_BYTES: "536870912"
+      MAX_ARTIFACT_BYTES: "134217728"
+    steps:
+      - name: Check out the exact source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REVISION }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+
+      - name: Prepare the exact bounded context and npm cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/context/container/permanent-runtime" "$RUNNER_TEMP/npm-cache"
+          cp package.json package-lock.json LICENSE NOTICE "$RUNNER_TEMP/context/"
+          cp -a src "$RUNNER_TEMP/context/src"
+          cp container/permanent-runtime/Dockerfile "$RUNNER_TEMP/context/container/permanent-runtime/Dockerfile"
+          npm ci --ignore-scripts --cache "$RUNNER_TEMP/npm-cache"
+          rm -rf node_modules
+          context_bytes="$(du -sb "$RUNNER_TEMP/context" | cut -f1)"
+          cache_bytes="$(du -sb "$RUNNER_TEMP/npm-cache" | cut -f1)"
+          test "$context_bytes" -le "$MAX_CONTEXT_BYTES"
+          test "$cache_bytes" -le "$MAX_NPM_CACHE_BYTES"
+          printf 'context_bytes=%s\ncache_bytes=%s\n' "$context_bytes" "$cache_bytes"
+
+      - name: Verify the source and OCI contract
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run typecheck
+          npm run lint
+          npm test
+          npm run verify:public
+          node --test scripts/verify-permanent-runtime-oci.test.mjs
+
+      - name: Set up isolated bounded Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: |
+            image=moby/buildkit:buildx-stable-1
+            network=host
+          buildkitd-flags: --oci-worker-gc --oci-worker-gc-keepstorage 2147483648
+
+      - name: Build one linux/amd64 CRI-ready OCI archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_date_epoch="$(git show -s --format=%ct "$SOURCE_REVISION")"
+          import_name="stadtstack.local/roebel-staging-lab/stadtstack-runtime:source-$SOURCE_REVISION"
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            --file "$RUNNER_TEMP/context/container/permanent-runtime/Dockerfile" \
+            --build-context "npm-cache=$RUNNER_TEMP/npm-cache" \
+            --build-arg "NODE_BASE_DIGEST=$NODE_BASE_DIGEST" \
+            --build-arg "SOURCE_REVISION=$SOURCE_REVISION" \
+            --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
+            --output "type=oci,dest=/tmp/stadtstack-runtime.oci.tar,name=$import_name,annotation.io.containerd.image.name=$import_name,rewrite-timestamp=true" \
+            "$RUNNER_TEMP/context"
+          artifact_bytes="$(stat -c %s /tmp/stadtstack-runtime.oci.tar)"
+          test "$artifact_bytes" -le "$MAX_ARTIFACT_BYTES"
+          printf 'artifact_bytes=%s\n' "$artifact_bytes"
+
+      - name: Verify the content-addressed result
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir /tmp/stadtstack-runtime-oci
+          tar -xf /tmp/stadtstack-runtime.oci.tar -C /tmp/stadtstack-runtime-oci
+          node scripts/verify-permanent-runtime-oci.mjs \
+            /tmp/stadtstack-runtime-oci \
+            "$SOURCE_REVISION" \
+            /tmp/stadtstack-runtime.receipt.json
+          sha256sum /tmp/stadtstack-runtime.oci.tar > /tmp/stadtstack-runtime.oci.tar.sha256
+
+      - name: Upload the private short-lived build result
+        uses: actions/upload-artifact@v4
+        with:
+          name: stadtstack-runtime-${{ env.SOURCE_REVISION }}
+          path: |
+            /tmp/stadtstack-runtime.oci.tar
+            /tmp/stadtstack-runtime.oci.tar.sha256
+            /tmp/stadtstack-runtime.receipt.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
