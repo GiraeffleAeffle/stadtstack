@@ -34,6 +34,24 @@ A scoped request, response, evidence, and review unit owned by one subject
 area within a civic case.
 _Avoid_: task ticket, public answer
 
+**Administration work request**:
+A deterministic, checksum-bound rendering of one Department package for a
+replaceable municipal workspace. Preparing it performs no external write and
+does not change the Civic Case.
+_Avoid_: submitted task, official assignment, stage transition
+
+**Workspace handoff receipt**:
+An observation that one exact administration work request was acknowledged by
+an external workspace and task reference. It is continuity evidence, not a
+review attestation or civic authority.
+_Avoid_: approval, accepted answer, official decision
+
+**Administration response return**:
+A checksum-bound response from the external task that separates public-safe
+summary and citations from private evidence and workspace identifiers. It can
+become only a Department draft until a different human reviewer attests it.
+_Avoid_: published answer, reviewed response, Citizen Brief
+
 **Reviewed citizen brief**:
 A public-safe view of a civic case containing only reviewed, redacted
 information and its provenance.
@@ -84,15 +102,23 @@ A normal post may be promoted into a **Topic** discussion. A resident may
 adopt and sign a **Topic suggestion candidate** without creating a Case. Only
 an accountable **Human Case admission** creates the **Civic case** and admits
 that exact candidate for review. Neither the signature nor the admission is a
-formal proposal or an authority transition. A **Civic case** is understood through its
-**Department packages**; packages that have been reviewed may contribute to a
-**Reviewed citizen brief**. **Advisory participation** and **Council
+formal proposal or an authority transition. A **Civic case** is understood
+through its **Department packages**; packages that have been reviewed may
+contribute to a **Reviewed citizen brief**. **Advisory participation** and **Council
 rehearsal** can inform deliberation about that brief, but neither creates an
 **Authority transition**. Formal submission, publication, or voting remains an
 explicit act of the **Official source** and its city owner. Accepted changes
 and corrections form the private **Case journal**. A reviewed artifact may be
 represented as a **Public exchange record**, but that record does not reveal
 the Case journal or transfer authority.
+
+A Department package may be rendered as an **Administration work request**
+for openDesk, OpenProject, or another Stage Tool. A **Workspace handoff
+receipt** binds the external task without changing Case state. An
+**Administration response return** becomes a private Department draft only
+through the assigned Department role; an independent review attestation is
+still required before its public-safe fields can enter the Reviewed citizen
+brief.
 
 A **Citizen-signed suggestion candidate** becomes an **Admitted citizen
 suggestion** only through an accountable human Case event. Its reviewed public

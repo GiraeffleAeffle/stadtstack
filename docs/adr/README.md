@@ -34,6 +34,9 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0013](./0013-human-topic-proposal-case-admission.md) — keep the public
   journey Topic-first, then let one accountable human atomically create the
   deterministically identified Case and admit the exact citizen signature.
+- [ADR 0014](./0014-provider-neutral-administration-workspace-round-trip.md) —
+  bind one Department package to a replaceable municipal workspace and accept
+  its exact return only as a draft that still needs independent human review.
 
 ## Historical
 
