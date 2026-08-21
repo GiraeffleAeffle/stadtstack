@@ -21,6 +21,9 @@ private operations, or personal data.
   request without submitting it;
 - a human admission event plus one checksum-bound public knowledge projection
   shared by public Mecky and the read-only advisory Mitmachen surface; and
+- a provider-neutral administration-workspace Adapter that prepares an exact
+  Department task and binds its returned response only as a private draft for
+  independent review; and
 - synthetic tests and architecture decisions describing the authority and
   privacy boundaries.
 

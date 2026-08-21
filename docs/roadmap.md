@@ -17,5 +17,23 @@ Topic-bound until a resident signs a proposal. A registered human steward then
 uses one idempotent admission command to create the Case and preserve that
 Topic provenance before any department or openDesk round trip begins.
 
+The next accepted administration seam renders one exact Department package as
+an effect-free, idempotent workspace request. A separately authorized
+openDesk, OpenProject, or municipal-workspace connector may return an
+acknowledgement and response bound to that request. Stadtstack accepts the
+return only as a private Department draft; the existing independent reviewer
+attestation remains the sole path to Citizen Brief eligibility.
+
+Next implementation slices are:
+
+1. expose the prepared request and handoff state in the Röbel administration
+   journey without creating a second Case timeline;
+2. implement one exact, idempotent openDesk connector behind the public
+   contract, with credentials and endpoint policy kept in private operations;
+3. project accepted Department responses into the existing Citizen Brief and
+   the same public knowledge checksum consumed by Mecky and Mitmachen; and
+4. add correction and withdrawal UX before any formal governance or treasury
+   integration.
+
 Formal city authority, live operations, second-city federation, and public
 relay publication require new owners, ADRs, and exact external-effects gates.
