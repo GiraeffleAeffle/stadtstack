@@ -36,6 +36,7 @@ const EVENT_TYPES = new Set([
   "case_created_v1",
   "discussion_recorded_v1",
   "signed_suggestion_admitted_v1",
+  "signed_topic_suggestion_admitted_v1",
   "department_package_assigned_v1",
   "department_draft_recorded_v1",
   "department_review_attested_v1",

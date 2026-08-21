@@ -31,6 +31,9 @@ publication, runtime operations, public relay writes, or civic effects.
   citizen signature through a human steward, then carry one reviewed public
   projection through Citizen Brief, advisory Mitmachen, and the outcome
   backlink without creating voting authority.
+- [ADR 0013](./0013-human-topic-proposal-case-admission.md) — keep the public
+  journey Topic-first, then let one accountable human atomically create the
+  deterministically identified Case and admit the exact citizen signature.
 
 ## Historical
 
