@@ -52,6 +52,12 @@ summary and citations from private evidence and workspace identifiers. It can
 become only a Department draft until a different human reviewer attests it.
 _Avoid_: published answer, reviewed response, Citizen Brief
 
+**Citizen Brief readiness**:
+An effect-free, checksum-bound assessment of whether all eight current
+Department responses have independent accepted reviews. It may prepare an
+exact steward command, but it does not append or publish the brief.
+_Avoid_: automatic publication, eighth-response trigger, agent approval
+
 **Reviewed citizen brief**:
 A public-safe view of a civic case containing only reviewed, redacted
 information and its provenance.
@@ -118,7 +124,9 @@ receipt** binds the external task without changing Case state. An
 **Administration response return** becomes a private Department draft only
 through the assigned Department role; an independent review attestation is
 still required before its public-safe fields can enter the Reviewed citizen
-brief.
+brief. **Citizen Brief readiness** then exposes explicit blockers or prepares
+one exact command for a human Case steward; the coordinator alone derives the
+brief into the Case journal.
 
 A **Citizen-signed suggestion candidate** becomes an **Admitted citizen
 suggestion** only through an accountable human Case event. Its reviewed public

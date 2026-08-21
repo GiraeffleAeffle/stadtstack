@@ -24,14 +24,19 @@ acknowledgement and response bound to that request. Stadtstack accepts the
 return only as a private Department draft; the existing independent reviewer
 attestation remains the sole path to Citizen Brief eligibility.
 
+The accepted Citizen Brief readiness seam now projects those independent
+reviews into explicit Case-bound blockers or one effect-free steward command.
+Only the coordinator can apply that command and derive the brief used by the
+shared public knowledge projection.
+
 Next implementation slices are:
 
 1. expose the prepared request and handoff state in the Röbel administration
    journey without creating a second Case timeline;
 2. implement one exact, idempotent openDesk connector behind the public
    contract, with credentials and endpoint policy kept in private operations;
-3. project accepted Department responses into the existing Citizen Brief and
-   the same public knowledge checksum consumed by Mecky and Mitmachen; and
+3. expose the resulting current Citizen Brief through the same Röbel journey
+   and public knowledge checksum consumed by Mecky and Mitmachen; and
 4. add correction and withdrawal UX before any formal governance or treasury
    integration.
 

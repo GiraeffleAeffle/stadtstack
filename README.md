@@ -23,7 +23,9 @@ private operations, or personal data.
   shared by public Mecky and the read-only advisory Mitmachen surface; and
 - a provider-neutral administration-workspace Adapter that prepares an exact
   Department task and binds its returned response only as a private draft for
-  independent review; and
+  independent review;
+- an effect-free Citizen Brief readiness Adapter that exposes exact Department
+  blockers and prepares one checksum-bound human steward command; and
 - synthetic tests and architecture decisions describing the authority and
   privacy boundaries.
 

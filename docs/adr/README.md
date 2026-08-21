@@ -37,6 +37,9 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0014](./0014-provider-neutral-administration-workspace-round-trip.md) —
   bind one Department package to a replaceable municipal workspace and accept
   its exact return only as a draft that still needs independent human review.
+- [ADR 0015](./0015-human-citizen-brief-derivation-readiness.md) — expose
+  checksum-bound Department review readiness, then let only a human Case
+  steward prepare the exact Citizen Brief derivation command.
 
 ## Historical
 
