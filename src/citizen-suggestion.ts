@@ -51,3 +51,48 @@ export type CitizenSignedSuggestionV1 = {
   authorityBinding: "none";
   submittedToCivicWorkflow: false;
 };
+
+/**
+ * A public Mecky draft that is still bound to a Röbel topic, not a Civic Case.
+ * The absence of a Case identifier is intentional: only the later human
+ * admission transition may allocate the Case.
+ */
+export type PublicMeckyTopicSuggestionDraftV1 = {
+  schemaVersion: "public_mecky_topic_suggestion_draft_v1";
+  draftId: string;
+  sourceAnswerReceiptId: string;
+  sourceDiscussionId: string;
+  sourceDiscussionRef: string;
+  municipalityId: string;
+  topicId: string;
+  citizenPubkey: string;
+  title: string;
+  summary: string;
+  entryState: "citizen_signature_required";
+  authorityBinding: "none";
+  submittedToCivicWorkflow: false;
+};
+
+/** Exact public candidate emitted by the Röbel citizen-signing seam. */
+export type CitizenSignedTopicSuggestionV1 = {
+  schemaVersion: "citizen_signed_topic_suggestion_v1";
+  candidateId: string;
+  signerPubkey: string;
+  draft: PublicMeckyTopicSuggestionDraftV1;
+  event: {
+    id: string;
+    pubkey: string;
+    created_at: number;
+    kind: 1;
+    tags: string[][];
+    content: string;
+    sig: string;
+  };
+  verification: {
+    kind: "nostr_nip01";
+    verified: true;
+  };
+  entryState: "awaiting_human_case_admission";
+  authorityBinding: "none";
+  submittedToCivicWorkflow: false;
+};

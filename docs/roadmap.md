@@ -12,5 +12,10 @@ This clean public lineage starts with the smallest reviewable vertical slices:
    Adapter; and
 7. prove replay, correction, deletion, and reference-surface evidence locally.
 
+The next accepted product seam keeps ordinary Röbel posts and discussions
+Topic-bound until a resident signs a proposal. A registered human steward then
+uses one idempotent admission command to create the Case and preserve that
+Topic provenance before any department or openDesk round trip begins.
+
 Formal city authority, live operations, second-city federation, and public
 relay publication require new owners, ADRs, and exact external-effects gates.

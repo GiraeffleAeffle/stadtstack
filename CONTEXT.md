@@ -18,6 +18,12 @@ concern. A suggestion has no legal effect and does not advance a formal civic
 stage by itself.
 _Avoid_: motion, adopted measure, formal proposal
 
+**Topic**:
+A municipality-scoped public thread that can connect ordinary posts,
+discussion, and arguments before a Civic Case exists. A Topic is navigation
+and provenance, not a Case stage or authority state.
+_Avoid_: case, proposal, docket
+
 **Civic case**:
 A bounded question or concern that is being coordinated, evidenced, reviewed,
 and projected for a city community.
@@ -74,9 +80,11 @@ _Avoid_: autonomous decision, municipal answer, anonymous content
 
 ## Relationships
 
-A **Discussion** may be shaped into a **Suggestion**. A **Suggestion** may
-organize a **Civic case** for review, but it is not a formal proposal or an
-authority transition. A **Civic case** is understood through its
+A normal post may be promoted into a **Topic** discussion. A resident may
+adopt and sign a **Topic suggestion candidate** without creating a Case. Only
+an accountable **Human Case admission** creates the **Civic case** and admits
+that exact candidate for review. Neither the signature nor the admission is a
+formal proposal or an authority transition. A **Civic case** is understood through its
 **Department packages**; packages that have been reviewed may contribute to a
 **Reviewed citizen brief**. **Advisory participation** and **Council
 rehearsal** can inform deliberation about that brief, but neither creates an
@@ -121,9 +129,24 @@ as an exact NIP-01 event. It awaits human Case admission and has not been
 published, submitted, voted on, or accepted into the Case journal.
 _Avoid_: automatic proposal, submitted motion, Case event
 
+**Topic suggestion candidate**:
+A citizen-signed suggestion whose source discussion, Mecky answer, and
+municipality remain bound to a Topic while no Civic Case identifier exists.
+The same candidate deterministically maps to one prospective Case identity,
+but only a human steward may perform the admission.
+_Avoid_: admitted suggestion, pre-created Case, autonomous intake
+
+**Human Case admission**:
+The accountable, idempotent steward transition that independently verifies a
+Topic discussion, cited Mecky answer, and citizen signature before atomically
+creating one Civic Case and admitting the candidate. It starts coordination,
+not a formal municipal procedure.
+_Avoid_: AI admission, proposal approval, automatic administration request
+
 **Admitted citizen suggestion**:
 A citizen-signed suggestion candidate whose exact signature, discussion,
-municipality, Case, and Mecky receipt bindings were checked and then admitted
+municipality, Topic or Case provenance, and Mecky receipt bindings were
+checked and then admitted
 to the Case journal by an accountable human steward. Admission starts review;
 it does not create a formal proposal, publication, or vote.
 _Avoid_: approved proposal, automatic intake, adopted motion

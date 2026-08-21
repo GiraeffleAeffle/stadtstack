@@ -12,9 +12,18 @@ import {
   verifyEvent,
   type Event as NostrEvent,
 } from "nostr-tools/pure";
-import type { CitizenSignedSuggestionV1 } from "./citizen-suggestion.ts";
+import type {
+  CitizenSignedSuggestionV1,
+  CitizenSignedTopicSuggestionV1,
+} from "./citizen-suggestion.ts";
+import {
+  verifyTopicCaseAdmission,
+} from "./topic-case-admission.ts";
 
-export type { CitizenSignedSuggestionV1 } from "./citizen-suggestion.ts";
+export type {
+  CitizenSignedSuggestionV1,
+  CitizenSignedTopicSuggestionV1,
+} from "./citizen-suggestion.ts";
 
 /** The only authority binding admitted by the municipality-neutral tracer. */
 export type AuthorityBinding = "none";
@@ -72,6 +81,20 @@ export type AdmitSignedSuggestionCommand = CommandEnvelopeBase & {
   commandType: "admit_signed_suggestion_v1";
   payload: {
     signedSuggestion: CitizenSignedSuggestionV1;
+  };
+};
+
+/**
+ * The human-owned transition from a case-free topic proposal to one Case.
+ * It is valid only as the first command for the deterministically derived
+ * Case identity and appends creation, discussion, and admission atomically.
+ */
+export type AdmitSignedTopicSuggestionCommand = CommandEnvelopeBase & {
+  commandType: "admit_signed_topic_suggestion_v1";
+  payload: {
+    sourceDiscussion: NostrEvent;
+    sourceAnswer: NostrEvent;
+    signedSuggestion: CitizenSignedTopicSuggestionV1;
   };
 };
 
@@ -195,6 +218,7 @@ export type RetractDepartmentResponseCommand = CommandEnvelopeBase & {
 export type CommandEnvelope =
   | IntakeDiscussionCommand
   | AdmitSignedSuggestionCommand
+  | AdmitSignedTopicSuggestionCommand
   | AssignDepartmentPackageCommand
   | RecordDepartmentDraftCommand
   | AttestDepartmentReviewCommand
@@ -290,6 +314,7 @@ export type CaseEventV1 = {
     | "case_created_v1"
     | "discussion_recorded_v1"
     | "signed_suggestion_admitted_v1"
+    | "signed_topic_suggestion_admitted_v1"
     | "department_package_assigned_v1"
     | "department_draft_recorded_v1"
     | "department_review_attested_v1"
@@ -367,6 +392,7 @@ export type SuggestionProjection = {
     candidateId: string;
     signedEventId: string;
     sourceAnswerReceiptId: string;
+    sourceTopicId?: string;
     admissionChecksum: string;
     admittedByActorClass: "case_steward";
   };
@@ -434,6 +460,8 @@ export type CivicCaseCoordinatorOptions = {
   syntheticFixtureOnly?: boolean;
   allowedKinds?: readonly number[];
   allowedSignerPubkeys?: readonly string[];
+  /** Public Mecky identities accepted for a topic-to-Case admission. */
+  allowedAgentPubkeys?: readonly string[];
   fixturePubkey?: string;
   fixtureSignerPubkey?: string;
   /** Issue #4 synthetic fixture: exactly eight unique departments when configured. */
@@ -458,6 +486,7 @@ type InternalCoordinatorOptions = {
   syntheticFixtureOnly: boolean;
   allowedKinds: readonly number[];
   allowedSignerPubkeys?: ReadonlySet<string>;
+  allowedAgentPubkeys?: ReadonlySet<string>;
   requiredDepartmentIds?: readonly string[];
   requireSignedSuggestionAdmission: boolean;
 };
@@ -490,6 +519,18 @@ type SignedSuggestionAdmissionPayload = {
   policyVersion: string;
   authorityBinding: AuthorityBinding;
 };
+
+type SignedTopicSuggestionAdmissionPayload = {
+  signedSuggestion: CitizenSignedTopicSuggestionV1;
+  sourceAnswer: NostrEvent;
+  admissionChecksum: string;
+  policyVersion: string;
+  authorityBinding: AuthorityBinding;
+};
+
+type AnySignedSuggestionAdmissionPayload =
+  | SignedSuggestionAdmissionPayload
+  | SignedTopicSuggestionAdmissionPayload;
 
 type DepartmentPackagePayload = {
   departmentPackage: DepartmentPackageInput;
@@ -569,6 +610,7 @@ type StoredCaseEvent = CaseEventV1 & {
     | CaseCreatedPayload
     | DiscussionRecordedPayload
     | SignedSuggestionAdmissionPayload
+    | SignedTopicSuggestionAdmissionPayload
     | DepartmentPackagePayload
     | DepartmentDraftPayload
     | DepartmentReviewPayload
@@ -696,6 +738,11 @@ const QUERY_KEYS = new Set([
 ]);
 const PAYLOAD_KEYS = new Set(["discussion"]);
 const SIGNED_SUGGESTION_PAYLOAD_KEYS = new Set(["signedSuggestion"]);
+const SIGNED_TOPIC_SUGGESTION_PAYLOAD_KEYS = new Set([
+  "sourceDiscussion",
+  "sourceAnswer",
+  "signedSuggestion",
+]);
 const PACKAGE_PAYLOAD_KEYS = new Set(["departmentPackage"]);
 const DRAFT_PAYLOAD_KEYS = new Set(["packageId", "packageChecksum", "draft"]);
 const REVIEW_PAYLOAD_KEYS = new Set(["review"]);
@@ -1026,7 +1073,7 @@ function normalizeArtifactShape(value: unknown): DiscussionArtifact {
   };
 }
 
-function artifactToNip01Event(artifact: DiscussionArtifact): Record<string, unknown> {
+function artifactToNip01Event(artifact: DiscussionArtifact): NostrEvent {
   const event = artifact.event;
   if (artifact.verificationProof.kind !== "nostr_nip01") fail("discussion_proof_invalid");
   return {
@@ -1057,6 +1104,7 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     "syntheticFixtureOnly",
     "allowedKinds",
     "allowedSignerPubkeys",
+    "allowedAgentPubkeys",
     "fixturePubkey",
     "fixtureSignerPubkey",
     "requiredDepartmentIds",
@@ -1153,6 +1201,25 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     if (normalizedPubkeys.some((pubkey) => !/^[0-9a-f]{64}$/.test(pubkey))) fail("discussion_signer_not_allowed");
     allowedSignerPubkeys = new Set(normalizedPubkeys);
   }
+  let allowedAgentPubkeys: ReadonlySet<string> | undefined;
+  if (options.allowedAgentPubkeys !== undefined) {
+    if (
+      !Array.isArray(options.allowedAgentPubkeys) ||
+      options.allowedAgentPubkeys.length === 0
+    ) {
+      fail("topic_suggestion_agent_registry_invalid");
+    }
+    const normalizedAgentPubkeys = options.allowedAgentPubkeys.map((pubkey) =>
+      nonEmptyString(pubkey, "topic_suggestion_agent_registry_invalid"),
+    );
+    if (
+      normalizedAgentPubkeys.some((pubkey) => !/^[0-9a-f]{64}$/.test(pubkey)) ||
+      new Set(normalizedAgentPubkeys).size !== normalizedAgentPubkeys.length
+    ) {
+      fail("topic_suggestion_agent_registry_invalid");
+    }
+    allowedAgentPubkeys = new Set(normalizedAgentPubkeys);
+  }
   return {
     scope,
     jurisdiction,
@@ -1162,6 +1229,7 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     syntheticFixtureOnly: true,
     allowedKinds: [...allowedKinds],
     allowedSignerPubkeys,
+    allowedAgentPubkeys,
     requiredDepartmentIds,
     requireSignedSuggestionAdmission: options.requireSignedSuggestionAdmission === true,
   };
@@ -1176,10 +1244,11 @@ function durableOptionsFingerprint(options: InternalCoordinatorOptions): string 
     caseId: options.caseId,
     policyVersion: options.policyVersion,
     jurisdiction: options.jurisdiction,
-    scope: options.scope,
+    scope: options.scope ?? null,
     syntheticFixtureOnly: options.syntheticFixtureOnly,
     allowedKinds: options.allowedKinds,
     allowedSignerPubkeys: options.allowedSignerPubkeys ? [...options.allowedSignerPubkeys].sort() : null,
+    allowedAgentPubkeys: options.allowedAgentPubkeys ? [...options.allowedAgentPubkeys].sort() : null,
     requiredDepartmentIds: options.requiredDepartmentIds ?? null,
     requireSignedSuggestionAdmission: options.requireSignedSuggestionAdmission,
     actors: [...options.actors.values()].map((actor) => ({ actorId: actor.actorId, actorClass: actor.actorClass, departmentId: actor.departmentId ?? null })).sort((left, right) => left.actorId.localeCompare(right.actorId)),
@@ -1771,7 +1840,7 @@ type ReplayedDepartmentState = {
 type ReplayedCaseState = {
   discussion: DiscussionArtifact;
   suggestion: DiscussionRecordedPayload["suggestion"];
-  signedSuggestionAdmission?: SignedSuggestionAdmissionPayload & { eventId: string };
+  signedSuggestionAdmission?: AnySignedSuggestionAdmissionPayload & { eventId: string };
   departments: Map<string, ReplayedDepartmentState>;
   department?: ReplayedDepartmentState;
   brief?: ReviewedCitizenBriefProjection;
@@ -1798,7 +1867,9 @@ function replayJournal(
   let prior = genesisChecksum(options.caseId);
   let discussion: DiscussionArtifact | undefined;
   let suggestion: DiscussionRecordedPayload["suggestion"] | undefined;
-  let signedSuggestionAdmission: (SignedSuggestionAdmissionPayload & { eventId: string }) | undefined;
+  let signedSuggestionAdmission:
+    | (AnySignedSuggestionAdmissionPayload & { eventId: string })
+    | undefined;
   const departments = new Map<string, ReplayedDepartmentState>();
   let brief: ReviewedCitizenBriefProjection | undefined;
   let briefEventId: string | undefined;
@@ -1873,6 +1944,56 @@ function replayJournal(
       suggestion = {
         ...suggestion,
         title: signedSuggestion.draft.title,
+      };
+    } else if (event.eventType === "signed_topic_suggestion_admitted_v1") {
+      if (
+        !discussion ||
+        !suggestion ||
+        signedSuggestionAdmission ||
+        departments.size !== 0 ||
+        event.correctionOf !== null
+      ) {
+        fail("journal_chain_invalid");
+      }
+      const admissionPayload = payload as SignedTopicSuggestionAdmissionPayload;
+      const registration = options.actors.get(event.actorBinding.actorId);
+      const verified = verifyTopicCaseAdmission({
+        sourceDiscussion: artifactToNip01Event(discussion),
+        sourceAnswer: admissionPayload.sourceAnswer,
+        signedSuggestion: admissionPayload.signedSuggestion,
+        allowedAgentPubkeys: [...(options.allowedAgentPubkeys ?? [])],
+      });
+      const expectedChecksum = sha256({
+        signedSuggestion: verified.signedSuggestion,
+        sourceAnswer: verified.sourceAnswer,
+        caseId: verified.identity.caseId,
+        policyVersion: options.policyVersion,
+        actorBinding: event.actorBinding,
+      });
+      if (
+        verified.identity.caseId !== options.caseId ||
+        verified.identity.municipalityId !== options.jurisdiction.value ||
+        canonicalJson(verified.discussion) !== canonicalJson(discussion) ||
+        admissionPayload.authorityBinding !== "none" ||
+        admissionPayload.policyVersion !== options.policyVersion ||
+        admissionPayload.admissionChecksum !== expectedChecksum ||
+        event.actorBinding.actorClass !== "case_steward" ||
+        !registration ||
+        registration.actorClass !== "case_steward"
+      ) {
+        fail("journal_chain_invalid");
+      }
+      signedSuggestionAdmission = {
+        signedSuggestion: verified.signedSuggestion,
+        sourceAnswer: verified.sourceAnswer,
+        admissionChecksum: expectedChecksum,
+        policyVersion: options.policyVersion,
+        authorityBinding: "none",
+        eventId: event.eventId,
+      };
+      suggestion = {
+        ...suggestion,
+        title: verified.signedSuggestion.draft.title,
       };
     } else if (event.eventType === "department_package_assigned_v1") {
       if (index < 2 || !discussion || !suggestion || event.correctionOf !== null) fail("journal_chain_invalid");
@@ -2206,7 +2327,7 @@ function discussionProjection(
 function suggestionProjection(
   artifact: DiscussionArtifact,
   payload?: DiscussionRecordedPayload["suggestion"],
-  admission?: SignedSuggestionAdmissionPayload & { eventId: string },
+  admission?: AnySignedSuggestionAdmissionPayload & { eventId: string },
 ): SuggestionProjection {
   const discussionReference: SourceReference = {
     type: "nostr_event",
@@ -2228,6 +2349,9 @@ function suggestionProjection(
         candidateId: admission.signedSuggestion.candidateId,
         signedEventId: admission.signedSuggestion.event.id,
         sourceAnswerReceiptId: admission.signedSuggestion.draft.sourceAnswerReceiptId,
+        ...("topicId" in admission.signedSuggestion.draft
+          ? { sourceTopicId: admission.signedSuggestion.draft.topicId }
+          : {}),
         admissionChecksum: admission.admissionChecksum,
         admittedByActorClass: "case_steward",
       },
@@ -2504,6 +2628,9 @@ type NormalizedCommand = {
   commandType: CommandEnvelope["commandType"];
   discussion?: DiscussionArtifact;
   signedSuggestion?: CitizenSignedSuggestionV1;
+  sourceDiscussion?: NostrEvent;
+  sourceAnswer?: NostrEvent;
+  signedTopicSuggestion?: CitizenSignedTopicSuggestionV1;
   departmentPackage?: DepartmentPackageInput;
   packageId?: string;
   packageChecksum?: string;
@@ -2525,6 +2652,7 @@ function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
   if (
     commandType !== "intake_discussion_v1" &&
     commandType !== "admit_signed_suggestion_v1" &&
+    commandType !== "admit_signed_topic_suggestion_v1" &&
     commandType !== "assign_department_package_v1" &&
     commandType !== "record_department_draft_v1" &&
     commandType !== "attest_department_review_v1" &&
@@ -2560,6 +2688,13 @@ function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
     // Full source/case validation happens after the current discussion has
     // been replayed; retain an isolated clone until then.
     result.signedSuggestion = clone(command.payload.signedSuggestion) as CitizenSignedSuggestionV1;
+  } else if (commandType === "admit_signed_topic_suggestion_v1") {
+    ownKeys(command.payload, SIGNED_TOPIC_SUGGESTION_PAYLOAD_KEYS, "payload");
+    result.sourceDiscussion = clone(command.payload.sourceDiscussion) as NostrEvent;
+    result.sourceAnswer = clone(command.payload.sourceAnswer) as NostrEvent;
+    result.signedTopicSuggestion = clone(
+      command.payload.signedSuggestion,
+    ) as CitizenSignedTopicSuggestionV1;
   } else if (commandType === "assign_department_package_v1") {
     ownKeys(command.payload, PACKAGE_PAYLOAD_KEYS, "payload");
     result.departmentPackage = normalizeDepartmentPackage(command.payload.departmentPackage);
@@ -2703,6 +2838,16 @@ export function createCivicCaseCoordinator(
     const discussion = normalized.commandType === "intake_discussion_v1"
       ? normalizeAndVerifyDiscussion(normalized.discussion, options)
       : undefined;
+    const topicAdmission =
+      normalized.commandType === "admit_signed_topic_suggestion_v1"
+        ? verifyTopicCaseAdmission({
+            sourceDiscussion: normalized.sourceDiscussion as NostrEvent,
+            sourceAnswer: normalized.sourceAnswer as NostrEvent,
+            signedSuggestion:
+              normalized.signedTopicSuggestion as CitizenSignedTopicSuggestionV1,
+            allowedAgentPubkeys: [...(options.allowedAgentPubkeys ?? [])],
+          })
+        : undefined;
     const existing = replayJournal(state, options);
     if (normalized.commandType === "admit_signed_suggestion_v1") {
       if (!existing || !normalized.signedSuggestion) fail("signed_suggestion_case_required");
@@ -2720,6 +2865,13 @@ export function createCivicCaseCoordinator(
         ? { discussion }
         : normalized.commandType === "admit_signed_suggestion_v1"
           ? { signedSuggestion: normalized.signedSuggestion }
+        : normalized.commandType === "admit_signed_topic_suggestion_v1"
+          ? {
+              sourceDiscussion: topicAdmission?.discussion,
+              sourceAnswer: topicAdmission?.sourceAnswer,
+              signedSuggestion: topicAdmission?.signedSuggestion,
+              caseIdentity: topicAdmission?.identity,
+            }
         : normalized.commandType === "assign_department_package_v1"
           ? { departmentPackage: normalized.departmentPackage }
           : normalized.commandType === "record_department_draft_v1"
@@ -2762,6 +2914,22 @@ export function createCivicCaseCoordinator(
       if (!existing || !normalized.signedSuggestion) fail("signed_suggestion_case_required");
       if (existing.signedSuggestionAdmission) fail("signed_suggestion_already_admitted");
       if (existing.departments.size > 0 || existing.brief || existing.participation) fail("signed_suggestion_admission_too_late");
+    } else if (normalized.commandType === "admit_signed_topic_suggestion_v1") {
+      if (registeredActor.actorClass !== "case_steward") {
+        fail("actor_role_forbidden");
+      }
+      if (!topicAdmission) fail("topic_suggestion_invalid");
+      if (existing || state.events.length !== 0) fail("topic_case_already_created");
+      if (
+        topicAdmission.identity.caseId !== options.caseId ||
+        topicAdmission.identity.municipalityId !== options.jurisdiction.value ||
+        options.scope !== undefined ||
+        !options.allowedSignerPubkeys?.has(
+          topicAdmission.signedSuggestion.signerPubkey,
+        )
+      ) {
+        fail("topic_case_binding_invalid");
+      }
     } else if (normalized.commandType === "assign_department_package_v1") {
       if (registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
       if (!existing || !normalized.departmentPackage) fail("case_not_found");
@@ -2902,6 +3070,60 @@ export function createCivicCaseCoordinator(
       };
       appended.push(appendEvent(nextState, options, normalized.actor, "case_created_v1", payloadCase));
       appended.push(appendEvent(nextState, options, normalized.actor, "discussion_recorded_v1", payloadDiscussion));
+    } else if (normalized.commandType === "admit_signed_topic_suggestion_v1") {
+      if (!topicAdmission) fail("topic_suggestion_invalid");
+      const payloadCase: CaseCreatedPayload = {
+        caseId: options.caseId,
+        jurisdiction: options.jurisdiction,
+        authorityBinding: "none",
+      };
+      const payloadDiscussion: DiscussionRecordedPayload = {
+        discussion: clone(topicAdmission.discussion),
+        suggestion: suggestionPayload(topicAdmission.discussion),
+        authorityBinding: "none",
+      };
+      const signedSuggestion = clone(topicAdmission.signedSuggestion);
+      const sourceAnswer = clone(topicAdmission.sourceAnswer);
+      const admissionChecksum = sha256({
+        signedSuggestion,
+        sourceAnswer,
+        caseId: topicAdmission.identity.caseId,
+        policyVersion: normalized.policyVersion,
+        actorBinding: normalized.actor,
+      });
+      appended.push(
+        appendEvent(
+          nextState,
+          options,
+          normalized.actor,
+          "case_created_v1",
+          payloadCase,
+        ),
+      );
+      appended.push(
+        appendEvent(
+          nextState,
+          options,
+          normalized.actor,
+          "discussion_recorded_v1",
+          payloadDiscussion,
+        ),
+      );
+      appended.push(
+        appendEvent(
+          nextState,
+          options,
+          normalized.actor,
+          "signed_topic_suggestion_admitted_v1",
+          {
+            signedSuggestion,
+            sourceAnswer,
+            admissionChecksum,
+            policyVersion: normalized.policyVersion,
+            authorityBinding: "none",
+          } satisfies SignedTopicSuggestionAdmissionPayload,
+        ),
+      );
     } else if (normalized.commandType === "admit_signed_suggestion_v1") {
       if (!normalized.signedSuggestion) fail("signed_suggestion_invalid");
       const signedSuggestion = clone(normalized.signedSuggestion);
