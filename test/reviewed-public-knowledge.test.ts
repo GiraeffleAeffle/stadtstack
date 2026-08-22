@@ -186,6 +186,36 @@ test("duplicates, unknown fields, accessors, and mutable caller data cannot alte
     unexpected: true,
   } as unknown as ReviewedSourceAdmissionBatchV1));
   assert.throws(() => prepareReviewedPublicKnowledgeProjection(new Proxy(valid, {})));
+  assert.throws(() => prepareReviewedPublicKnowledgeProjection({
+    ...valid,
+    records: new Proxy([...valid.records], {}),
+  } as unknown as ReviewedSourceAdmissionBatchV1));
+  const sparseRecords = new Array(1) as ReviewedSourceAdmissionBatchV1["records"];
+  assert.throws(() => prepareReviewedPublicKnowledgeProjection({
+    ...valid,
+    records: sparseRecords,
+  }));
+  const accessorRecords = [valid.records[0]!] as unknown[];
+  Object.defineProperty(accessorRecords, "0", {
+    enumerable: true,
+    get: () => valid.records[0],
+  });
+  assert.throws(() => prepareReviewedPublicKnowledgeProjection({
+    ...valid,
+    records: accessorRecords,
+  } as unknown as ReviewedSourceAdmissionBatchV1));
+  const methodAccessorRecords = [...valid.records];
+  Object.defineProperty(methodAccessorRecords, "map", {
+    enumerable: true,
+    get: () => { throw new Error("array method getter executed"); },
+  });
+  assert.throws(
+    () => prepareReviewedPublicKnowledgeProjection({
+      ...valid,
+      records: methodAccessorRecords,
+    } as unknown as ReviewedSourceAdmissionBatchV1),
+    /reviewed_source_batch_invalid/u,
+  );
   const accessor = { ...valid.records[0]!.review } as Record<string, unknown>;
   Object.defineProperty(accessor, "reviewerActorId", { enumerable: true, get: () => "synthetic:reviewer" });
   assert.throws(() => prepareReviewedPublicKnowledgeProjection({

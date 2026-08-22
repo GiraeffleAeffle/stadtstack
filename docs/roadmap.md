@@ -30,9 +30,9 @@ Only the coordinator can apply that command and derive the brief used by the
 shared public knowledge projection.
 
 The accepted reviewed-source seam now prepares separate local-news and
-Ratsinformationssystem projections from exact human attestations. It does not
-crawl or publish; a later public transport can expose the exact checksum-bound
-bytes to Röbel while routine Mecky answers reuse the admitted versions.
+Ratsinformationssystem projections from exact human attestations. A loopback
+reference transport revalidates and serves the exact checksum-bound bytes on
+the two Röbel GET routes. It does not crawl or deploy a public endpoint.
 
 Next implementation slices are:
 
@@ -42,8 +42,8 @@ Next implementation slices are:
    contract, with credentials and endpoint policy kept in private operations;
 3. expose the resulting current Citizen Brief through the same Röbel journey
    and public knowledge checksum consumed by Mecky and Mitmachen; and
-4. serve one synthetic reviewed-source projection through a bounded public
-   GET Adapter and prove correction withdrawal end to end; and
+4. deploy one synthetic reviewed-source projection behind the reviewed public
+   Adapter and prove correction withdrawal through the Röbel consumer; and
 5. add correction and withdrawal UX before any formal governance or treasury
    integration.
 

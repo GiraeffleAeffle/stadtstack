@@ -147,6 +147,25 @@ function exactObject(value: unknown, keys: readonly string[], code: string): Rec
   return value as Record<string, unknown>;
 }
 
+function exactArray(value: unknown, maxLength: number, code: string): readonly unknown[] {
+  if (!Array.isArray(value) || utilTypes.isProxy(value) ||
+    Object.getPrototypeOf(value) !== Array.prototype || value.length > maxLength) {
+    throw new Error(code);
+  }
+  const allowed = new Set(["length"]);
+  for (let index = 0; index < value.length; index += 1) allowed.add(String(index));
+  const ownKeys = Reflect.ownKeys(value);
+  if (ownKeys.length !== value.length + 1 || ownKeys.some((key) =>
+    typeof key !== "string" || !allowed.has(key))) throw new Error(code);
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (!descriptor || descriptor.get || descriptor.set || !descriptor.enumerable) {
+      throw new Error(code);
+    }
+  }
+  return value;
+}
+
 function stringValue(value: unknown, code: string, maxBytes = 4_000): string {
   if (typeof value !== "string" || !value || value !== value.trim() ||
     Buffer.byteLength(value, "utf8") > maxBytes) throw new Error(code);
@@ -301,14 +320,83 @@ function parseReview(value: unknown): SourceReviewAttestationV1 {
   return Object.freeze({ ...parsed, attestationChecksum });
 }
 
+function evidenceSourceIdentity(evidence: ReviewedPublicKnowledgeEvidence): string {
+  return evidence.sourceKind === "local_news" ? evidence.articleUrl : evidence.recordId;
+}
+
+function parsePreparedProjection(value: unknown): ReviewedPublicKnowledgeProjectionV1 {
+  const record = exactObject(value, [
+    "schemaVersion", "municipalityId", "sourceKind", "generatedAt", "records",
+    "contentSha256",
+  ], "reviewed_source_projection_invalid");
+  if (record.schemaVersion !== "reviewed_public_knowledge_projection_v1") {
+    throw new Error("reviewed_source_projection_invalid");
+  }
+  const inputRecords = exactArray(
+    record.records,
+    MAX_RECORDS,
+    "reviewed_source_projection_invalid",
+  );
+  const municipalityId = municipality(record.municipalityId);
+  const expectedSourceKind = sourceKind(record.sourceKind);
+  const generatedAt = canonicalIso(record.generatedAt, "reviewed_source_generated_at_invalid");
+  const seenEvidence = new Set<string>();
+  const seenSourceIdentity = new Set<string>();
+  const records = inputRecords.map((entry) => {
+    const evidence = parseEvidence(
+      entry,
+      municipalityId,
+      expectedSourceKind,
+      generatedAt,
+    );
+    const identity = evidenceSourceIdentity(evidence);
+    if (seenEvidence.has(evidence.evidenceId) || seenSourceIdentity.has(identity)) {
+      throw new Error("reviewed_source_duplicate_invalid");
+    }
+    seenEvidence.add(evidence.evidenceId);
+    seenSourceIdentity.add(identity);
+    return evidence;
+  });
+  const evidenceIds = records.map(({ evidenceId }) => evidenceId);
+  if (canonical(evidenceIds) !== canonical([...evidenceIds].sort())) {
+    throw new Error("reviewed_source_projection_order_invalid");
+  }
+  const draft = {
+    schemaVersion: "reviewed_public_knowledge_projection_v1" as const,
+    municipalityId,
+    sourceKind: expectedSourceKind,
+    generatedAt,
+    records: Object.freeze(records),
+  };
+  const contentSha256 = checksumValue(
+    record.contentSha256,
+    "reviewed_source_projection_checksum_invalid",
+  );
+  if (sha256(draft) !== contentSha256) {
+    throw new Error("reviewed_source_projection_checksum_mismatch");
+  }
+  return Object.freeze({ ...draft, contentSha256 });
+}
+
+/**
+ * Validates and serializes the exact public projection bytes consumed by
+ * Röbel. The trailing newline is part of the transport representation, while
+ * contentSha256 remains the canonical checksum of the other envelope fields.
+ */
+export function serializeReviewedPublicKnowledgeProjection(value: unknown): string {
+  return `${canonical(parsePreparedProjection(value))}\n`;
+}
+
 export function prepareReviewedPublicKnowledgeProjection(
   input: ReviewedSourceAdmissionBatchV1,
 ): PreparedReviewedPublicKnowledgeProjection {
   const batch = exactObject(input, [
     "schemaVersion", "municipalityId", "sourceKind", "generatedAt", "policyVersion", "records",
   ], "reviewed_source_batch_invalid");
-  if (batch.schemaVersion !== "reviewed_source_admission_batch_v1" || !Array.isArray(batch.records) ||
-    batch.records.length > MAX_RECORDS) throw new Error("reviewed_source_batch_invalid");
+  if (batch.schemaVersion !== "reviewed_source_admission_batch_v1") {
+    throw new Error("reviewed_source_batch_invalid");
+  }
+  const inputRecords = exactArray(batch.records, MAX_RECORDS, "reviewed_source_batch_invalid");
   const municipalityId = municipality(batch.municipalityId);
   const expectedSourceKind = sourceKind(batch.sourceKind);
   const generatedAt = canonicalIso(batch.generatedAt, "reviewed_source_generated_at_invalid");
@@ -317,7 +405,7 @@ export function prepareReviewedPublicKnowledgeProjection(
 
   const seenEvidence = new Set<string>();
   const seenSourceIdentity = new Set<string>();
-  const prepared = batch.records.map((value) => {
+  const prepared = inputRecords.map((value) => {
     const admission = exactObject(value, [
       "evidence", "sourceCaptureSha256", "review",
     ], "reviewed_source_admission_invalid");
@@ -338,9 +426,7 @@ export function prepareReviewedPublicKnowledgeProjection(
       review.policyVersion !== policyVersion) {
       throw new Error("reviewed_source_admission_binding_invalid");
     }
-    const sourceIdentity = evidence.sourceKind === "local_news"
-      ? evidence.articleUrl
-      : evidence.recordId;
+    const sourceIdentity = evidenceSourceIdentity(evidence);
     if (seenEvidence.has(evidence.evidenceId) || seenSourceIdentity.has(sourceIdentity)) {
       throw new Error("reviewed_source_duplicate_invalid");
     }
