@@ -43,6 +43,9 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0016](./0016-human-reviewed-source-projection.md) — admit exact captured
   news and council records through a human source review, then prepare the
   checksum-bound public projection consumed by Röbel without publishing it.
+- [ADR 0017](./0017-reviewed-source-public-transport.md) — expose already
+  prepared source snapshots through two exact GET-only routes in a loopback
+  reference transport without adding source or civic write authority.
 
 ## Historical
 

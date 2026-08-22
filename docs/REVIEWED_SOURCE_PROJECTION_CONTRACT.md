@@ -2,7 +2,10 @@
 
 ## Status
 
-The municipality-neutral preparation contract is implemented and tested with synthetic records. No real Röbel news or Ratsinformationssystem record is admitted by this repository, and no endpoint is deployed by this Module.
+The municipality-neutral preparation contract and loopback reference transport
+are implemented and tested with synthetic records. No real Röbel news or
+Ratsinformationssystem record is admitted by this repository, and no public
+endpoint is deployed by this Module.
 
 ## Boundary
 
@@ -45,11 +48,18 @@ Local news is always `editorial_report`: review confirms the public capture, att
 
 `current`, `stale`, `superseded` and `withdrawn` remain explicit. The Röbel consumer admits only `current` records before ranking. This lets one corrected source disappear without making an unrelated source unavailable.
 
-## Public transport still required
+## Public transport
 
-A separate Stadtstack public Adapter must eventually serve the exact prepared projection at:
+`createReviewedPublicKnowledgeServer` revalidates and serves the exact prepared
+projection at:
 
 - `/api/federation/v1/municipalities/{municipalityId}/public-knowledge/local-news`
 - `/api/federation/v1/municipalities/{municipalityId}/public-knowledge/ratsinformation`
 
-That Adapter must be GET-only, value-free, bounded, correction-aware and byte/checksum preserving. Deployment and city-specific review data belong in the appropriate private operations repository.
+The pure router is GET-only, value-free, correction-aware and
+byte/checksum-preserving. It rejects snapshots above the Röbel consumer's
+512,000-byte default. Its bundled Node listener is loopback-only and
+rejects query strings, writes, unknown routes and non-loopback Host headers.
+A production Adapter may mount that router behind a reviewed ingress without
+widening the two paths. Deployment and city-specific review data belong in the
+appropriate private operations repository.
