@@ -82,6 +82,10 @@ boundaries are:
 - public, administration, and council companions receive distinct contexts,
   identities, and default-deny tool policies.
 
+Current Röbel integration state and the exact remaining end-to-end gates are
+recorded in the dated
+[2026-08-22 staging snapshot](docs/verification/2026-08-22-roebel-staging.md).
+
 ## Contributing and licensing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md).

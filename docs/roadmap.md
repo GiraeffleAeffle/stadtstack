@@ -1,5 +1,12 @@
 # Public implementation roadmap
 
+The current cross-repository Röbel execution truth is the dated
+[2026-08-22 staging snapshot](verification/2026-08-22-roebel-staging.md). It
+maps these neutral contracts to the Röbel product and reviewed GitOps source
+without moving product UX, credentials, or deployment authority into
+Stadtstack. The sole open public tracker item is
+[issue #25](https://github.com/GiraeffleAeffle/stadtstack/issues/25).
+
 This clean public lineage starts with the smallest reviewable vertical slices:
 
 1. establish the public boundary and CI;
@@ -46,6 +53,11 @@ Next implementation slices are:
    Adapter and prove correction withdrawal through the Röbel consumer; and
 5. add correction and withdrawal UX before any formal governance or treasury
    integration.
+
+For the first accepted staging journey, deployment and browser proof now take
+precedence over adding another contract slice. Provider-neutral passkey/Safe
+coexistence follows the complete Thirdweb-backed tracer; it is not a hidden
+signup prerequisite.
 
 Formal city authority, live operations, second-city federation, and public
 relay publication require new owners, ADRs, and exact external-effects gates.
