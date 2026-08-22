@@ -29,6 +29,11 @@ reviews into explicit Case-bound blockers or one effect-free steward command.
 Only the coordinator can apply that command and derive the brief used by the
 shared public knowledge projection.
 
+The accepted reviewed-source seam now prepares separate local-news and
+Ratsinformationssystem projections from exact human attestations. It does not
+crawl or publish; a later public transport can expose the exact checksum-bound
+bytes to Röbel while routine Mecky answers reuse the admitted versions.
+
 Next implementation slices are:
 
 1. expose the prepared request and handoff state in the Röbel administration
@@ -37,7 +42,9 @@ Next implementation slices are:
    contract, with credentials and endpoint policy kept in private operations;
 3. expose the resulting current Citizen Brief through the same Röbel journey
    and public knowledge checksum consumed by Mecky and Mitmachen; and
-4. add correction and withdrawal UX before any formal governance or treasury
+4. serve one synthetic reviewed-source projection through a bounded public
+   GET Adapter and prove correction withdrawal end to end; and
+5. add correction and withdrawal UX before any formal governance or treasury
    integration.
 
 Formal city authority, live operations, second-city federation, and public
