@@ -90,6 +90,18 @@ An accountable statement that a named reviewer accepted or rejected a bounded
 artifact under a stated policy and version.
 _Avoid_: approval button, agent confidence, inferred review
 
+**Reviewed source admission**:
+An accountable human decision that one exact public source capture may enter a
+source-specific public knowledge projection under a named policy. Admission
+preserves the source's authority and correction state; it does not verify every
+claim or approve a generated answer.
+_Avoid_: crawler result, AI review, official decision, answer approval
+
+**Reviewed source projection**:
+A checksum-bound, municipality- and source-specific public snapshot of admitted
+local news or Ratsinformationssystem records prepared without publishing it.
+_Avoid_: raw source archive, mixed-authority index, deployed endpoint
+
 **Public exchange record**:
 A signed, public-safe representation of a reviewed artifact that another
 community or client may verify and consume without receiving private case data
@@ -135,6 +147,12 @@ and the **Mitmachen view** consume that same version and checksum. A
 **Reviewed public outcome** can close the public information loop back to the
 signed Discussion, while any formal governance vote remains a separate
 Authority transition.
+
+A city-specific Adapter may capture a public article or council record, but a
+**Reviewed source admission** is required before the exact capture can enter a
+**Reviewed source projection**. Public Mecky can reuse that projection for
+ordinary cited answers; the source review is not repeated for every answer and
+never changes the Civic Case.
 
 ## Boundary and companion language
 

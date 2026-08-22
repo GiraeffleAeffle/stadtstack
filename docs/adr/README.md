@@ -40,6 +40,9 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0015](./0015-human-citizen-brief-derivation-readiness.md) — expose
   checksum-bound Department review readiness, then let only a human Case
   steward prepare the exact Citizen Brief derivation command.
+- [ADR 0016](./0016-human-reviewed-source-projection.md) — admit exact captured
+  news and council records through a human source review, then prepare the
+  checksum-bound public projection consumed by Röbel without publishing it.
 
 ## Historical
 

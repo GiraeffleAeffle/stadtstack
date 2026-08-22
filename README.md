@@ -20,7 +20,9 @@ private operations, or personal data.
   discussion and reviewed citations, then prepares a citizen-owned signing
   request without submitting it;
 - a human admission event plus one checksum-bound public knowledge projection
-  shared by public Mecky and the read-only advisory Mitmachen surface; and
+  shared by public Mecky and the read-only advisory Mitmachen surface;
+- an effect-free human-reviewed source preparer that emits checksum-bound local
+  news or Ratsinformationssystem projections without crawling or publishing;
 - a provider-neutral administration-workspace Adapter that prepares an exact
   Department task and binds its returned response only as a private draft for
   independent review;
