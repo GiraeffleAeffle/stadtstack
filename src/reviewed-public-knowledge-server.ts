@@ -179,7 +179,7 @@ export function createReviewedPublicKnowledgeServer(
     }
   });
 
-  return Object.freeze({
+  const transport: ReviewedPublicKnowledgeServer = {
     server,
     respond,
     listen(port = 0) {
@@ -197,10 +197,11 @@ export function createReviewedPublicKnowledgeServer(
       });
     },
     close() {
-      return new Promise((resolve, reject) => {
+      return new Promise<void>((resolve, reject) => {
         if (!server.listening) return resolve();
         server.close((error) => error ? reject(error) : resolve());
       });
     },
-  });
+  };
+  return Object.freeze(transport);
 }
