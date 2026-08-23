@@ -725,6 +725,22 @@ test("admission, outcome, and public knowledge bindings fail closed without muta
   });
   assert.throws(() => proxiedProjection.project(), /public_knowledge_input_unsafe/);
   assert.equal(proxyTraps, 0);
+
+  const sparseDiscussions: unknown[] = [];
+  sparseDiscussions.length = 4_000_000_000;
+  const sparseProjection = createPublicKnowledge({
+    coordinator: {
+      project() {
+        const envelope = structuredClone(before);
+        (envelope.projection as unknown as { discussions: unknown[] }).discussions = sparseDiscussions;
+        return envelope;
+      },
+    },
+    caseId,
+    policyVersion,
+    actorBinding: { actorId: "synthetic:public-1", actorClass: "public" },
+  });
+  assert.throws(() => sparseProjection.project(), /public_knowledge_input_unsafe/);
 });
 
 test("retraction invalidates the public outcome and the Mitmachen knowledge surface", () => {

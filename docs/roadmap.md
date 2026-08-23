@@ -1,7 +1,7 @@
 # Public implementation roadmap
 
 The current cross-repository Röbel execution truth is the dated
-[2026-08-22 staging snapshot](verification/2026-08-22-roebel-staging.md). It
+[2026-08-23 staging snapshot](verification/2026-08-23-roebel-staging.md). It
 maps these neutral contracts to the Röbel product and reviewed GitOps source
 without moving product UX, credentials, or deployment authority into
 Stadtstack. The sole open public tracker item is
@@ -24,6 +24,55 @@ Topic-bound until a resident signs a proposal. A registered human steward then
 uses one idempotent admission command to create the Case and preserve that
 Topic provenance before any department or openDesk round trip begins.
 
+The accepted control seam now keeps that command behind a separately
+authenticated Case Steward interface. The public application may only read a
+checksum-bound Case binding receipt by Case or source-discussion identity. The
+coordinator journal remains the durable source of truth; the public receipt is
+a rebuildable projection and performs no openDesk write or authority
+transition. The reference implementation now includes a local-only SQLite
+WAL/FULL atomic root claim, Case journal, binding receipt, and append-only
+outbox Adapter. Separate unbound reference servers now enforce a bounded
+staff-only POST surface and credential-free public GET/HEAD surface, while a
+bounded projector atomically rebuilds the public index from the outbox. It
+now selects a staging-only, per-steward Case Steward token Adapter and a private
+credential-free HTTP outbox pull between separate control and public
+workloads. The control and public processes now have separate bounded lifecycle
+composition roots, and durable control state has a root-global live owner lock,
+quiesced shutdown seal and canonical recovery evidence. The current slice adds
+a reviewed Operations preflight Module: a local filesystem Adapter must match
+the checksum-pinned PVC/PV/StorageClass contract before SQLite or one of the
+three exact control Pod-network listeners can exist. Raw hosts, ports and paths
+are not application inputs, while the reference factories remain loopback-only.
+A pure recovery-attestation verifier now checks the separately pinned policy,
+catalog CAS locator, local shutdown seal, signed restore statement, exact fresh
+PVC identity, four-hour RTO and closure-derived 24-hour expiry without gaining
+filesystem, bucket, Kubernetes, signing or civic capability. The reference
+control composition now consumes that gate only while holding the durable
+single-writer lock. It revalidates the local seal, closed database bytes and
+empty sidecars, binds the exact reviewed PVC/PV and deployment checksum, writes
+one canonical fsync'd v2 Recovery Activation Marker, atomically rotates the
+source deployment claim to the exact target claim, and only then invalidates
+the old seal and opens SQLite. The marker carries the complete source claim,
+target claim and source seal, so an interrupted activated process can restart
+only after renewed signed-gate verification at or after the marker's durable
+activation time; a marker alone grants nothing and a process-local clock reset
+cannot move that floor backwards.
+The v2 shutdown seal binds the active deployment claim. A canonical fsync'd
+bootstrap receipt permits the one empty-store initialization, while an ordinary
+open-epoch receipt records its last clean seal; a recovery marker supplies its
+own source-seal baseline. Existing durable databases open only read/write with
+the exact schema and must dominate that baseline. Signed evidence is rechecked
+immediately before each listener's own bind, with admission last. A later
+failed check synchronously rolls back already-bound probe/outbox listeners and
+uses a recovery-specific non-sealing abort, so the marker survives and ordinary
+startup remains blocked. A target clean seal is allowed only after the complete
+listener set reached ready. This does not claim there was zero transient socket exposure. Exact claim matching
+currently blocks ordinary in-place release changes until a separate reviewed
+claim-transition slice exists. The real encrypted backup/restore drill, immutable
+workloads and Flux binding do not exist yet. Staff control and public read
+remain separate identities and network surfaces; Röbel Web and Mecky receive
+neither the staff credential nor SQLite access.
+
 The next accepted administration seam renders one exact Department package as
 an effect-free, idempotent workspace request. A separately authorized
 openDesk, OpenProject, or municipal-workspace connector may return an
@@ -43,15 +92,27 @@ the two Röbel GET routes. It does not crawl or deploy a public endpoint.
 
 Next implementation slices are:
 
-1. expose the prepared request and handoff state in the Röbel administration
+1. merge the green stacked Case boundary, continuation, transport, runtime,
+   recovery-gate, durable-seal, deployment-preflight and recovery-activation
+   slices in dependency order;
+2. merge their matching still-inert Operations evidence inventories without
+   reconciling a workload;
+3. prove a quiesced, encrypted backup can restore byte-identically to the exact
+   fresh claim under ADR 0023 and produce the signed activation inputs before
+   any control activation;
+4. admit immutable control/public/backup/verifier images and the protected policy migration,
+   then let Flux reconcile only the reviewed resources;
+5. let Röbel discover the Case binding receipt by its signed discussion root
+   and advance the public journey without receiving an admission credential;
+6. expose the prepared request and handoff state in the Röbel administration
    journey without creating a second Case timeline;
-2. implement one exact, idempotent openDesk connector behind the public
+7. implement one exact, idempotent openDesk connector behind the public
    contract, with credentials and endpoint policy kept in private operations;
-3. expose the resulting current Citizen Brief through the same Röbel journey
+8. expose the resulting current Citizen Brief through the same Röbel journey
    and public knowledge checksum consumed by Mecky and Mitmachen; and
-4. deploy one synthetic reviewed-source projection behind the reviewed public
+9. deploy one synthetic reviewed-source projection behind the reviewed public
    Adapter and prove correction withdrawal through the Röbel consumer; and
-5. add correction and withdrawal UX before any formal governance or treasury
+10. add correction and withdrawal UX before any formal governance or treasury
    integration.
 
 For the first accepted staging journey, deployment and browser proof now take

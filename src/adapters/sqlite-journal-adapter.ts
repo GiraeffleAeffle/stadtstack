@@ -443,7 +443,8 @@ export function createSqliteJournalStore(input: SqliteJournalStoreOptions): Coor
     try {
       db.exec("BEGIN IMMEDIATE");
       const meta = queryOne<MetaRow>(db, "SELECT namespace,schema_version,case_id,options_fingerprint,case_version,head_checksum FROM journal_meta WHERE namespace=?", [input.namespace]);
-      if (!meta || meta.case_id !== append.caseId || meta.schema_version !== JOURNAL_SCHEMA_VERSION) fail("journal_meta_invalid");
+      if (!meta || meta.case_id !== append.caseId || meta.schema_version !== JOURNAL_SCHEMA_VERSION ||
+        meta.options_fingerprint !== append.optionsFingerprint) fail("journal_meta_invalid");
       const recovered = readState(db, input.namespace, append.caseId, meta.options_fingerprint);
       const currentEvents = recovered.events;
       const currentHead = currentEvents.length > 0 ? currentEvents[currentEvents.length - 1]!.eventChecksum : genesisChecksum(append.caseId);

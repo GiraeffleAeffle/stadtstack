@@ -85,6 +85,106 @@ The complete ordered history of Case events from which the current state of a
 Civic case can be reconstructed.
 _Avoid_: activity log, relay history, mutable case row
 
+**Atomic Case admission unit**:
+The single durable transaction that claims one immutable Discussion root,
+appends the first Case events and idempotency receipt, and enqueues the public
+Case binding receipt. A partial claim, journal, receipt, or outbox is invalid
+and must fail readiness and retry.
+_Avoid_: best-effort workflow, copied status flags, eventual initial creation
+
+**Case binding outbox**:
+The append-only, credential-free replay source for rebuilding the public Case
+binding projection from an accepted Atomic Case admission unit. It is a read
+model transport, not a second Case journal and not an admission capability.
+_Avoid_: public write queue, mutable projection table, workflow source
+
+**Staging Case Steward credential**:
+A distinct, short-lived secret whose possession is attributed to one pinned
+staging Case Steward actor and municipality scope for the initial admission
+tracer. It cannot prevent sharing or prove a human identity. It is not resident
+identity, production municipal identity, wallet ownership, or authority over
+later Case transitions.
+_Avoid_: admin login, Thirdweb role, Safe owner, municipal account
+
+**Credential-free binding delivery**:
+A private, bounded, read-only transport that carries already-public Case
+binding outbox entries from the single-writer Case workload to the separate
+public projection workload. It has no ACK, cursor write, database access,
+admission command, credential, or civic effect.
+_Avoid_: public database connection, shared Case store, workflow queue
+
+**Staging Case control runtime**:
+The single process that alone owns SQLite, staging Case Steward credentials,
+staff admission and private outbox replay. Its different listeners are
+different capabilities even though they share one durable owner.
+_Avoid_: Case backend, combined civic API, public workflow server
+
+**Public Case-binding runtime**:
+The separate, credential-free process that replays verified public binding
+receipts and serves only public discovery. It has no Case writer, database,
+staff credential or admission capability.
+_Avoid_: Case replica, public Case database, workflow runtime
+
+**Runtime probe**:
+A capability-free liveness/readiness surface returning only stable operational
+bytes. It is not a civic Service and never reveals phase details or dependency
+configuration.
+_Avoid_: health API, diagnostics endpoint, admin status
+
+**Reviewed control deployment binding**:
+A canonical, checksum-pinned Operations record that authorizes one exact
+staging Case control process to use one already-provisioned storage identity
+and its fixed Pod-network listeners. The application verifies locally
+observable filesystem facts before it creates SQLite or a socket; Operations
+remains responsible for PVC, PV, StorageClass, workload and review facts. The
+binding is operational authority only and grants no Case, publication,
+governance or treasury authority.
+_Avoid_: Kubernetes discovery, environment-variable path, deployment token,
+civic authorization
+
+**Durable deployment claim**:
+A canonical local receipt derived only from an opaque, reviewed control-
+deployment proof. It binds one municipality, release, control-binding checksum,
+PVC namespace/name/UID and PV to the durable store. A copied source claim cannot
+authorize a fresh target volume, and an exact mismatch requires a separately
+reviewed recovery or upgrade transition.
+_Avoid_: environment claim, mutable deployment label, reusable restore token
+
+**Case store bootstrap and open epoch**:
+Canonical, mode-0600, file-and-directory-fsync'd local receipts. Bootstrap
+records the one permitted empty-store initialization; an ordinary open epoch
+records the exact clean shutdown seal that the currently open store must
+dominate. A recovery marker supplies its own source-seal baseline instead.
+Neither receipt is Kubernetes, recovery, or civic authority.
+_Avoid_: mutable startup flag, schema-create retry, durable lease
+
+**Case recovery evidence**:
+The authenticated backup receipt, encrypted recovery material and isolated
+fresh-volume restore attestation for one staging Case store. It is operational
+evidence and never a public Case artifact.
+_Avoid_: database snapshot, Terraform state, public archive
+
+**Recovery activation attestation**:
+A purpose-signed, short-lived Operations statement binding one reviewed backup
+catalog entry, shutdown seal, isolated restore report, fresh PVC identity and
+control deployment binding. It is necessary operational startup evidence, but
+cannot create or advance a Case and does not by itself authorize a workload.
+_Avoid_: deployment approval, restore token, civic authorization, permanent
+recovery credential
+
+**Recovery Activation Marker**:
+A canonical, fsync'd local receipt written under the durable single-writer lock
+after fresh attestation verification and before the restored SQLite store is
+opened. It binds the complete source and target deployment claims, source seal,
+original database and operation; its source seal is the recovered epoch's last
+clean baseline. It permits restart only when newly consumed
+signed evidence reproduces those bindings, is still fresh and was verified no
+earlier than the marker's durable activation time. A failed or pre-ready
+activation abort preserves the marker; it is removed only after a fully ready
+recovered runtime later produces a new clean shutdown seal. It is never restart authority by
+itself and grants no deployment or civic authority.
+_Avoid_: recovery credential, timeless permit, active-slot selector
+
 **Review attestation**:
 An accountable statement that a named reviewer accepted or rejected a bounded
 artifact under a stated policy and version.
@@ -142,8 +242,10 @@ brief into the Case journal.
 
 A **Citizen-signed suggestion candidate** becomes an **Admitted citizen
 suggestion** only through an accountable human Case event. Its reviewed public
-line is represented once as the **Public knowledge projection**. Public Mecky
-and the **Mitmachen view** consume that same version and checksum. A
+line first advances through a read-only **Case binding receipt** and is then
+represented once as the **Public knowledge projection**. The **Case Steward**
+credential remains outside every public client. Public Mecky and the
+**Mitmachen view** consume that same version and checksum. A
 **Reviewed public outcome** can close the public information loop back to the
 signed Discussion, while any formal governance vote remains a separate
 Authority transition.
@@ -194,6 +296,30 @@ Topic discussion, cited Mecky answer, and citizen signature before atomically
 creating one Civic Case and admitting the candidate. It starts coordination,
 not a formal municipal procedure.
 _Avoid_: AI admission, proposal approval, automatic administration request
+
+**Case Steward**:
+A separately authenticated human role that may admit one exact, independently
+verified Topic suggestion candidate through the Case coordinator. The role and
+its credential never belong to the public Röbel client, public Mecky, or a
+resident session, and admission grants no publication, administration,
+governance, or treasury authority.
+_Avoid_: public admin button, chatbot operator, municipal approver
+
+**Case binding receipt**:
+A public-safe, checksum-bound read-model projection showing that one exact
+signed discussion and Topic suggestion candidate were admitted to one Civic
+Case version. It is rebuilt from the private Case journal, carries no command
+capability, and neither mutates the signed Nostr root nor becomes a second Case
+source of truth.
+_Avoid_: admission command, public Case journal, authority token
+
+**Durable Case continuation**:
+The deployment-neutral composition seam that reopens one already admitted
+Civic Case and carries administration feedback, independent review, Citizen
+Brief, advisory participation, and reviewed outcome through that same Case
+journal. Mini Apps may render its role-scoped projections but cannot own a
+parallel stage, Case, brief, participation result, or execution timeline.
+_Avoid_: Mini App workflow state, copied stage, second proposal database
 
 **Admitted citizen suggestion**:
 A citizen-signed suggestion candidate whose exact signature, discussion,

@@ -46,6 +46,27 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0017](./0017-reviewed-source-public-transport.md) — expose already
   prepared source snapshots through two exact GET-only routes in a loopback
   reference transport without adding source or civic write authority.
+- [ADR 0018](./0018-role-isolated-case-steward-control-and-public-binding-receipts.md) —
+  isolate human Case admission behind a staff-authenticated control seam and
+  expose only a checksum-bound, GET-only public Case binding receipt.
+- [ADR 0019](./0019-one-durable-case-continuation-line.md) — compose
+  administration feedback, Citizen Brief, advisory Mitmachen, and reviewed
+  outcome over the same admitted Case and durable journal rather than Mini App
+  timelines.
+- [ADR 0020](./0020-sealed-case-control-and-public-discovery-transports.md) —
+  put staff-only Case control, credential-free Case discovery, and outbox
+  hydration behind disjoint, bounded transport capabilities.
+- [ADR 0021](./0021-staging-case-steward-identity-and-credential-free-binding-delivery.md) —
+  use per-steward staging tokens and a private credential-free outbox
+  pull to connect separate control and public binding workloads.
+- [ADR 0022](./0022-compose-isolated-staging-case-runtimes-before-network-exposure.md) —
+  compose the separate control and public processes on loopback, prove the
+  complete HTTP tracer, and require verified Operations policy before network
+  exposure.
+- [ADR 0023](./0023-stage-case-state-with-quiesced-backup-and-fresh-volume-restore.md) —
+  give the staging control process one reviewed single-writer claim and block
+  activation until a quiesced encrypted backup has been restored and verified
+  on a fresh claim.
 
 ## Historical
 

@@ -35,6 +35,7 @@ export type PublicKnowledgeProjectionV1 = {
     status: "admitted";
     signerPubkey: string;
     admissionChecksum: string;
+    sourceTopicId: string | null;
   };
   citizenBrief: {
     id: string;
@@ -106,32 +107,59 @@ export type MitmachenServer = {
 
 const SHA256 = /^sha256:[a-f0-9]{64}$/;
 const PRIVATE_FIELD = /(?:privateEvidenceRefs|assignedAgentActorId|assignedReviewerActorId|reviewerActorId|departmentWorkPackages|participantId|eligibilityProof|secret|credential|password|nsec1|rawBallot|prompt|reasoning)/i;
+const MAX_PLAIN_DEPTH = 64;
+const MAX_PLAIN_NODES = 20_000;
+const MAX_PLAIN_ARRAY_LENGTH = 4_096;
+const MAX_PLAIN_OBJECT_KEYS = 512;
 
-function assertPlain(value: unknown, seen = new WeakSet<object>()): void {
-  if (value === null || ["string", "number", "boolean"].includes(typeof value)) return;
+type PlainAssertionState = { seen: WeakSet<object>; nodes: number };
+
+function assertPlain(
+  value: unknown,
+  state: PlainAssertionState = { seen: new WeakSet<object>(), nodes: 0 },
+  depth = 0,
+): void {
+  state.nodes += 1;
+  if (state.nodes > MAX_PLAIN_NODES || depth > MAX_PLAIN_DEPTH) throw new Error("public_knowledge_input_unsafe");
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || Object.is(value, -0)) throw new Error("public_knowledge_input_unsafe");
+    return;
+  }
   if (typeof value !== "object" || utilTypes.isProxy(value)) throw new Error("public_knowledge_input_unsafe");
-  if (seen.has(value)) throw new Error("public_knowledge_input_unsafe");
-  seen.add(value);
+  if (state.seen.has(value)) throw new Error("public_knowledge_input_unsafe");
+  state.seen.add(value);
   const prototype = Object.getPrototypeOf(value);
+  const keys = Reflect.ownKeys(value);
   if (Array.isArray(value)) {
     if (prototype !== Array.prototype) throw new Error("public_knowledge_input_unsafe");
-    const keys = Reflect.ownKeys(value);
-    const expected = [...value.keys()].map(String);
-    const actual = keys.filter((key): key is string => typeof key === "string" && key !== "length");
-    if (keys.some((key) => typeof key === "symbol") || canonical(actual) !== canonical(expected)) {
-      throw new Error("public_knowledge_input_unsafe");
-    }
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+    if (!lengthDescriptor || typeof lengthDescriptor.value !== "number" ||
+      !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0 ||
+      lengthDescriptor.value > MAX_PLAIN_ARRAY_LENGTH || keys.length !== lengthDescriptor.value + 1 ||
+      keys.some((key) => {
+        if (key === "length") return false;
+        if (typeof key !== "string" || !/^(?:0|[1-9][0-9]*)$/u.test(key)) return true;
+        const index = Number(key);
+        return !Number.isSafeInteger(index) || index < 0 || index >= lengthDescriptor.value || String(index) !== key;
+      })) throw new Error("public_knowledge_input_unsafe");
   } else if (prototype !== Object.prototype && prototype !== null) {
     throw new Error("public_knowledge_input_unsafe");
+  } else if (keys.length > MAX_PLAIN_OBJECT_KEYS) {
+    throw new Error("public_knowledge_input_unsafe");
   }
-  for (const key of Reflect.ownKeys(value)) {
+  for (const key of keys) {
     if (typeof key === "symbol") throw new Error("public_knowledge_input_unsafe");
     if (Array.isArray(value) && key === "length") continue;
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor || descriptor.get || descriptor.set || !descriptor.enumerable) throw new Error("public_knowledge_input_unsafe");
-    assertPlain(descriptor.value, seen);
+    assertPlain(descriptor.value, state, depth + 1);
   }
-  seen.delete(value);
+  // The projection intentionally contains byte-identical alias objects (for
+  // example `discussion` and `discussions[0]`). Keep the set stack-scoped so
+  // aliases remain valid while cycles still fail; the global node budget
+  // bounds repeated traversal.
+  state.seen.delete(value);
 }
 
 function exactDataObject(value: unknown, keys: readonly string[], code: string): Record<string, unknown> {
@@ -249,7 +277,13 @@ function mapProjection(envelope: ProjectionEnvelope, config: PublicKnowledgeConf
   ], "public_knowledge_suggestion_unknown_field");
   const suggestionDiscussionRef = record(suggestion.discussionRef, "public_knowledge_suggestion_invalid");
   const admission = record(suggestion.admission, "public_knowledge_admission_required");
-  exactKeys(admission, ["candidateId", "signedEventId", "sourceAnswerReceiptId", "admissionChecksum", "admittedByActorClass"], "public_knowledge_admission_unknown_field");
+  exactKeys(admission, [
+    "candidateId", "signedEventId", "sourceAnswerReceiptId", "admissionChecksum", "admittedByActorClass",
+    ...(Object.hasOwn(admission, "sourceTopicId") ? ["sourceTopicId"] : []),
+  ], "public_knowledge_admission_unknown_field");
+  const sourceTopicId = Object.hasOwn(admission, "sourceTopicId")
+    ? textValue(admission.sourceTopicId, "public_knowledge_admission_invalid")
+    : null;
   const brief = record(projection.reviewedCitizenBrief, "public_knowledge_brief_required");
   exactKeys(brief, ["schemaVersion", "id", "title", "summary", "responses", "provenance", "briefChecksum", "policyVersion", "correctionState", "authorityBinding"], "public_knowledge_brief_unknown_field");
   const provenance = record(brief.provenance, "public_knowledge_brief_invalid");
@@ -286,7 +320,9 @@ function mapProjection(envelope: ProjectionEnvelope, config: PublicKnowledgeConf
     suggestion.signerPubkey !== discussionEvent.pubkey ||
     sourceDiscussion.id !== discussion.id ||
     sourceDiscussion.ref !== discussion.sourceRef ||
-    provenance.suggestionId !== suggestion.id
+    provenance.suggestionId !== suggestion.id ||
+    (sourceTopicId !== null && (!Array.isArray(discussionEvent.tags) ||
+      !discussionEvent.tags.some((tag) => Array.isArray(tag) && tag[0] === "topic" && tag[1] === sourceTopicId)))
   ) throw new Error("public_knowledge_continuity_invalid");
   if (!Array.isArray(brief.responses) || brief.responses.length !== 8) throw new Error("public_knowledge_department_count_invalid");
   const citations = [...new Set(brief.responses.flatMap((response) => {
@@ -385,6 +421,7 @@ function mapProjection(envelope: ProjectionEnvelope, config: PublicKnowledgeConf
       status: "admitted" as const,
       signerPubkey: textValue(suggestion.signerPubkey, "public_knowledge_suggestion_invalid"),
       admissionChecksum: checksum(admission.admissionChecksum, "public_knowledge_admission_invalid"),
+      sourceTopicId,
     },
     citizenBrief: {
       id: textValue(brief.id, "public_knowledge_brief_invalid"),

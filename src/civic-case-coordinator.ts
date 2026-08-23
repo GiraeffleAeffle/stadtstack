@@ -348,6 +348,8 @@ export type CoordinatorJournalRecovery = {
 export type CoordinatorJournalAppend = {
   namespace: string;
   caseId: string;
+  /** Constructor-derived configuration identity; callers cannot choose it. */
+  optionsFingerprint: string;
   expectedCaseVersion: number;
   idempotencyKey: string;
   fingerprint: string;
@@ -894,6 +896,8 @@ const SECRET_VALUE_MARKER = /(?:\bnsec1[a-z0-9-]{8,}\b|private[_ -]?key|secret[_
 const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const PARTICIPATION_VALUE_MARKER = /(?:\b(?:npub|nsec)1[a-z0-9-]{8,}\b|\b0x[a-f0-9]{40}\b|\b(?:ballot|eligibility|identity|wallet|credential)\b|\b(?:participant|account|user)(?:[_ -]?id)?\s*[:=]|\b(?:private[_ -]?key|prompt|reasoning|tool[_ -]?trace)\b)/i;
 const SYNTHETIC_REFERENCE = /^synthetic:\/\/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]{1,2040}$/;
+const PUBLIC_HTTPS_HOST = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+const NON_PUBLIC_HTTPS_SUFFIX = /(?:^|\.)(?:example|invalid|localhost|local|internal|test)$/i;
 const DETERMINISTIC_PARTICIPATION_REVIEWED_AT = "2026-08-08T00:00:05.000Z";
 
 /** Deterministic fixture UUID-v7. It is intentionally not generated at runtime. */
@@ -1304,6 +1308,16 @@ function boundedDepartmentString(value: unknown, code: string, limit: number): s
   return result;
 }
 
+function publicDepartmentReference(value: string): boolean {
+  if (SYNTHETIC_REFERENCE.test(value)) return true;
+  let parsed: URL;
+  try { parsed = new URL(value); } catch { return false; }
+  const hostname = parsed.hostname.toLowerCase();
+  return parsed.protocol === "https:" && parsed.username === "" && parsed.password === "" &&
+    parsed.port === "" && parsed.hash === "" && PUBLIC_HTTPS_HOST.test(hostname) &&
+    !NON_PUBLIC_HTTPS_SUFFIX.test(hostname) && !SECRET_MARKER.test(parsed.search);
+}
+
 function normalizeDepartmentPackage(value: unknown): DepartmentPackageInput {
   ownKeys(value, DEPARTMENT_PACKAGE_KEYS, "departmentPackage");
   if (!isRecord(value)) fail("department_package_invalid");
@@ -1336,8 +1350,13 @@ function normalizeDepartmentDraft(value: unknown): DepartmentDraftInput {
   if (publicCitations.some((item) => item.trim() === "") || privateEvidenceRefs.some((item) => item.trim() === "")) {
     fail("department_draft_invalid");
   }
-  const referencePattern = /^synthetic:\/\/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]{1,2040}$/;
-  if (publicCitations.some((item) => !referencePattern.test(item)) || privateEvidenceRefs.some((item) => !referencePattern.test(item))) {
+  // Public-safe Department citations may point at an exact HTTPS source even
+  // in the synthetic coordinator.  This is a stored reference only: no fetch
+  // or network capability is introduced.  Private evidence remains confined
+  // to explicit synthetic fixtures until a separately owned private-store
+  // decision exists.
+  if (publicCitations.some((item) => !publicDepartmentReference(item)) ||
+    privateEvidenceRefs.some((item) => !SYNTHETIC_REFERENCE.test(item))) {
     fail("department_reference_invalid");
   }
   return {
@@ -3240,6 +3259,7 @@ export function createCivicCaseCoordinator(
       const committed = journalPort.appendAtomic({
         namespace: journalNamespace,
         caseId: options.caseId,
+        optionsFingerprint,
         expectedCaseVersion: state.events.length,
         idempotencyKey: normalized.idempotencyKey,
         fingerprint,
