@@ -169,7 +169,7 @@ test("durable roots are exact non-symlink paths, while legacy roots remain tmp-o
     symlinkSync(outside, link);
     assert.throws(() => createSqliteAtomicTopicCaseAdmission(options(link)), /atomic_admission_root_invalid/);
     assert.throws(() => createSqliteAtomicTopicCaseAdmission(options("relative")), /atomic_admission_root_invalid/);
-    assert.throws(() => createSqliteAtomicTopicCaseAdmission(options(join(outside, ".."))), /atomic_admission_root_invalid/);
+    assert.throws(() => createSqliteAtomicTopicCaseAdmission(options(`${outside}/..`)), /atomic_admission_root_invalid/);
     assert.throws(() => createSqliteAtomicTopicCaseAdmission({
       ...options(outside), durableState: { mode: "durable_single_writer", sourceReleaseDigest: `sha256:${"e".repeat(64)}`, unexpected: true },
     } as unknown as SqliteAtomicTopicCaseAdmissionOptions), /atomic_admission_options_invalid/);
