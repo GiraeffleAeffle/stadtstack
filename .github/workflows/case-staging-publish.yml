@@ -139,6 +139,7 @@ jobs:
           create-storage-record: false
       - name: Verify GitHub OIDC provenance and SPDX evidence
         env:
+          GH_TOKEN: ${{ github.token }}
           IMAGE: ${{ matrix.image }}
           DIGEST: ${{ steps.publish.outputs.digest }}
           WORKFLOW_IDENTITY: https://github.com/GiraeffleAeffle/stadtstack/.github/workflows/case-staging-publish.yml@refs/heads/main

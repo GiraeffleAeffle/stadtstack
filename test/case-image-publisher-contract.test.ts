@@ -116,6 +116,10 @@ test("the remote publisher is main-only, digest-attested, and has no deployment 
   assert.match(workflow, /anchore\/sbom-action@[a-f0-9]{40}/u);
   assert.match(workflow, /https:\/\/spdx\.dev\/Document\/v2\.3/u);
   assert.match(workflow, /gh attestation verify/u);
+  assert.match(
+    workflow,
+    /- name: Verify GitHub OIDC provenance and SPDX evidence[\s\S]*?env:\n\s+GH_TOKEN: \$\{\{ github\.token \}\}/u,
+  );
   assert.match(workflow, /--source-digest "\$GITHUB_SHA"/u);
   assert.match(workflow, /--source-ref refs\/heads\/main/u);
   assert.match(workflow, /anonymous immutable tag and digest pulls/u);
