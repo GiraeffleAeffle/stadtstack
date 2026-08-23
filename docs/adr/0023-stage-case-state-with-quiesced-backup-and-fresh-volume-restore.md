@@ -155,6 +155,44 @@ older than 24 hours or any binding differs. Existing public projections may
 stay readable, but no new Case admission resumes until a fresh attestation has
 been reviewed.
 
+The reference recovery-attestation Module is an effect-free verifier. It reads
+one reviewed per-operation policy and its separately pinned checksum, the
+protected catalog locator, the local shutdown seal, the signed recovery
+attestation and a trusted UTC clock through narrow source ports. It verifies
+the attestor's purpose-specific Ed25519 public key and binds the catalog CAS
+generation, exact receipt and encrypted-manifest object versions, source and
+fresh target PVC identities, reviewed restore-verifier release, database
+bytes, canonical recovery evidence, isolated restore report, four-hour RTO
+and closure-derived 24-hour expiry. It
+has no bucket, Kubernetes, signing, civic or credential capability. A valid
+signature is operational recovery evidence only; it cannot admit a Case,
+publish content, vote, move treasury funds or select a Service/PVC.
+
+Distinct in-memory source wrappers are reference seams, not proof of separate
+authority. The live composition must source the policy, its pin and the catalog
+locator from separately protected Operations artifacts and bind their exact
+resource versions. Until that composition is reviewed, source-port identity
+checks provide tamper resistance inside one process but do not establish an
+organizational trust boundary.
+
+That pure verifier is necessary but not sufficient for activation. The live
+Adapter must acquire the durable owner lock and, while holding it, verify the
+same bound target claim, local seal, closed database bytes, absent WAL/SHM and
+attestation before it invalidates the prior seal or opens SQLite. A future
+fsync'd Recovery Activation Marker will bind the target PVC UID, recovery
+operation, deployment binding and verified attestation for later restarts of
+that same claim. The marker proves the one-time cutover; it does not extend the
+24-hour recovery window. Replaying it against another PVC or using it after the
+attestation expires cannot reopen admission. Until that critical-section
+Adapter and marker exist, the reference verifier does not authorize a live
+Deployment.
+
+Gate consumption re-reads a trusted clock and rejects an expired attestation;
+the returned operational facts retain the target namespace, PVC name and UID,
+PV name and reviewed deployment-binding checksum. The future Adapter must
+compare that complete claim while holding the lock and proceed immediately;
+it may not cache the facts as a timeless deployment authorization.
+
 ### Quiesced, application-consistent backups
 
 Staging accepts a short maintenance window in exchange for a simple and

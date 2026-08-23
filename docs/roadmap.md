@@ -43,8 +43,12 @@ a reviewed Operations preflight Module: a local filesystem Adapter must match
 the checksum-pinned PVC/PV/StorageClass contract before SQLite or one of the
 three exact control Pod-network listeners can exist. Raw hosts, ports and paths
 are not application inputs, while the reference factories remain loopback-only.
-No live claim, backup/restore proof, recovery attestation, workload or Flux
-binding exists yet. Staff control and public read remain separate identities
+A pure recovery-attestation verifier now checks the separately pinned policy,
+catalog CAS locator, local shutdown seal, signed restore statement, exact fresh
+PVC identity, four-hour RTO and closure-derived 24-hour expiry without gaining
+filesystem, bucket, Kubernetes, signing or civic capability. The live
+critical-section Adapter, recovery activation marker, backup/restore proof,
+workload and Flux binding do not exist yet. Staff control and public read remain separate identities
 and network surfaces; Röbel Web and Mecky receive neither the staff credential
 nor SQLite access.
 
@@ -69,12 +73,11 @@ Next implementation slices are:
 
 1. merge the green stacked Case boundary, continuation, transport, runtime,
    recovery-gate and durable-seal slices in dependency order;
-2. review the control deployment preflight and its matching still-inert
-   Operations evidence inventory; then bind the control process to one exact
-   reviewed single-writer claim only after every live storage fact exists;
-3. verify a separately signed recovery attestation and prove a quiesced,
-   encrypted backup can restore byte-identically to a fresh claim under ADR
-   0023 before any control activation;
+2. review the control deployment preflight, the pure signed recovery verifier
+   and their matching still-inert Operations evidence inventories;
+3. add the durable-lock recovery activation Adapter and fsync'd marker, then
+   prove a quiesced, encrypted backup can restore byte-identically to the exact
+   fresh claim under ADR 0023 before any control activation;
 4. admit immutable control/public images and the protected policy migration,
    then let Flux reconcile only the reviewed resources;
 5. let Röbel discover the Case binding receipt by its signed discussion root

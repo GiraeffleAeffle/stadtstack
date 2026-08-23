@@ -148,6 +148,14 @@ fresh-volume restore attestation for one staging Case store. It is operational
 evidence and never a public Case artifact.
 _Avoid_: database snapshot, Terraform state, public archive
 
+**Recovery activation attestation**:
+A purpose-signed, short-lived Operations statement binding one reviewed backup
+catalog entry, shutdown seal, isolated restore report, fresh PVC identity and
+control deployment binding. It is necessary operational startup evidence, but
+cannot create or advance a Case and does not by itself authorize a workload.
+_Avoid_: deployment approval, restore token, civic authorization, permanent
+recovery credential
+
 **Review attestation**:
 An accountable statement that a named reviewer accepted or rejected a bounded
 artifact under a stated policy and version.
