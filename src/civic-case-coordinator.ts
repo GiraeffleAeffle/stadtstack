@@ -348,6 +348,8 @@ export type CoordinatorJournalRecovery = {
 export type CoordinatorJournalAppend = {
   namespace: string;
   caseId: string;
+  /** Constructor-derived configuration identity; callers cannot choose it. */
+  optionsFingerprint: string;
   expectedCaseVersion: number;
   idempotencyKey: string;
   fingerprint: string;
@@ -3240,6 +3242,7 @@ export function createCivicCaseCoordinator(
       const committed = journalPort.appendAtomic({
         namespace: journalNamespace,
         caseId: options.caseId,
+        optionsFingerprint,
         expectedCaseVersion: state.events.length,
         idempotencyKey: normalized.idempotencyKey,
         fingerprint,

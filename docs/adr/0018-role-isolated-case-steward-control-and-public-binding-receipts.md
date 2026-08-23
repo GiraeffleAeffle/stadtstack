@@ -1,6 +1,6 @@
 # ADR 0018: Isolate Case Steward control and expose public Case binding receipts
 
-- **Status:** accepted boundary; runtime and deployment pending
+- **Status:** accepted boundary; local durability reference implemented; network and deployment pending
 - **Date:** 2026-08-23
 
 ## Context
@@ -81,11 +81,21 @@ verified candidate and gains no later municipal authority. Röbel can render
 the resulting Case without keeping an administrative secret or inventing a
 parallel lifecycle.
 
-The reference modules in this repository deliberately provide no network
-listener, staff OIDC/WebAuthn adapter, secret lookup, durable atomic admission
-adapter, projection recovery, operator console, Kubernetes resource, ingress
-rule, or live Röbel wiring. The in-memory projection is only a replayable unit
-test reference. Two-replica uniqueness, post-commit crash recovery and public
-readiness replay are mandatory integration tests for the deployment slice.
+The repository includes a staging-only SQLite reference for the durability
+boundary. One municipality database uses WAL and `synchronous=FULL`; the first
+Case transaction claims the immutable root, appends the initial journal and
+idempotency record, and writes the public receipt and append-only outbox. A
+deployment-pinned actor registry preserves the exact authenticated Case
+Steward identity, while the same private coordinator/journal composition seam
+continues later Case commands. Startup and public replay fail closed unless
+the journal, claim, receipt, and outbox form one checksum-bound unit.
+
+The reference still provides no network listener, staff OIDC/WebAuthn adapter,
+secret lookup, operator console, Kubernetes resource, ingress rule, or live
+Röbel wiring. It does not make SQLite-on-a-shared-volume a production storage
+decision. Multi-pod contention against the selected shared storage,
+post-commit crash recovery, public readiness replay, backup/restore, and the
+selected deployment database remain mandatory integration work for the
+deployment slice.
 openDesk delivery, Citizen Brief publication, formal governance and treasury
 execution remain separately authenticated commands under their own decisions.

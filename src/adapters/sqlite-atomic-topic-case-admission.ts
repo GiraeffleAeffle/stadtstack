@@ -1,0 +1,755 @@
+import { createHash } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { types as utilTypes } from "node:util";
+
+import {
+  createPublicCaseBindingReceipt,
+  verifyPublicCaseBindingReceipt,
+  type PublicCaseBindingReceiptV1,
+} from "../case-binding-projection.ts";
+import {
+  createCivicCaseCoordinator,
+  type ActorBinding,
+  type ActorRegistration,
+  type CivicCaseCoordinator,
+  type CommandReceipt,
+  type CoordinatorJournalAppend,
+  type CoordinatorJournalEvent,
+  type CoordinatorJournalIdempotency,
+  type CoordinatorJournalPort,
+  type CoordinatorJournalRecovery,
+} from "../civic-case-coordinator.ts";
+import {
+  verifyTopicCaseAdmission,
+  type VerifiedTopicCaseAdmissionV1,
+} from "../topic-case-admission.ts";
+import type { AtomicCaseAdmissionPort, AtomicTopicCaseAdmissionV1 } from "../roebel-control-service.ts";
+
+const SCHEMA_VERSION = "sqlite_atomic_topic_case_admission_v1";
+const MUNICIPALITY_ID = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+const HEX64 = /^[0-9a-f]{64}$/u;
+const SHA256 = /^sha256:[0-9a-f]{64}$/u;
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const NAMESPACE = /^case-[0-9a-f]{32}$/u;
+
+export type SqliteAtomicTopicCaseAdmissionOptions = {
+  rootDir: string;
+  municipalityId: string;
+  policyVersion: string;
+  /** Deployment-pinned municipal actor registry.  Requests only name an actor
+   * that is already in this immutable registry; they cannot select a role. */
+  actorRegistry: readonly ActorRegistration[];
+  allowedSignerPubkeys: readonly string[];
+  allowedAgentPubkeys: readonly string[];
+  /** Optional policy pin carried into every reopened Case coordinator. */
+  requiredDepartmentIds?: readonly string[];
+  /** Test-only rollback seam. It is never an admission capability. */
+  failpoint?: "after_root_claim" | "after_case_events" | "after_binding_receipt";
+};
+
+export type CaseBindingOutboxEntryV1 = {
+  sequence: number;
+  receipt: PublicCaseBindingReceiptV1;
+};
+
+/** A credential-free, append-only replay seam. There is deliberately no ACK or writer. */
+export type CredentialFreeCaseBindingOutboxReader = {
+  replay(input?: { afterSequence?: number; limit?: number }): readonly CaseBindingOutboxEntryV1[];
+};
+
+export type SqliteAtomicTopicCaseAdmission = {
+  admission: AtomicCaseAdmissionPort;
+  outbox: CredentialFreeCaseBindingOutboxReader;
+  /** Private composition-root seam.  It never creates Cases: only an already
+   * atomically admitted Case can be reopened with its pinned journal/config. */
+  caseCoordinators: Readonly<{ open(caseId: string): CivicCaseCoordinator }>;
+  close(): void;
+};
+
+type CaseMetaRow = {
+  case_id: string;
+  municipality_id: string;
+  namespace: string;
+  options_fingerprint: string;
+  case_version: number;
+  head_checksum: string;
+};
+
+type EventRow = {
+  case_version: number;
+  event_id: string;
+  event_type: string;
+  prior_event_checksum: string;
+  actor_json: string;
+  payload_json: string;
+  payload_checksum: string;
+  correction_of: string | null;
+  event_checksum: string;
+};
+
+type IdempotencyRow = {
+  idempotency_key: string;
+  fingerprint: string;
+  receipt_json: string;
+};
+
+type ReceiptRow = { receipt_json: string };
+
+function fail(code: string): never { throw new Error(code); }
+
+function plain(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) &&
+    !utilTypes.isProxy(value) && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function ownKeys(value: unknown, fields: readonly string[], code: string): Record<string, unknown> {
+  if (!plain(value)) fail(code);
+  const reflected = Reflect.ownKeys(value);
+  if (reflected.some((key) => typeof key !== "string")) fail(code);
+  const keys = (reflected as string[]).sort();
+  const expected = [...fields].sort();
+  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) fail(code);
+  for (const field of fields) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, field);
+    if (!descriptor || descriptor.get || descriptor.set || !descriptor.enumerable) fail(code);
+  }
+  return value;
+}
+
+function allowedKeys(value: unknown, fields: readonly string[], code: string): Record<string, unknown> {
+  if (!plain(value)) fail(code);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || !fields.includes(key)) fail(code);
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || descriptor.get || descriptor.set || !descriptor.enumerable) fail(code);
+  }
+  return value;
+}
+
+function canonicalize(value: unknown): unknown {
+  if (value === undefined || typeof value === "function" || typeof value === "symbol" || typeof value === "bigint") fail("atomic_canonical_invalid");
+  if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0))) fail("atomic_canonical_invalid");
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!plain(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+}
+
+function canonicalJson(value: unknown): string { return JSON.stringify(canonicalize(value)); }
+function checksum(value: unknown): string { return `sha256:${createHash("sha256").update(canonicalJson(value), "utf8").digest("hex")}`; }
+function clone<T>(value: T): T { return structuredClone(value); }
+
+function parseJson(value: string, code: string): unknown {
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { fail(code); }
+  if (canonicalJson(parsed) !== value && JSON.stringify(parsed) !== value) fail(code);
+  return parsed;
+}
+
+function genesisChecksum(caseId: string): string {
+  return checksum({ schemaVersion: "case_genesis_v1", caseId });
+}
+
+function safeRoot(rootDir: string): string {
+  if (typeof rootDir !== "string" || !isAbsolute(rootDir) || rootDir.split(/[\\/]/u).includes("..")) fail("atomic_admission_root_invalid");
+  const resolved = resolve(rootDir);
+  const systemTmp = resolve(tmpdir());
+  const inside = relative(systemTmp, resolved);
+  if (resolved === systemTmp || inside.startsWith("..") || isAbsolute(inside) || !existsSync(resolved)) fail("atomic_admission_root_invalid");
+  const stat = lstatSync(resolved);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) fail("atomic_admission_root_invalid");
+  const realInside = relative(realpathSync(systemTmp), realpathSync(resolved));
+  if (realInside.startsWith("..") || isAbsolute(realInside)) fail("atomic_admission_root_invalid");
+  return resolved;
+}
+
+function ensureNotSymlink(path: string): void {
+  if (existsSync(path) && lstatSync(path).isSymbolicLink()) fail("atomic_admission_path_symlink_forbidden");
+}
+
+function frozenStringSet(value: unknown, code: string): readonly string[] {
+  if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length === 0 ||
+    value.some((entry) => typeof entry !== "string" || !HEX64.test(entry)) || new Set(value).size !== value.length) fail(code);
+  return Object.freeze([...value] as string[]);
+}
+
+function actor(value: unknown, code: string, allowRole = false): ActorBinding {
+  const parsed = ownKeys(value, ["actorClass", "actorId"], code);
+  const actorClasses = ["citizen", "public", "administration", "council", "case_steward", "department_agent", "department_reviewer", "participation_reviewer"] as const;
+  if (typeof parsed.actorId !== "string" || !/^[A-Za-z0-9:._-]{1,256}$/u.test(parsed.actorId) ||
+    typeof parsed.actorClass !== "string" || !actorClasses.includes(parsed.actorClass as typeof actorClasses[number]) ||
+    (!allowRole && parsed.actorClass !== "case_steward")) fail(code);
+  return Object.freeze({ actorId: parsed.actorId, actorClass: parsed.actorClass as ActorBinding["actorClass"] });
+}
+
+function actorRegistry(value: unknown, code: string): readonly ActorRegistration[] {
+  if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length === 0) fail(code);
+  const parsed = value.map((entry) => {
+    const record = allowedKeys(entry, ["actorClass", "actorId", "departmentId"], code);
+    const binding = actor({ actorId: record.actorId, actorClass: record.actorClass }, code, true);
+    if (record.departmentId !== undefined && (typeof record.departmentId !== "string" ||
+      !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(record.departmentId))) fail(code);
+    if ((binding.actorClass === "department_agent" || binding.actorClass === "department_reviewer") !== (record.departmentId !== undefined)) fail(code);
+    return Object.freeze(record.departmentId === undefined ? binding : { ...binding, departmentId: record.departmentId }) as ActorRegistration;
+  });
+  if (new Set(parsed.map((entry) => entry.actorId)).size !== parsed.length ||
+    !parsed.some((entry) => entry.actorClass === "case_steward")) fail(code);
+  return Object.freeze(parsed);
+}
+
+function requiredDepartments(value: unknown, code: string): readonly string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length !== 8 ||
+    value.some((entry) => typeof entry !== "string" || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(entry)) ||
+    new Set(value).size !== value.length) fail(code);
+  return Object.freeze([...value] as string[]);
+}
+
+function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required<Omit<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds">> & Pick<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds"> {
+  const parsed = allowedKeys(input, ["actorRegistry", "allowedAgentPubkeys", "allowedSignerPubkeys", "failpoint", "municipalityId", "policyVersion", "requiredDepartmentIds", "rootDir"], "atomic_admission_options_invalid");
+  if (typeof parsed.municipalityId !== "string" || !MUNICIPALITY_ID.test(parsed.municipalityId) ||
+    typeof parsed.policyVersion !== "string" || !/^[A-Za-z0-9:._-]{1,256}$/u.test(parsed.policyVersion) ||
+    (parsed.failpoint !== undefined && parsed.failpoint !== "after_root_claim" && parsed.failpoint !== "after_case_events" && parsed.failpoint !== "after_binding_receipt")) fail("atomic_admission_options_invalid");
+  return Object.freeze({
+    rootDir: safeRoot(parsed.rootDir as string), municipalityId: parsed.municipalityId,
+    policyVersion: parsed.policyVersion, actorRegistry: actorRegistry(parsed.actorRegistry, "atomic_admission_options_invalid"),
+    allowedSignerPubkeys: frozenStringSet(parsed.allowedSignerPubkeys, "atomic_admission_options_invalid"),
+    allowedAgentPubkeys: frozenStringSet(parsed.allowedAgentPubkeys, "atomic_admission_options_invalid"),
+    requiredDepartmentIds: requiredDepartments(parsed.requiredDepartmentIds, "atomic_admission_options_invalid"),
+    failpoint: parsed.failpoint as SqliteAtomicTopicCaseAdmissionOptions["failpoint"],
+  });
+}
+
+function caseNamespace(uuid: string): string {
+  if (!UUID_V7.test(uuid)) fail("atomic_admission_case_invalid");
+  return `case-${uuid.replaceAll("-", "")}`;
+}
+
+function responseReceipt(row: ReceiptRow | undefined): PublicCaseBindingReceiptV1 {
+  if (!row || typeof row.receipt_json !== "string") fail("atomic_admission_receipt_missing");
+  return verifyPublicCaseBindingReceipt(parseJson(row.receipt_json, "atomic_admission_receipt_invalid"));
+}
+
+function commandReceipt(value: unknown): CommandReceipt {
+  const parsed = ownKeys(value, ["caseVersion", "eventIds", "journalHeadChecksum"], "atomic_admission_journal_corrupt");
+  const caseVersion = typeof parsed.caseVersion === "number" ? parsed.caseVersion : Number.NaN;
+  if (!Number.isSafeInteger(caseVersion) || caseVersion < 1 || !Array.isArray(parsed.eventIds) || parsed.eventIds.length < 1 ||
+    utilTypes.isProxy(parsed.eventIds) || parsed.eventIds.some((entry) => typeof entry !== "string" || entry.length < 1) ||
+    new Set(parsed.eventIds).size !== parsed.eventIds.length || typeof parsed.journalHeadChecksum !== "string" ||
+    !SHA256.test(parsed.journalHeadChecksum)) fail("atomic_admission_journal_corrupt");
+  return { caseVersion, eventIds: [...parsed.eventIds] as string[], journalHeadChecksum: parsed.journalHeadChecksum };
+}
+
+function eventFromRow(caseId: string, row: EventRow): CoordinatorJournalEvent {
+  if (!Number.isSafeInteger(row.case_version) || row.case_version < 1 || typeof row.event_id !== "string" ||
+    typeof row.event_type !== "string" || !SHA256.test(row.prior_event_checksum) || !SHA256.test(row.payload_checksum) || !SHA256.test(row.event_checksum)) fail("atomic_admission_journal_corrupt");
+  const actorBinding = actor(parseJson(row.actor_json, "atomic_admission_journal_corrupt"), "atomic_admission_journal_corrupt", true);
+  const payload = parseJson(row.payload_json, "atomic_admission_journal_corrupt");
+  if (checksum(payload) !== row.payload_checksum) fail("atomic_admission_journal_corrupt");
+  const event = {
+    schemaVersion: "case_event_v1" as const, eventId: row.event_id, caseId, caseVersion: row.case_version,
+    eventType: row.event_type as CoordinatorJournalEvent["eventType"], priorEventChecksum: row.prior_event_checksum,
+    actorBinding, payloadChecksum: row.payload_checksum, correctionOf: row.correction_of, eventChecksum: row.event_checksum, payload,
+  };
+  const { payload: _payload, eventChecksum, ...withoutChecksum } = event;
+  void _payload;
+  if (checksum(withoutChecksum) !== eventChecksum) fail("atomic_admission_journal_corrupt");
+  return event;
+}
+
+function ensureSchema(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS atomic_municipality_meta (
+      municipality_id TEXT PRIMARY KEY, schema_version TEXT NOT NULL, config_fingerprint TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS atomic_case_meta (
+      case_id TEXT PRIMARY KEY, municipality_id TEXT NOT NULL, namespace TEXT NOT NULL UNIQUE,
+      options_fingerprint TEXT NOT NULL, case_version INTEGER NOT NULL CHECK(case_version >= 0), head_checksum TEXT NOT NULL,
+      FOREIGN KEY(municipality_id) REFERENCES atomic_municipality_meta(municipality_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS atomic_case_events (
+      case_id TEXT NOT NULL, case_version INTEGER NOT NULL CHECK(case_version >= 1), event_id TEXT NOT NULL,
+      event_type TEXT NOT NULL, prior_event_checksum TEXT NOT NULL, actor_json TEXT NOT NULL, payload_json TEXT NOT NULL,
+      payload_checksum TEXT NOT NULL, correction_of TEXT, event_checksum TEXT NOT NULL,
+      PRIMARY KEY(case_id, case_version), UNIQUE(case_id, event_id), FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS atomic_case_idempotency (
+      case_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, fingerprint TEXT NOT NULL, receipt_json TEXT NOT NULL,
+      PRIMARY KEY(case_id, idempotency_key), FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS atomic_root_claims (
+      municipality_id TEXT NOT NULL, root_event_id TEXT NOT NULL, candidate_event_id TEXT NOT NULL, case_id TEXT NOT NULL,
+      PRIMARY KEY(municipality_id, root_event_id), UNIQUE(municipality_id, candidate_event_id), FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS atomic_binding_receipts (
+      case_id TEXT PRIMARY KEY, municipality_id TEXT NOT NULL, root_event_id TEXT NOT NULL UNIQUE, receipt_json TEXT NOT NULL,
+      FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS atomic_binding_outbox (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT, case_id TEXT NOT NULL UNIQUE, receipt_json TEXT NOT NULL,
+      receipt_checksum TEXT NOT NULL, FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT;
+  `);
+  const names = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>).map((row) => row.name);
+  const expected = ["atomic_binding_outbox", "atomic_binding_receipts", "atomic_case_events", "atomic_case_idempotency", "atomic_case_meta", "atomic_municipality_meta", "atomic_root_claims"];
+  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) fail("atomic_admission_schema_invalid");
+  const columns: Readonly<Record<string, readonly string[]>> = {
+    atomic_municipality_meta: ["municipality_id", "schema_version", "config_fingerprint"],
+    atomic_case_meta: ["case_id", "municipality_id", "namespace", "options_fingerprint", "case_version", "head_checksum"],
+    atomic_case_events: ["case_id", "case_version", "event_id", "event_type", "prior_event_checksum", "actor_json", "payload_json", "payload_checksum", "correction_of", "event_checksum"],
+    atomic_case_idempotency: ["case_id", "idempotency_key", "fingerprint", "receipt_json"],
+    atomic_root_claims: ["municipality_id", "root_event_id", "candidate_event_id", "case_id"],
+    atomic_binding_receipts: ["case_id", "municipality_id", "root_event_id", "receipt_json"],
+    atomic_binding_outbox: ["sequence", "case_id", "receipt_json", "receipt_checksum"],
+  };
+  for (const [table, expectedColumns] of Object.entries(columns)) {
+    const actual = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((row) => row.name);
+    if (actual.length !== expectedColumns.length || actual.some((name, index) => name !== expectedColumns[index])) fail("atomic_admission_schema_invalid");
+  }
+}
+
+function sameActor(left: ActorBinding, right: ActorBinding): boolean { return left.actorId === right.actorId && left.actorClass === right.actorClass; }
+
+function registryHas(registry: readonly ActorRegistration[], value: ActorBinding): boolean {
+  return registry.some((registered) => sameActor(registered, value));
+}
+
+function validateAppendChain(append: CoordinatorJournalAppend, caseId: string, expectedVersion: number, expectedHead = genesisChecksum(caseId)): void {
+  ownKeys(append, ["caseId", "events", "expectedCaseVersion", "fingerprint", "idempotencyKey", "namespace", "optionsFingerprint", "receipt"], "atomic_admission_append_invalid");
+  if (append.caseId !== caseId || !Number.isSafeInteger(append.expectedCaseVersion) ||
+    append.expectedCaseVersion !== expectedVersion || !SHA256.test(append.optionsFingerprint) ||
+    typeof append.idempotencyKey !== "string" || append.idempotencyKey.length < 1 ||
+    !SHA256.test(append.fingerprint) || !Array.isArray(append.events) || utilTypes.isProxy(append.events) ||
+    append.events.length < 1 || !plain(append.receipt) || !SHA256.test(expectedHead)) fail("atomic_admission_append_invalid");
+  let prior = expectedHead;
+  const knownEventIds = new Set(Array.from({ length: expectedVersion }, (_, index) =>
+    `urn:stadtstack:case-event:${caseId}:${index + 1}`));
+  const eventIds: string[] = [];
+  for (const [index, event] of append.events.entries()) {
+    ownKeys(event, ["actorBinding", "caseId", "caseVersion", "correctionOf", "eventChecksum", "eventId", "eventType", "payload", "payloadChecksum", "priorEventChecksum", "schemaVersion"], "atomic_admission_append_invalid");
+    const expectedEventId = `urn:stadtstack:case-event:${caseId}:${expectedVersion + index + 1}`;
+    if (event.schemaVersion !== "case_event_v1" || event.caseId !== caseId || event.caseVersion !== expectedVersion + index + 1 ||
+      event.priorEventChecksum !== prior || !SHA256.test(event.payloadChecksum) || !SHA256.test(event.eventChecksum) ||
+      event.eventId !== expectedEventId || typeof event.eventType !== "string" ||
+      event.eventType.length < 1 || !Object.hasOwn(event, "payload") ||
+      (event.correctionOf !== null && (typeof event.correctionOf !== "string" || !knownEventIds.has(event.correctionOf)))) fail("atomic_admission_append_invalid");
+    const boundActor = actor(event.actorBinding, "atomic_admission_append_invalid", true);
+    if (checksum(event.payload) !== event.payloadChecksum) fail("atomic_admission_append_invalid");
+    const { payload: _payload, eventChecksum, ...withoutChecksum } = event;
+    void _payload;
+    if (checksum(withoutChecksum) !== eventChecksum || !sameActor(boundActor, event.actorBinding)) fail("atomic_admission_append_invalid");
+    prior = event.eventChecksum;
+    eventIds.push(event.eventId);
+    knownEventIds.add(event.eventId);
+  }
+  const receipt = commandReceipt(append.receipt);
+  if (receipt.caseVersion !== expectedVersion + append.events.length || receipt.journalHeadChecksum !== prior ||
+    receipt.eventIds.length !== eventIds.length || receipt.eventIds.some((id, index) => id !== eventIds[index])) fail("atomic_admission_append_invalid");
+}
+
+function initialAdmissionAppend(append: CoordinatorJournalAppend, caseId: string): void {
+  validateAppendChain(append, caseId, 0);
+  if (append.events.length !== 3 || append.receipt.caseVersion !== 3 || append.receipt.eventIds.length !== 3) {
+    fail("atomic_admission_append_invalid");
+  }
+}
+
+/**
+ * Staging-only municipal SQLite adapter. The exposed admission interface is
+ * intentionally one method; claiming a root, writing the first three Case
+ * events/idempotency record, binding receipt, and outbox entry are hidden in
+ * the same BEGIN IMMEDIATE transaction.
+ */
+export function createSqliteAtomicTopicCaseAdmission(
+  input: SqliteAtomicTopicCaseAdmissionOptions,
+): SqliteAtomicTopicCaseAdmission {
+  const config = validateOptions(input);
+  if (config.requiredDepartmentIds) {
+    for (const departmentId of config.requiredDepartmentIds) {
+      const hasAgent = config.actorRegistry.some((entry) => entry.actorClass === "department_agent" && entry.departmentId === departmentId);
+      const hasReviewer = config.actorRegistry.some((entry) => entry.actorClass === "department_reviewer" && entry.departmentId === departmentId);
+      if (!hasAgent || !hasReviewer) fail("atomic_admission_options_invalid");
+    }
+  }
+  const databasePath = join(config.rootDir, `stadtstack-${config.municipalityId}-atomic-admission.sqlite`);
+  ensureNotSymlink(databasePath); ensureNotSymlink(`${databasePath}-wal`); ensureNotSymlink(`${databasePath}-shm`);
+  const db = new DatabaseSync(databasePath, { timeout: 5000, enableForeignKeyConstraints: true });
+  let closed = false;
+  const configFingerprint = checksum({
+    schemaVersion: SCHEMA_VERSION, municipalityId: config.municipalityId, policyVersion: config.policyVersion,
+    actorRegistry: [...config.actorRegistry].sort((left, right) => `${left.actorClass}:${left.actorId}`.localeCompare(`${right.actorClass}:${right.actorId}`)),
+    requiredDepartmentIds: config.requiredDepartmentIds ? [...config.requiredDepartmentIds].sort() : [],
+    allowedSignerPubkeys: [...config.allowedSignerPubkeys].sort(),
+    allowedAgentPubkeys: [...config.allowedAgentPubkeys].sort(),
+  });
+  try {
+    db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
+    const pragmas = {
+      journal: db.prepare("PRAGMA journal_mode").get() as { journal_mode: string },
+      sync: db.prepare("PRAGMA synchronous").get() as { synchronous: number },
+      foreign: db.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number },
+    };
+    if (pragmas.journal.journal_mode.toLowerCase() !== "wal" || pragmas.sync.synchronous !== 2 || pragmas.foreign.foreign_keys !== 1) fail("atomic_admission_pragmas_invalid");
+    ensureSchema(db);
+    db.exec("BEGIN IMMEDIATE");
+    const prior = db.prepare("SELECT schema_version,config_fingerprint FROM atomic_municipality_meta WHERE municipality_id=?").get(config.municipalityId) as { schema_version: string; config_fingerprint: string } | undefined;
+    if (prior) {
+      if (prior.schema_version !== SCHEMA_VERSION || prior.config_fingerprint !== configFingerprint) fail("atomic_admission_config_mismatch");
+    } else {
+      db.prepare("INSERT INTO atomic_municipality_meta(municipality_id,schema_version,config_fingerprint) VALUES(?,?,?)").run(config.municipalityId, SCHEMA_VERSION, configFingerprint);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    try { db.exec("ROLLBACK"); } catch { /* best-effort after failed bootstrap */ }
+    db.close(); throw error;
+  }
+  const ensureOpen = (): void => { if (closed) fail("atomic_admission_closed"); };
+  const withReadSnapshot = <T>(operation: () => T): T => {
+    ensureOpen();
+    // Recovery is also invoked while an adapter-owned write/read transaction
+    // is already active.  Reuse that snapshot instead of nesting BEGIN.  A
+    // standalone recovery must establish its own snapshot so metadata, events,
+    // and idempotency rows cannot straddle a concurrent continuation commit.
+    if (db.isTransaction) return operation();
+    db.exec("BEGIN");
+    try {
+      const result = operation();
+      db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      try { db.exec("ROLLBACK"); } catch { /* best effort */ }
+      throw error;
+    }
+  };
+
+  const readRecovery = (request: { namespace: string; caseId: string; optionsFingerprint: string }): CoordinatorJournalRecovery => {
+    ensureOpen();
+    if (!NAMESPACE.test(request.namespace) || typeof request.caseId !== "string" || typeof request.optionsFingerprint !== "string") fail("atomic_admission_recovery_invalid");
+    return withReadSnapshot(() => {
+      // Deliberately read-only: an unknown Case is not a claim and creates no row.
+      const meta = db.prepare("SELECT case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum FROM atomic_case_meta WHERE case_id=?").get(request.caseId) as CaseMetaRow | undefined;
+      if (!meta) return { events: [], idempotency: [] };
+      if (meta.municipality_id !== config.municipalityId || meta.namespace !== request.namespace || meta.options_fingerprint !== request.optionsFingerprint || !Number.isSafeInteger(meta.case_version) || meta.case_version < 0 || !SHA256.test(meta.head_checksum)) fail("atomic_admission_journal_corrupt");
+      const rows = db.prepare("SELECT case_version,event_id,event_type,prior_event_checksum,actor_json,payload_json,payload_checksum,correction_of,event_checksum FROM atomic_case_events WHERE case_id=? ORDER BY case_version").all(request.caseId) as EventRow[];
+      if (rows.length !== meta.case_version) fail("atomic_admission_journal_corrupt");
+      const events = rows.map((row) => eventFromRow(request.caseId, row));
+      const head = events.length ? events[events.length - 1]!.eventChecksum : genesisChecksum(request.caseId);
+      if (head !== meta.head_checksum) fail("atomic_admission_journal_corrupt");
+      const idempotency = (db.prepare("SELECT idempotency_key,fingerprint,receipt_json FROM atomic_case_idempotency WHERE case_id=? ORDER BY idempotency_key").all(request.caseId) as IdempotencyRow[]).map((row): CoordinatorJournalIdempotency => {
+        if (typeof row.idempotency_key !== "string" || typeof row.fingerprint !== "string" || row.fingerprint.length === 0) fail("atomic_admission_journal_corrupt");
+        return { idempotencyKey: row.idempotency_key, fingerprint: row.fingerprint, receipt: commandReceipt(parseJson(row.receipt_json, "atomic_admission_journal_corrupt")) };
+      });
+      return clone({ events, idempotency });
+    });
+  };
+
+  const readCaseMeta = (caseId: string): CaseMetaRow | undefined =>
+    db.prepare("SELECT case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum FROM atomic_case_meta WHERE case_id=?")
+      .get(caseId) as CaseMetaRow | undefined;
+
+  const pinnedCoordinator = (caseId: string, uuidV7: string, journal: CoordinatorJournalPort): CivicCaseCoordinator =>
+    createCivicCaseCoordinator({
+      jurisdictionValue: config.municipalityId, uuidV7, canonicalCaseId: caseId,
+      policyVersion: config.policyVersion, syntheticFixtureOnly: true,
+      requireSignedSuggestionAdmission: true, allowedSignerPubkeys: [...config.allowedSignerPubkeys],
+      allowedAgentPubkeys: [...config.allowedAgentPubkeys], actors: config.actorRegistry,
+      requiredDepartmentIds: config.requiredDepartmentIds, journalPort: journal, journalNamespace: journal.namespace,
+    });
+
+  const validateCaseUnit = (meta: CaseMetaRow): PublicCaseBindingReceiptV1 => {
+    if (!meta || typeof meta.case_id !== "string" || meta.municipality_id !== config.municipalityId || !NAMESPACE.test(meta.namespace) ||
+      typeof meta.options_fingerprint !== "string" || meta.options_fingerprint.length < 1 ||
+      !Number.isSafeInteger(meta.case_version) || meta.case_version < 3 || !SHA256.test(meta.head_checksum)) {
+      fail("atomic_admission_unit_corrupt");
+    }
+    const events = (db.prepare("SELECT case_version,event_id,event_type,prior_event_checksum,actor_json,payload_json,payload_checksum,correction_of,event_checksum FROM atomic_case_events WHERE case_id=? ORDER BY case_version")
+      .all(meta.case_id) as EventRow[]).map((row) => eventFromRow(meta.case_id, row));
+    if (events.length !== meta.case_version) fail("atomic_admission_unit_corrupt");
+    let prior = genesisChecksum(meta.case_id);
+    for (const [index, event] of events.entries()) {
+      if (event.caseVersion !== index + 1 || event.priorEventChecksum !== prior) fail("atomic_admission_unit_corrupt");
+      prior = event.eventChecksum;
+    }
+    if (prior !== meta.head_checksum) fail("atomic_admission_unit_corrupt");
+    const idempotency = db.prepare("SELECT idempotency_key,fingerprint,receipt_json FROM atomic_case_idempotency WHERE case_id=? ORDER BY idempotency_key")
+      .all(meta.case_id) as IdempotencyRow[];
+    if (idempotency.length < 1) fail("atomic_admission_unit_corrupt");
+    for (const entry of idempotency) {
+      if (typeof entry.idempotency_key !== "string" || entry.idempotency_key.length < 1 || typeof entry.fingerprint !== "string" || entry.fingerprint.length < 1) fail("atomic_admission_unit_corrupt");
+      const command = commandReceipt(parseJson(entry.receipt_json, "atomic_admission_unit_corrupt"));
+      const commandHead = events[command.caseVersion - 1];
+      if (command.caseVersion < 1 || command.caseVersion > meta.case_version || !commandHead ||
+        command.journalHeadChecksum !== commandHead.eventChecksum || command.eventIds.length < 1 ||
+        command.eventIds.some((eventId, index) => events[command.caseVersion - command.eventIds.length + index]?.eventId !== eventId)) {
+        fail("atomic_admission_unit_corrupt");
+      }
+    }
+    const receiptRow = db.prepare("SELECT receipt_json FROM atomic_binding_receipts WHERE case_id=? AND municipality_id=?").get(meta.case_id, config.municipalityId) as ReceiptRow | undefined;
+    const receipt = responseReceipt(receiptRow);
+    const discussionPayload = events[1]?.payload;
+    const admissionPayload = events[2]?.payload;
+    if (!plain(discussionPayload) || !plain(admissionPayload) ||
+      !plain(discussionPayload.discussion) || !plain(admissionPayload.signedSuggestion) ||
+      !plain(admissionPayload.signedSuggestion.draft) || !plain(admissionPayload.signedSuggestion.event) ||
+      !plain(admissionPayload.sourceAnswer)) fail("atomic_admission_unit_corrupt");
+    const journalBinding = {
+      rootEventId: discussionPayload.discussion.id,
+      topicId: admissionPayload.signedSuggestion.draft.topicId,
+      candidateId: admissionPayload.signedSuggestion.candidateId,
+      candidateEventId: admissionPayload.signedSuggestion.event.id,
+      sourceAnswerEventId: admissionPayload.sourceAnswer.id,
+    };
+    if (Object.values(journalBinding).some((value) => typeof value !== "string") ||
+      receipt.rootEventId !== journalBinding.rootEventId || receipt.topicId !== journalBinding.topicId ||
+      receipt.candidateId !== journalBinding.candidateId || receipt.candidateEventId !== journalBinding.candidateEventId ||
+      receipt.sourceAnswerEventId !== journalBinding.sourceAnswerEventId) fail("atomic_admission_unit_corrupt");
+    const claim = db.prepare("SELECT root_event_id,candidate_event_id,case_id FROM atomic_root_claims WHERE municipality_id=? AND case_id=?")
+      .get(config.municipalityId, meta.case_id) as { root_event_id: string; candidate_event_id: string; case_id: string } | undefined;
+    if (!claim || claim.case_id !== meta.case_id || receipt.caseId !== meta.case_id || receipt.caseVersion !== 3 ||
+      receipt.rootEventId !== claim.root_event_id || receipt.candidateEventId !== claim.candidate_event_id ||
+      receipt.caseEventIds.length !== 3 || receipt.caseEventIds.some((eventId, index) => events[index]?.eventId !== eventId) ||
+      receipt.journalHeadChecksum !== events[2]?.eventChecksum || receipt.admissionEventChecksum !== events[2]?.eventChecksum) {
+      fail("atomic_admission_unit_corrupt");
+    }
+    const initialKey = `roebel:admit-signed-topic-suggestion:${claim.candidate_event_id}`;
+    const initial = idempotency.find((entry) => entry.idempotency_key === initialKey);
+    if (!initial || typeof initial.fingerprint !== "string" || initial.fingerprint.length < 1) fail("atomic_admission_unit_corrupt");
+    const initialReceipt = commandReceipt(parseJson(initial.receipt_json, "atomic_admission_unit_corrupt"));
+    if (initialReceipt.caseVersion !== 3 || initialReceipt.journalHeadChecksum !== receipt.journalHeadChecksum ||
+      initialReceipt.eventIds.length !== 3 || initialReceipt.eventIds.some((eventId, index) => eventId !== receipt.caseEventIds[index])) {
+      fail("atomic_admission_unit_corrupt");
+    }
+    const outbox = db.prepare("SELECT receipt_json,receipt_checksum FROM atomic_binding_outbox WHERE case_id=?").get(meta.case_id) as { receipt_json: string; receipt_checksum: string } | undefined;
+    if (!outbox || outbox.receipt_checksum !== receipt.receiptChecksum ||
+      JSON.stringify(responseReceipt({ receipt_json: outbox.receipt_json })) !== JSON.stringify(receipt)) fail("atomic_admission_unit_corrupt");
+    const prefix = `urn:stadtstack:case:test:${config.municipalityId}:`;
+    const uuidV7 = meta.case_id.startsWith(prefix) ? meta.case_id.slice(prefix.length) : "";
+    if (!UUID_V7.test(uuidV7) || meta.namespace !== caseNamespace(uuidV7)) fail("atomic_admission_unit_corrupt");
+    // Constructor recovery replays the entire journal with the exact pinned
+    // policy, actor registry, signer registry, and options fingerprint.
+    // Thus syntactically valid but semantically forged event payloads fail at
+    // startup before either the outbox or an admission is usable.
+    try {
+      pinnedCoordinator(meta.case_id, uuidV7, Object.freeze({
+        namespace: meta.namespace,
+        recover: readRecovery,
+        appendAtomic() { fail("atomic_admission_readonly_replay"); },
+        close() {},
+        deleteExactSynthetic() { fail("atomic_admission_delete_forbidden"); },
+      }));
+    } catch { fail("atomic_admission_unit_corrupt"); }
+    return receipt;
+  };
+
+  const validateDatabase = (): void => {
+    const integrity = db.prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
+    const municipalityRows = db.prepare("SELECT municipality_id FROM atomic_municipality_meta ORDER BY municipality_id")
+      .all() as Array<{ municipality_id: string }>;
+    if (integrity?.quick_check !== "ok" || municipalityRows.length !== 1 ||
+      municipalityRows[0]?.municipality_id !== config.municipalityId) fail("atomic_admission_unit_corrupt");
+    const metaRows = db.prepare("SELECT case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum FROM atomic_case_meta ORDER BY case_id").all() as CaseMetaRow[];
+    const sets = [
+      db.prepare("SELECT case_id FROM atomic_root_claims ORDER BY case_id").all() as Array<{ case_id: string }>,
+      db.prepare("SELECT case_id FROM atomic_binding_receipts ORDER BY case_id").all() as Array<{ case_id: string }>,
+      db.prepare("SELECT case_id FROM atomic_binding_outbox ORDER BY case_id").all() as Array<{ case_id: string }>,
+      db.prepare("SELECT DISTINCT case_id FROM atomic_case_events ORDER BY case_id").all() as Array<{ case_id: string }>,
+      db.prepare("SELECT DISTINCT case_id FROM atomic_case_idempotency ORDER BY case_id").all() as Array<{ case_id: string }>,
+    ];
+    const ids = metaRows.map((row) => row.case_id);
+    if (new Set(ids).size !== ids.length || sets.some((rows) => rows.length !== ids.length || rows.some((row, index) => row.case_id !== ids[index]))) {
+      fail("atomic_admission_unit_corrupt");
+    }
+    for (const meta of metaRows) validateCaseUnit(meta);
+  };
+
+  try { withReadSnapshot(validateDatabase); }
+  catch (error) { db.close(); closed = true; throw error; }
+
+  const admit = async (callerInput: AtomicTopicCaseAdmissionV1): Promise<PublicCaseBindingReceiptV1> => {
+    ensureOpen();
+    const raw = ownKeys(callerInput, ["actorBinding", "caseId", "expectedCaseVersion", "idempotencyKey", "municipalityId", "policyVersion", "rootEventId", "schemaVersion", "sourceDiscussion", "verifiedAdmission"], "atomic_admission_input_invalid");
+    const authenticatedActor = actor(raw.actorBinding, "atomic_admission_input_invalid");
+    if (raw.schemaVersion !== "atomic_topic_case_admission_v1" || raw.municipalityId !== config.municipalityId || raw.policyVersion !== config.policyVersion || raw.expectedCaseVersion !== 0 ||
+      !registryHas(config.actorRegistry, authenticatedActor)) fail("atomic_admission_input_invalid");
+    const supplied = raw.verifiedAdmission as VerifiedTopicCaseAdmissionV1;
+    let verified: VerifiedTopicCaseAdmissionV1;
+    try {
+      verified = verifyTopicCaseAdmission({
+        sourceDiscussion: raw.sourceDiscussion as AtomicTopicCaseAdmissionV1["sourceDiscussion"],
+        sourceAnswer: supplied?.sourceAnswer,
+        signedSuggestion: supplied?.signedSuggestion,
+        allowedAgentPubkeys: [...config.allowedAgentPubkeys],
+      });
+    } catch { fail("atomic_admission_artifact_invalid"); }
+    if (!config.allowedSignerPubkeys.includes(verified.signedSuggestion.signerPubkey) ||
+      raw.rootEventId !== verified.discussion.id || raw.caseId !== verified.identity.caseId ||
+      verified.identity.municipalityId !== config.municipalityId ||
+      raw.idempotencyKey !== `roebel:admit-signed-topic-suggestion:${verified.signedSuggestion.event.id}`) fail("atomic_admission_binding_invalid");
+    const namespace = caseNamespace(verified.identity.caseUuidV7);
+    let pending: { verified: VerifiedTopicCaseAdmissionV1; rootEventId: string; caseId: string } | null = {
+      verified, rootEventId: verified.discussion.id, caseId: verified.identity.caseId,
+    };
+    const journal: CoordinatorJournalPort = {
+      namespace,
+      recover: readRecovery,
+      appendAtomic(append: CoordinatorJournalAppend) {
+        if (!pending || append.namespace !== namespace || append.caseId !== pending.caseId || append.expectedCaseVersion !== 0 ||
+          append.idempotencyKey !== `roebel:admit-signed-topic-suggestion:${pending.verified.signedSuggestion.event.id}` ||
+          append.events.length !== 3 || append.receipt.caseVersion !== 3 || append.receipt.eventIds.length !== 3) fail("atomic_admission_append_invalid");
+        initialAdmissionAppend(append, pending.caseId);
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          const claim = db.prepare("SELECT candidate_event_id,case_id FROM atomic_root_claims WHERE municipality_id=? AND root_event_id=?").get(config.municipalityId, pending.rootEventId) as { candidate_event_id: string; case_id: string } | undefined;
+          if (claim && (claim.candidate_event_id !== pending.verified.signedSuggestion.event.id || claim.case_id !== pending.caseId)) fail("case_binding_root_conflict");
+          const meta = db.prepare("SELECT case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum FROM atomic_case_meta WHERE case_id=?").get(pending.caseId) as CaseMetaRow | undefined;
+          if (meta) {
+            if (meta.namespace !== namespace || meta.options_fingerprint !== append.optionsFingerprint) fail("atomic_admission_journal_corrupt");
+            const receipt = validateCaseUnit(meta);
+            if (receipt.candidateEventId !== pending.verified.signedSuggestion.event.id) fail("case_binding_root_conflict");
+            db.exec("COMMIT");
+            return { status: "duplicate" as const, receipt: { caseVersion: receipt.caseVersion, eventIds: [...receipt.caseEventIds], journalHeadChecksum: receipt.journalHeadChecksum } };
+          }
+          db.prepare("INSERT INTO atomic_case_meta(case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum) VALUES(?,?,?,?,?,?)")
+            .run(pending.caseId, config.municipalityId, namespace, append.optionsFingerprint, 0, genesisChecksum(pending.caseId));
+          db.prepare("INSERT INTO atomic_root_claims(municipality_id,root_event_id,candidate_event_id,case_id) VALUES(?,?,?,?)")
+            .run(config.municipalityId, pending.rootEventId, pending.verified.signedSuggestion.event.id, pending.caseId);
+          if (config.failpoint === "after_root_claim") fail("atomic_admission_failpoint");
+          const insertEvent = db.prepare("INSERT INTO atomic_case_events(case_id,case_version,event_id,event_type,prior_event_checksum,actor_json,payload_json,payload_checksum,correction_of,event_checksum) VALUES(?,?,?,?,?,?,?,?,?,?)");
+          for (const event of append.events) insertEvent.run(pending.caseId, event.caseVersion, event.eventId, event.eventType, event.priorEventChecksum, canonicalJson(event.actorBinding), canonicalJson(event.payload), event.payloadChecksum, event.correctionOf, event.eventChecksum);
+          db.prepare("INSERT INTO atomic_case_idempotency(case_id,idempotency_key,fingerprint,receipt_json) VALUES(?,?,?,?)")
+            .run(pending.caseId, append.idempotencyKey, append.fingerprint, JSON.stringify(append.receipt));
+          db.prepare("UPDATE atomic_case_meta SET case_version=?,head_checksum=? WHERE case_id=?").run(append.receipt.caseVersion, append.receipt.journalHeadChecksum, pending.caseId);
+          if (config.failpoint === "after_case_events") fail("atomic_admission_failpoint");
+          const receipt = createPublicCaseBindingReceipt({
+            rootEventId: pending.rootEventId, topicId: pending.verified.identity.topicId,
+            candidateId: pending.verified.signedSuggestion.candidateId, candidateEventId: pending.verified.signedSuggestion.event.id,
+            sourceAnswerEventId: pending.verified.sourceAnswer.id, caseId: pending.caseId, caseVersion: 3,
+            caseEventIds: [append.receipt.eventIds[0]!, append.receipt.eventIds[1]!, append.receipt.eventIds[2]!],
+            journalHeadChecksum: append.receipt.journalHeadChecksum, admissionEventChecksum: append.receipt.journalHeadChecksum,
+          });
+          const receiptJson = JSON.stringify(receipt);
+          db.prepare("INSERT INTO atomic_binding_receipts(case_id,municipality_id,root_event_id,receipt_json) VALUES(?,?,?,?)").run(pending.caseId, config.municipalityId, pending.rootEventId, receiptJson);
+          db.prepare("INSERT INTO atomic_binding_outbox(case_id,receipt_json,receipt_checksum) VALUES(?,?,?)").run(pending.caseId, receiptJson, receipt.receiptChecksum);
+          if (config.failpoint === "after_binding_receipt") fail("atomic_admission_failpoint");
+          db.exec("COMMIT");
+          return { status: "appended" as const, receipt: clone(append.receipt) };
+        } catch (error) { try { db.exec("ROLLBACK"); } catch { /* best effort */ } throw error; }
+      },
+      close() { /* The owning adapter closes the municipal DB. */ },
+      deleteExactSynthetic() { fail("atomic_admission_delete_forbidden"); },
+    };
+    try {
+      const coordinator = createCivicCaseCoordinator({
+        jurisdictionValue: config.municipalityId, uuidV7: verified.identity.caseUuidV7, canonicalCaseId: verified.identity.caseId,
+        policyVersion: config.policyVersion, syntheticFixtureOnly: true, requireSignedSuggestionAdmission: true,
+        allowedSignerPubkeys: [...config.allowedSignerPubkeys], allowedAgentPubkeys: [...config.allowedAgentPubkeys],
+        actors: config.actorRegistry, requiredDepartmentIds: config.requiredDepartmentIds, journalPort: journal, journalNamespace: namespace,
+      });
+      coordinator.handle({
+        schemaVersion: "command_envelope_v1", commandType: "admit_signed_topic_suggestion_v1", caseId: verified.identity.caseId,
+        actorBinding: authenticatedActor, expectedCaseVersion: 0,
+        idempotencyKey: `roebel:admit-signed-topic-suggestion:${verified.signedSuggestion.event.id}`,
+        visibility: "private_case", policyVersion: config.policyVersion,
+        payload: { sourceDiscussion: raw.sourceDiscussion as AtomicTopicCaseAdmissionV1["sourceDiscussion"], sourceAnswer: verified.sourceAnswer, signedSuggestion: verified.signedSuggestion },
+      });
+      const result = withReadSnapshot(() => {
+        const meta = readCaseMeta(verified.identity.caseId);
+        if (!meta) fail("atomic_admission_unit_corrupt");
+        const receipt = validateCaseUnit(meta);
+        if (receipt.rootEventId !== verified.discussion.id || receipt.topicId !== verified.identity.topicId ||
+          receipt.candidateId !== verified.signedSuggestion.candidateId ||
+          receipt.candidateEventId !== verified.signedSuggestion.event.id ||
+          receipt.sourceAnswerEventId !== verified.sourceAnswer.id) fail("case_binding_root_conflict");
+        return receipt;
+      });
+      return clone(result);
+    } finally { pending = null; }
+  };
+
+  const continuationJournal = (caseId: string, namespace: string): CoordinatorJournalPort => Object.freeze({
+    namespace,
+    recover: readRecovery,
+    appendAtomic(append: CoordinatorJournalAppend) {
+      ensureOpen();
+      if (append.namespace !== namespace || append.caseId !== caseId) fail("atomic_admission_append_invalid");
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const meta = readCaseMeta(caseId);
+        if (!meta || meta.namespace !== namespace) fail("atomic_admission_case_not_admitted");
+        validateCaseUnit(meta);
+        if (meta.options_fingerprint !== append.optionsFingerprint) fail("atomic_admission_journal_corrupt");
+        const prior = db.prepare("SELECT fingerprint,receipt_json FROM atomic_case_idempotency WHERE case_id=? AND idempotency_key=?")
+          .get(caseId, append.idempotencyKey) as { fingerprint: string; receipt_json: string } | undefined;
+        if (prior) {
+          if (prior.fingerprint !== append.fingerprint) fail("idempotency_conflict");
+          const receipt = commandReceipt(parseJson(prior.receipt_json, "atomic_admission_unit_corrupt"));
+          db.exec("COMMIT");
+          return { status: "duplicate" as const, receipt };
+        }
+        if (meta.case_version !== append.expectedCaseVersion) {
+          fail("case_version_conflict");
+        }
+        validateAppendChain(append, caseId, meta.case_version, meta.head_checksum);
+        const insertEvent = db.prepare("INSERT INTO atomic_case_events(case_id,case_version,event_id,event_type,prior_event_checksum,actor_json,payload_json,payload_checksum,correction_of,event_checksum) VALUES(?,?,?,?,?,?,?,?,?,?)");
+        for (const event of append.events) {
+          if (!registryHas(config.actorRegistry, actor(event.actorBinding, "atomic_admission_append_invalid", true))) fail("atomic_admission_append_invalid");
+          insertEvent.run(caseId, event.caseVersion, event.eventId, event.eventType, event.priorEventChecksum, canonicalJson(event.actorBinding), canonicalJson(event.payload), event.payloadChecksum, event.correctionOf, event.eventChecksum);
+        }
+        db.prepare("INSERT INTO atomic_case_idempotency(case_id,idempotency_key,fingerprint,receipt_json) VALUES(?,?,?,?)")
+          .run(caseId, append.idempotencyKey, append.fingerprint, JSON.stringify(append.receipt));
+        db.prepare("UPDATE atomic_case_meta SET case_version=?,head_checksum=? WHERE case_id=?")
+          .run(append.receipt.caseVersion, append.receipt.journalHeadChecksum, caseId);
+        db.exec("COMMIT");
+        return { status: "appended" as const, receipt: clone(append.receipt) };
+      } catch (error) {
+        try { db.exec("ROLLBACK"); } catch { /* best effort */ }
+        throw error;
+      }
+    },
+    close() { /* owned municipal connection */ },
+    deleteExactSynthetic() { fail("atomic_admission_delete_forbidden"); },
+  });
+
+  const openCaseCoordinator = (caseId: string): CivicCaseCoordinator => {
+    ensureOpen();
+    if (typeof caseId !== "string" || !caseId.startsWith(`urn:stadtstack:case:test:${config.municipalityId}:`)) fail("atomic_admission_case_not_admitted");
+    return withReadSnapshot(() => {
+      const meta = readCaseMeta(caseId);
+      if (!meta) fail("atomic_admission_case_not_admitted");
+      validateCaseUnit(meta);
+      const uuidV7 = caseId.slice(`urn:stadtstack:case:test:${config.municipalityId}:`.length);
+      if (!UUID_V7.test(uuidV7) || meta.namespace !== caseNamespace(uuidV7)) fail("atomic_admission_unit_corrupt");
+      return pinnedCoordinator(caseId, uuidV7, continuationJournal(caseId, meta.namespace));
+    });
+  };
+
+  const outbox: CredentialFreeCaseBindingOutboxReader = Object.freeze({
+    replay(inputValue = {}) {
+      ensureOpen();
+      const parsed = allowedKeys(inputValue, ["afterSequence", "limit"], "atomic_admission_outbox_request_invalid");
+      const afterSequence: number = parsed.afterSequence === undefined ? 0 : typeof parsed.afterSequence === "number" ? parsed.afterSequence : Number.NaN;
+      const limit: number = parsed.limit === undefined ? 100 : typeof parsed.limit === "number" ? parsed.limit : Number.NaN;
+      if (!Number.isSafeInteger(afterSequence) || afterSequence < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) fail("atomic_admission_outbox_request_invalid");
+      return withReadSnapshot(() => {
+        // The validation and page read share one SQLite snapshot, so a reader
+        // cannot emit a receipt from a different cross-table state.
+        validateDatabase();
+        const rows = db.prepare("SELECT sequence,receipt_json,receipt_checksum FROM atomic_binding_outbox WHERE sequence>? ORDER BY sequence LIMIT ?").all(afterSequence, limit) as Array<{ sequence: number; receipt_json: string; receipt_checksum: string }>;
+        return Object.freeze(rows.map((row) => {
+          if (!Number.isSafeInteger(row.sequence) || row.sequence < 1 || !SHA256.test(row.receipt_checksum)) fail("atomic_admission_outbox_corrupt");
+          const receipt = verifyPublicCaseBindingReceipt(parseJson(row.receipt_json, "atomic_admission_outbox_corrupt"));
+          if (receipt.receiptChecksum !== row.receipt_checksum) fail("atomic_admission_outbox_corrupt");
+          return Object.freeze({ sequence: row.sequence, receipt: clone(receipt) });
+        }));
+      });
+    },
+  });
+  return Object.freeze({
+    admission: Object.freeze({ admit }),
+    outbox,
+    caseCoordinators: Object.freeze({ open: openCaseCoordinator }),
+    close() { if (!closed) { db.close(); closed = true; } },
+  });
+}

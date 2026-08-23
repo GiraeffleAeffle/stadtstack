@@ -85,6 +85,19 @@ The complete ordered history of Case events from which the current state of a
 Civic case can be reconstructed.
 _Avoid_: activity log, relay history, mutable case row
 
+**Atomic Case admission unit**:
+The single durable transaction that claims one immutable Discussion root,
+appends the first Case events and idempotency receipt, and enqueues the public
+Case binding receipt. A partial claim, journal, receipt, or outbox is invalid
+and must fail readiness and retry.
+_Avoid_: best-effort workflow, copied status flags, eventual initial creation
+
+**Case binding outbox**:
+The append-only, credential-free replay source for rebuilding the public Case
+binding projection from an accepted Atomic Case admission unit. It is a read
+model transport, not a second Case journal and not an admission capability.
+_Avoid_: public write queue, mutable projection table, workflow source
+
 **Review attestation**:
 An accountable statement that a named reviewer accepted or rejected a bounded
 artifact under a stated policy and version.
