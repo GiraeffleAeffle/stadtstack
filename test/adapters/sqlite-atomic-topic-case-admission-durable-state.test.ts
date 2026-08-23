@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -181,7 +181,7 @@ test("durable roots are exact non-symlink paths, while legacy roots remain tmp-o
     const legacy = createSqliteAtomicTopicCaseAdmission(options(mkdtempSync(join(tmpdir(), "stadtstack-legacy-")), false));
     assert.throws(() => legacy.sealAndClose(), /atomic_admission_seal_unavailable/);
     legacy.close();
-  } finally { rmSync(link, { force: true }); }
+  } finally { if (existsSync(link)) unlinkSync(link); }
 });
 
 test("durable state rejects dangling symlinks for every SQLite and seal sidecar target", () => {
@@ -233,6 +233,42 @@ test("owner identity database rejects malformed schema and injected triggers bef
   `);
   injected.close();
   assert.throws(() => createSqliteAtomicTopicCaseAdmission(options(triggerRoot)), /atomic_admission_owner_store_invalid/u);
+});
+
+test("restored SQLite schema rejects altered constraints before admission", () => {
+  const root = durableRoot();
+  const seeded = createSqliteAtomicTopicCaseAdmission(options(root));
+  seeded.close();
+
+  const database = new DatabaseSync(join(root, `stadtstack-${MUNICIPALITY_ID}-atomic-admission.sqlite`));
+  database.exec(`
+    PRAGMA foreign_keys=OFF;
+    BEGIN;
+    CREATE TABLE atomic_case_meta_rebuilt (
+      case_id TEXT PRIMARY KEY, municipality_id TEXT NOT NULL, namespace TEXT NOT NULL,
+      options_fingerprint TEXT NOT NULL, case_version INTEGER NOT NULL CHECK(case_version >= 0), head_checksum TEXT NOT NULL
+    );
+    INSERT INTO atomic_case_meta_rebuilt(case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum)
+      SELECT case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum FROM atomic_case_meta;
+    DROP TABLE atomic_case_meta;
+    ALTER TABLE atomic_case_meta_rebuilt RENAME TO atomic_case_meta;
+    COMMIT;
+  `);
+  database.close();
+
+  assert.throws(() => createSqliteAtomicTopicCaseAdmission(options(root)), /atomic_admission_schema_invalid/u);
+  const unchanged = new DatabaseSync(join(root, `stadtstack-${MUNICIPALITY_ID}-atomic-admission.sqlite`), { readOnly: true });
+  assert.equal((unchanged.prepare("SELECT COUNT(*) AS count FROM atomic_case_meta").get() as { count: number }).count, 0);
+  unchanged.close();
+});
+
+test("durable seal rejects setuid and setgid permission bits", () => {
+  const root = durableRoot();
+  const adapter = createSqliteAtomicTopicCaseAdmission(options(root));
+  adapter.sealAndClose();
+  const sealPath = join(root, CASE_SHUTDOWN_SEAL_FILENAME);
+  chmodSync(sealPath, 0o4600);
+  assert.throws(() => createSqliteAtomicTopicCaseAdmission(options(root)), /atomic_admission_seal_invalid/u);
 });
 
 test("checkpoint failure writes no seal and retains the live owner lock until explicit close", () => {
@@ -292,7 +328,7 @@ test("post-close seal-write failure leaves no success seal and retains ownership
   assert.throws(() => createSqliteAtomicTopicCaseAdmission(options(root)), /atomic_admission_owner_locked/u);
 
   adapter.close();
-  rmSync(sealPath, { force: true });
+  unlinkSync(sealPath);
   const successor = createSqliteAtomicTopicCaseAdmission(options(root));
   successor.close();
 });

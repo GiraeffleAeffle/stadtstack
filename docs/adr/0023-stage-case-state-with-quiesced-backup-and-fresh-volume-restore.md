@@ -38,6 +38,16 @@ process lifetime and released by process death. It is not a persistent sentinel
 file and cannot be confused with the durable shutdown seal written only after a
 successful checkpoint and close.
 
+The durable root also has a small, canonical epoch ledger. The first empty
+store is admitted only through a mode-0600, file-and-directory-fsync'd
+`case-store-bootstrap-v1.json` receipt. Before an ordinary durable runtime
+opens a sealed store it writes a separate mode-0600,
+file-and-directory-fsync'd `case-open-epoch-v1.json`, recording the exact clean
+shutdown seal that is its baseline. The bootstrap receipt is consumed once that
+initial database has been sealed; an open-epoch receipt is removed only after
+the next clean seal is durable. These are local integrity receipts, not
+Kubernetes authority and not restart permissions.
+
 The SQLite Adapter now accepts durable mode only at one exact, existing,
 non-symlink directory; the legacy multi-connection reference mode remains
 restricted below the system temporary directory. That path check and the
@@ -175,23 +185,71 @@ resource versions. Until that composition is reviewed, source-port identity
 checks provide tamper resistance inside one process but do not establish an
 organizational trust boundary.
 
-That pure verifier is necessary but not sufficient for activation. The live
-Adapter must acquire the durable owner lock and, while holding it, verify the
-same bound target claim, local seal, closed database bytes, absent WAL/SHM and
-attestation before it invalidates the prior seal or opens SQLite. A future
-fsync'd Recovery Activation Marker will bind the target PVC UID, recovery
-operation, deployment binding and verified attestation for later restarts of
-that same claim. The marker proves the one-time cutover; it does not extend the
-24-hour recovery window. Replaying it against another PVC or using it after the
-attestation expires cannot reopen admission. Until that critical-section
-Adapter and marker exist, the reference verifier does not authorize a live
-Deployment.
+That pure verifier is necessary but not sufficient for activation. The
+reference recovery composition now acquires the durable owner lock and, while
+holding it, verifies the same bound target claim, local v2 seal, closed database
+bytes, absent-or-empty WAL and SHM, and signed attestation before it
+invalidates the prior seal or opens SQLite. It writes a canonical, mode-0600,
+file-and-directory-fsync'd v2 Recovery Activation Marker binding the complete
+source and target deployment claims, source seal, exact original database
+identity, recovery operation, attestation checksum and fixed activation window.
+A deployment claim is itself canonical and mode-0600 and binds municipality,
+release digest, reviewed control-binding checksum, PVC namespace/name/UID and
+PV name. The v2 shutdown seal includes that claim checksum. An ordinary target
+startup therefore cannot open a copied restored source volume, and a generic
+durable startup cannot bypass a present marker.
+
+The legal recovery transition order is marker, atomic source-to-target claim
+rotation, source-seal invalidation, then opening the already-restored SQLite
+file in `mode=rw`. Recovery never creates a database or schema: it requires the
+exact expected schema and municipal metadata, and requires the current journal
+and recovery evidence to dominate the last clean baseline. That baseline is the
+source seal embedded in the marker; on an ordinary open it is the seal embedded
+in the open-epoch receipt. A retry with a source seal present rehashes the
+closed database. The only legal interrupted recovery states are: marker plus
+source claim plus source seal (before rotation); marker plus target claim plus
+source seal (after rotation); marker plus target claim without local source seal
+(after invalidation or while the recovered database is open); and target clean seal plus marker
+(clean close before marker cleanup). Each recovery retry still needs newly
+consumed, exact, unexpired signed evidence whose fresh verification time is not
+earlier than the marker's durable activation time; this monotonic floor survives
+a process restart and rejects host-clock rollback. A marker with the source claim but
+no local source seal, a marker mixed with bootstrap/open-epoch evidence, or any
+claim/seal/configuration mismatch is not an honest crash state and fails
+closed. The original marker timestamp and expiry never move.
+
+A recovered runtime may write a target v2 seal only after all three listeners
+have reached ready. A freshness failure, bind failure or close before readiness
+uses the non-sealing abort path: it releases SQLite and the owner lock while
+preserving the marker and target claim, so ordinary startup remains blocked and
+a renewed reviewed activation is still required. A later clean runtime shutdown
+writes the target seal before fsync-removing the marker. If a crash lands between those operations, startup reconciles only the
+exact target claim, target release, municipality and verified closed database;
+a supplied recovery authorization is freshly rechecked as well. The runtime
+reconsumes the signed sources and clock immediately before *each* listener's
+own bind, with admission bound last. If a later check fails, the lifecycle
+synchronously closes any already-bound probe or private-outbox listener and
+fails startup without sealing the interrupted recovery. This prevents a failed
+freshness check from being laundered into ordinary restart authority, but does
+not claim zero transient socket exposure while an earlier
+listener has bound and a later check is pending. After the fixed expiry, a new
+reviewed recovery point is required. The marker is durable restart evidence,
+never restart authority by itself.
+
+Exact claim identity deliberately also rejects an ordinary in-place release or
+binding change on the same volume. A later, separately reviewed deployment-
+claim transition must be specified and proven before routine control upgrades;
+this slice does not weaken recovery identity to make upgrades convenient. The
+reference composition still cannot authorize a live Deployment: real backup/
+restore evidence, immutable images and protected Operations policy are separate
+gates.
 
 Gate consumption re-reads a trusted clock and rejects an expired attestation;
 the returned operational facts retain the target namespace, PVC name and UID,
-PV name and reviewed deployment-binding checksum. The future Adapter must
-compare that complete claim while holding the lock and proceed immediately;
-it may not cache the facts as a timeless deployment authorization.
+PV name, reviewed deployment-binding checksum, shutdown seal, database identity
+and fresh verification time. The Adapter compares that complete claim while
+holding the lock, and the lifecycle repeats the freshness check immediately
+before every bind; neither caches the gate as timeless deployment authority.
 
 ### Quiesced, application-consistent backups
 
@@ -202,27 +260,36 @@ auditable backup:
    termination, volume detachment and absence of a non-empty WAL or SHM file;
 2. mount the claim read-only in a one-shot Job whose ServiceAccount token is
    disabled and whose backup credential is available only to that Job;
-3. run SQLite integrity verification and copy the complete closed database;
+3. run SQLite integrity verification and create one encrypted backup bundle
+   containing the complete closed database **and** the exact canonical bytes of
+   `case-shutdown-seal-v2.json` and
+   `case-durable-deployment-claim-v1.json`; the Job rejects either receipt
+   unless it is a regular mode-0600 file, its verifier succeeds, and the
+   seal's deployment-claim checksum equals the source claim checksum;
 4. create a canonical manifest containing schema version, source release
    digest, database byte length, SHA-256 checksum, Case count, outbox cursor,
    creation time, retention class, canonical projection schema version,
    projection entry count, a canonical ordered set of `(Case ID, Case version,
    journal-head checksum)`, its aggregate digest, and the digest of every
-   Case-ID/discussion-root receipt;
-5. encrypt the database as an `age` v1 envelope to one versioned X25519
+   Case-ID/discussion-root receipt; include the exact byte length and SHA-256
+   checksum of the canonical v2 shutdown-seal and source-deployment-claim
+   receipts, plus their verified seal and claim checksums;
+5. encrypt the complete bundle as an `age` v1 envelope to one versioned X25519
    recipient whose private identity is unavailable to the backup Job, then
    upload it;
-6. pin the exact bucket, database object key, returned object version, sizes,
-   ciphertext and plaintext checksums, retention deadline, envelope version and
-   recipient fingerprint into the manifest, encrypt that manifest and upload
-   it;
+6. pin the exact bucket, bundle object key, returned object version, sizes,
+   ciphertext and plaintext checksums, retention deadline, envelope version,
+   recipient fingerprint, and the receipt checksums from step 4 into the
+   manifest, encrypt that manifest and upload it;
 7. write as the last object a signed completion receipt containing only
    civic-content-free metadata at a content-addressed unique key that pins the
    exact bucket, manifest object key and version, manifest ciphertext checksum,
-   retention deadline, signing-key version and one immutable backup identifier;
-   and
+   retention deadline, signing-key version, immutable backup identifier, and
+   the source seal and source deployment-claim checksums; and
 8. record that receipt's exact key, returned object version and checksum through
-   a compare-and-swap update to the protected Operations recovery catalog.
+   a compare-and-swap update to the protected Operations recovery catalog,
+   together with the receipt-pinned source seal and source deployment-claim
+   checksums.
 
 The receipt is the object-store commit marker; the recovery catalog is its
 external root locator and is outside the backup writer's authority. Restore
@@ -232,11 +299,13 @@ is incomplete and never restorable. The backup signing key is one-purpose
 operational authority, not civic authority; its public verification key is
 pinned in reviewed Operations policy.
 
-Copying the live database file, WAL or shared-memory sidecar while the control
-process is running is forbidden. The read-only Job cannot repair an unsealed
-WAL; it must fail instead. A CSI `VolumeSnapshot` may later reduce downtime,
-but it does not replace the checksum-validating restore drill and is not
-assumed to exist in the current Talos cluster.
+Copying only a live database file, WAL or shared-memory sidecar while the
+control process is running is forbidden. A `cp`-style database-only backup or
+an archive that omits either canonical receipt is not a recoverable Case
+baseline. The read-only Job cannot repair an unsealed WAL; it must fail
+instead. A CSI `VolumeSnapshot` may later reduce downtime, but it does not
+replace the checksum-validating restore drill and is not assumed to exist in
+the current Talos cluster.
 
 Backups run before every database/schema-affecting release and at least once
 per 24 hours while the staging Case runtime is active. The staging objectives
@@ -288,11 +357,15 @@ A restore never overwrites the active claim. The restore procedure:
    read-only restore identity;
 3. verifies the signed receipt and manifest ciphertext checksum, decrypts the
    authenticated manifest and validates its canonical form;
-4. downloads the manifest-pinned database object version, verifies its
+4. downloads the manifest-pinned encrypted bundle version, verifies its
    ciphertext checksum, decrypts it in memory or on the fresh claim and
-   verifies the manifest's plaintext database checksum;
-5. runs SQLite integrity checks and validates the expected schema, Case count
-   and outbox cursor;
+   verifies the manifest's plaintext database checksum and the exact canonical
+   v2 seal and source-claim receipt bytes; restores both receipt files as
+   regular mode-0600 files beside the database and proves that the restored
+   seal binds that restored source claim;
+5. runs SQLite integrity checks and validates the exact expected schema,
+   municipal metadata, Case count and outbox cursor against the seal/manifest;
+   it also proves that current recovery evidence dominates the seal baseline;
 6. starts a uniquely labelled blue/green control runtime against the fresh
    claim and a separate restored public runtime behind restore-only Services
    and NetworkPolicies; only control mounts the claim, while public remains
@@ -302,8 +375,13 @@ A restore never overwrites the active claim. The restore procedure:
    the canonical response bodies—not dynamic HTTP headers—against the manifest
    entry count, ordered per-Case version/journal-head checksums, aggregate
    digest and exact Case-ID/discussion-root receipt digests;
-8. records the measured duration and reviewer attestation; and
-9. only then permits a separately reviewed switchover and soak: admission remains
+8. derives the **target** durable deployment claim only from the fresh target
+   Operations deployment proof. The restored source claim is evidence for the
+   signed recovery transition and must not authorize an ordinary target start;
+   the lock-held runtime writes the activation marker and atomically rotates it
+   to that fresh target claim; then
+9. records the measured duration and reviewer attestation; and
+10. only then permits a separately reviewed switchover and soak: admission remains
    blocked, the public Service selects the restored public slot, the control
    admission Service selects the restored control slot, and both are verified
    for a bounded soak before admission is reopened. Service selectors choose
@@ -327,11 +405,20 @@ The first reconciliation remains blocked until a review bundle contains:
 - redacted backup/restore identity policies;
 - one signed completion receipt containing only civic-content-free metadata and
   one encrypted backup manifest without credentials or personal content;
+- proof that the encrypted bundle, manifest, receipt and catalog pin the exact
+  canonical v2 shutdown seal and source deployment claim, and that restore
+  recreates those receipts as regular mode-0600 files before recovery begins;
 - the compare-and-swap Operations recovery-catalog entry that externally pins
   the receipt key, exact object version and checksum;
 - one redacted decrypted manifest proving that every required field is present;
 - one isolated successful restore report with checksum, Case/outbox counts,
   byte-identical canonical public receipts, RPO and measured RTO;
+- one canonical Recovery Activation Marker receipt from the exact restored
+  claim, plus proof that ordinary copied-root startup fails, every legal crash
+  state resumes only with fresh exact evidence, impossible state combinations
+  fail closed, and an expiry check before each listener bind synchronously rolls
+  back any earlier transient listener rather than leaving a recovered runtime
+  available;
 - immutable control, public, backup and restore-verifier image digests with
   provenance and SPDX SBOM evidence;
 - one successful escrow/key-recovery drill; and

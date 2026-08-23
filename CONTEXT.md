@@ -142,6 +142,22 @@ governance or treasury authority.
 _Avoid_: Kubernetes discovery, environment-variable path, deployment token,
 civic authorization
 
+**Durable deployment claim**:
+A canonical local receipt derived only from an opaque, reviewed control-
+deployment proof. It binds one municipality, release, control-binding checksum,
+PVC namespace/name/UID and PV to the durable store. A copied source claim cannot
+authorize a fresh target volume, and an exact mismatch requires a separately
+reviewed recovery or upgrade transition.
+_Avoid_: environment claim, mutable deployment label, reusable restore token
+
+**Case store bootstrap and open epoch**:
+Canonical, mode-0600, file-and-directory-fsync'd local receipts. Bootstrap
+records the one permitted empty-store initialization; an ordinary open epoch
+records the exact clean shutdown seal that the currently open store must
+dominate. A recovery marker supplies its own source-seal baseline instead.
+Neither receipt is Kubernetes, recovery, or civic authority.
+_Avoid_: mutable startup flag, schema-create retry, durable lease
+
 **Case recovery evidence**:
 The authenticated backup receipt, encrypted recovery material and isolated
 fresh-volume restore attestation for one staging Case store. It is operational
@@ -155,6 +171,19 @@ control deployment binding. It is necessary operational startup evidence, but
 cannot create or advance a Case and does not by itself authorize a workload.
 _Avoid_: deployment approval, restore token, civic authorization, permanent
 recovery credential
+
+**Recovery Activation Marker**:
+A canonical, fsync'd local receipt written under the durable single-writer lock
+after fresh attestation verification and before the restored SQLite store is
+opened. It binds the complete source and target deployment claims, source seal,
+original database and operation; its source seal is the recovered epoch's last
+clean baseline. It permits restart only when newly consumed
+signed evidence reproduces those bindings, is still fresh and was verified no
+earlier than the marker's durable activation time. A failed or pre-ready
+activation abort preserves the marker; it is removed only after a fully ready
+recovered runtime later produces a new clean shutdown seal. It is never restart authority by
+itself and grants no deployment or civic authority.
+_Avoid_: recovery credential, timeless permit, active-slot selector
 
 **Review attestation**:
 An accountable statement that a named reviewer accepted or rejected a bounded

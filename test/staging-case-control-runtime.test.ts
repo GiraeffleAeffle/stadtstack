@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -261,7 +261,7 @@ test("close is idempotent, releases SQLite after listeners stop, and permits a c
 });
 
 test("durable runtime drains its listeners, seals one admitted Case, and cleanly reopens", async () => {
-  const rootDir = root();
+  const rootDir = realpathSync(root());
   const first = createStagingCaseControlRuntime(config(rootDir, true));
   await first.start();
   const ports = first.health().ports;
@@ -295,7 +295,7 @@ test("durable runtime drains its listeners, seals one admitted Case, and cleanly
 });
 
 test("durable runtime redacts a failed checkpoint and cannot leave a stale success seal", async () => {
-  const rootDir = root();
+  const rootDir = realpathSync(root());
   const runtime = createStagingCaseControlRuntime(config(rootDir, true));
   await runtime.start();
   const originalPrepare = DatabaseSync.prototype.prepare;

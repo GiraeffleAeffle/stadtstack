@@ -79,6 +79,95 @@ test("starts declared listeners in order and exposes only redacted aggregate hea
   });
 });
 
+test("runs the synchronous beforeBind guard immediately before each child start", async () => {
+  const first = listener("control");
+  const second = listener("public");
+  const sequence: string[] = [];
+  first.server.on("listening", () => sequence.push("control:listen"));
+  second.server.on("listening", () => sequence.push("public:listen"));
+  const lifecycle = createStagingCaseProcessLifecycle(config([first, second], () => undefined, {
+    beforeBind: (listenerId) => { sequence.push(`${listenerId}:guard`); },
+  }));
+
+  await lifecycle.start();
+  assert.deepEqual(sequence, [
+    "control:guard", "control:listen", "public:guard", "public:listen",
+  ]);
+  await lifecycle.close();
+});
+
+test("a first-listener beforeBind failure rolls back every listener before release", async () => {
+  const first = listener("control");
+  const second = listener("public");
+  const guards: string[] = [];
+  let releaseState: readonly boolean[] | undefined;
+  const lifecycle = createStagingCaseProcessLifecycle(config([first, second], () => {
+    releaseState = [first.server.listening, second.server.listening];
+  }, {
+    beforeBind: (listenerId) => {
+      guards.push(listenerId);
+      throw new Error("private guard failure");
+    },
+  }));
+
+  await assert.rejects(lifecycle.start(), /staging_case_process_start_failed/u);
+  assert.deepEqual(guards, ["control"]);
+  assert.equal(first.server.listening, false);
+  assert.equal(second.server.listening, false);
+  assert.deepEqual(releaseState, [false, false]);
+  assert.deepEqual(lifecycle.health(), {
+    phase: "failed", ready: false, detail: "start_failed", ports: {},
+  });
+  await lifecycle.close();
+});
+
+test("a second-listener beforeBind failure rolls back the first listener before release", async () => {
+  const first = listener("control");
+  const second = listener("public");
+  const guards: string[] = [];
+  let releaseState: readonly boolean[] | undefined;
+  const lifecycle = createStagingCaseProcessLifecycle(config([first, second], () => {
+    releaseState = [first.server.listening, second.server.listening];
+  }, {
+    beforeBind: (listenerId) => {
+      guards.push(listenerId);
+      if (listenerId === "public") throw new Error("private guard failure");
+    },
+  }));
+
+  await assert.rejects(lifecycle.start(), /staging_case_process_start_failed/u);
+  assert.deepEqual(guards, ["control", "public"]);
+  assert.equal(first.server.listening, false);
+  assert.equal(second.server.listening, false);
+  assert.deepEqual(releaseState, [false, false]);
+  assert.deepEqual(lifecycle.health(), {
+    phase: "failed", ready: false, detail: "start_failed", ports: {},
+  });
+  await lifecycle.close();
+});
+
+test("rejects async, proxied, and thenable beforeBind guards", async () => {
+  const valid = config([listener("control")]);
+  assert.throws(() => createStagingCaseProcessLifecycle({
+    ...valid,
+    beforeBind: async () => undefined,
+  }), /staging_case_process_config_invalid/u);
+  assert.throws(() => createStagingCaseProcessLifecycle({
+    ...valid,
+    beforeBind: new Proxy(() => undefined, {}),
+  }), /staging_case_process_config_invalid/u);
+
+  const server = listener("control");
+  let releases = 0;
+  const lifecycle = createStagingCaseProcessLifecycle(config([server], () => { releases += 1; }, {
+    beforeBind: () => ({ then: () => undefined } as never),
+  }));
+  await assert.rejects(lifecycle.start(), /staging_case_process_start_failed/u);
+  assert.equal(server.server.listening, false);
+  assert.equal(releases, 1);
+  await lifecycle.close();
+});
+
 test("start is memoized and a bind failure rolls every listener back before release", async () => {
   const blocker = createServer();
   await listen(blocker);

@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { types as utilTypes } from "node:util";
 
 import {
@@ -56,6 +57,40 @@ import {
   type VerifiedTopicCaseAdmissionV1,
 } from "../topic-case-admission.ts";
 import type { AtomicCaseAdmissionPort, AtomicTopicCaseAdmissionV1 } from "../roebel-control-service.ts";
+import {
+  CASE_SHUTDOWN_SEAL_FILENAME,
+  verifyCaseShutdownSeal,
+} from "../case-shutdown-seal.ts";
+import type { CaseShutdownSealV2 } from "../case-shutdown-seal.ts";
+export { CASE_SHUTDOWN_SEAL_FILENAME, verifyCaseShutdownSeal } from "../case-shutdown-seal.ts";
+export type { CaseShutdownSealV2 } from "../case-shutdown-seal.ts";
+import {
+  CASE_DURABLE_DEPLOYMENT_CLAIM_FILENAME,
+  consumeCaseDurableDeploymentClaimToken,
+  readCanonicalCaseDurableDeploymentClaim,
+  replaceCanonicalCaseDurableDeploymentClaim,
+  sameCaseDurableDeploymentClaim,
+  verifyCaseDurableDeploymentClaim,
+  writeCanonicalCaseDurableDeploymentClaim,
+  type CaseDurableDeploymentClaim,
+  type CaseDurableDeploymentClaimToken,
+} from "../case-durable-deployment-claim.ts";
+import {
+  consumeStagingCaseRecoveryActivationAuthorization,
+  consumeStagingCaseRecoveryActivationLease,
+  type StagingCaseRecoveryActivationAuthorization,
+} from "../staging-case-recovery-activation-authority.ts";
+import {
+  createCaseOpenEpoch,
+  createCaseStoreBootstrap,
+  readCanonicalCaseOpenEpoch,
+  readCanonicalCaseStoreBootstrap,
+  removeCanonicalCaseOpenEpoch,
+  removeCanonicalCaseStoreBootstrap,
+  writeCanonicalCaseOpenEpoch,
+  writeCanonicalCaseStoreBootstrap,
+  type CaseStoreBootstrapV1,
+} from "../case-store-epoch.ts";
 
 const SCHEMA_VERSION = "sqlite_atomic_topic_case_admission_v1";
 const MUNICIPALITY_ID = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
@@ -64,9 +99,12 @@ const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const NAMESPACE = /^case-[0-9a-f]{32}$/u;
 const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const KUBERNETES_NAME = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/u;
+const KUBERNETES_UID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
-/** The fixed, basename-only seal written by a clean durable-owner shutdown. */
-export const CASE_SHUTDOWN_SEAL_FILENAME = "case-shutdown-seal-v1.json";
+/** A recovery startup writes this once, before opening the restored municipal
+ * database.  It is deliberately a basename-only, canonical receipt. */
+export const CASE_RECOVERY_ACTIVATION_FILENAME = "case-recovery-activation-v2.json";
 const CASE_STATE_OWNER_DATABASE_FILENAME = "stadtstack-case-state-owner.sqlite";
 const CASE_STATE_OWNER_SCHEMA = "CREATE TABLE durable_store_binding(singleton INTEGER NOT NULL PRIMARY KEY CHECK(singleton=1),municipality_id TEXT NOT NULL) STRICT";
 
@@ -75,24 +113,28 @@ export type DurableSingleWriterState = Readonly<{
   sourceReleaseDigest: string;
 }>;
 
-export type CaseShutdownSealV1 = Readonly<{
-  schemaVersion: "case_shutdown_seal_v1";
+/** Canonical crash/restart receipt for one reviewed recovery transition. */
+type CaseRecoveryActivationMarkerV2 = Readonly<{
+  schemaVersion: "case_recovery_activation_v2";
   municipalityId: string;
-  databaseSchemaVersion: typeof SCHEMA_VERSION;
-  configFingerprint: string;
+  sourceDeploymentClaimChecksum: string;
+  targetDeploymentClaimChecksum: string;
+  sourceDeploymentClaim: CaseDurableDeploymentClaim;
+  targetDeploymentClaim: CaseDurableDeploymentClaim;
+  sourceSeal: CaseShutdownSealV2;
   sourceReleaseDigest: string;
+  sourcePvc: Readonly<{ namespace: string; name: string; uid: string }>;
+  targetPvc: Readonly<{ namespace: string; name: string; uid: string }>;
+  targetPvName: string;
+  recoveryOperationId: string;
+  recoveryAttestationChecksum: string;
+  shutdownSealChecksum: string;
   databaseBasename: string;
   databaseByteLength: number;
   databaseSha256: string;
-  closedAtUtc: string;
-  walCheckpoint: Readonly<{
-    mode: "TRUNCATE";
-    busy: number;
-    log: number;
-    checkpointed: number;
-  }>;
-  recoveryEvidence: CaseStateRecoveryEvidenceV1;
-  sealChecksum: string;
+  expiresAtUtc: string;
+  activatedAtUtc: string;
+  markerChecksum: string;
 }>;
 
 export type SqliteAtomicTopicCaseAdmissionOptions = {
@@ -111,6 +153,10 @@ export type SqliteAtomicTopicCaseAdmissionOptions = {
   /** Opt-in persistent state. Legacy adapters remain tmp-only and can retain
    * their existing multi-connection test behavior. */
   durableState?: DurableSingleWriterState;
+  /** Private, reviewed recovery composition seam. It is invalid without
+   * durableState and is never part of the public Case admission interface. */
+  deploymentClaimToken?: CaseDurableDeploymentClaimToken;
+  recoveryActivationAuthorization?: StagingCaseRecoveryActivationAuthorization;
 };
 
 export type SqliteAtomicTopicCaseAdmission = {
@@ -121,7 +167,7 @@ export type SqliteAtomicTopicCaseAdmission = {
   caseCoordinators: Readonly<{ open(caseId: string): CivicCaseCoordinator }>;
   /** A legacy tmp-only adapter has no durable state to seal and rejects this
    * call with `atomic_admission_seal_unavailable`. */
-  sealAndClose(): CaseShutdownSealV1;
+  sealAndClose(): CaseShutdownSealV2;
   /** Legacy close, or an explicit emergency abandonment after a failed seal.
    * It never writes a durable success seal and must not be used as the normal
    * shutdown path by a durable runtime. */
@@ -245,6 +291,20 @@ function ensureNotSymlink(path: string): void {
   }
 }
 
+function canonicalReceiptPresent(path: string, code: string): boolean {
+  let link: ReturnType<typeof lstatSync>;
+  try { link = lstatSync(path); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  if (link.isSymbolicLink()) fail("atomic_admission_path_symlink_forbidden");
+  if (!link.isFile() || (link.mode & 0o7777) !== 0o600) fail(code);
+  const target = statSync(path);
+  if (!target.isFile() || target.dev !== link.dev || target.ino !== link.ino) fail(code);
+  return true;
+}
+
 function frozenStringSet(value: unknown, code: string): readonly string[] {
   if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length === 0 ||
     value.some((entry) => typeof entry !== "string" || !HEX64.test(entry)) || new Set(value).size !== value.length) fail(code);
@@ -290,12 +350,34 @@ function durableState(value: unknown, code: string): DurableSingleWriterState | 
   return Object.freeze({ mode: "durable_single_writer" as const, sourceReleaseDigest: parsed.sourceReleaseDigest });
 }
 
-function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required<Omit<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds" | "durableState">> & Pick<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds" | "durableState"> {
-  const parsed = allowedKeys(input, ["actorRegistry", "allowedAgentPubkeys", "allowedSignerPubkeys", "durableState", "failpoint", "municipalityId", "policyVersion", "requiredDepartmentIds", "rootDir"], "atomic_admission_options_invalid");
+function claimToken(value: unknown, code: string): CaseDurableDeploymentClaimToken | undefined {
+  if (value === undefined) return undefined;
+  try { consumeCaseDurableDeploymentClaimToken(value); } catch { fail(code); }
+  return value as CaseDurableDeploymentClaimToken;
+}
+
+function recoveryAuthorization(value: unknown, code: string): StagingCaseRecoveryActivationAuthorization | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || utilTypes.isProxy(value)) fail(code);
+  return value as StagingCaseRecoveryActivationAuthorization;
+}
+
+function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required<Omit<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization">> & Pick<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization"> {
+  const parsed = allowedKeys(input, ["actorRegistry", "allowedAgentPubkeys", "allowedSignerPubkeys", "deploymentClaimToken", "durableState", "failpoint", "municipalityId", "policyVersion", "recoveryActivationAuthorization", "requiredDepartmentIds", "rootDir"], "atomic_admission_options_invalid");
   if (typeof parsed.municipalityId !== "string" || !MUNICIPALITY_ID.test(parsed.municipalityId) ||
     typeof parsed.policyVersion !== "string" || !/^[A-Za-z0-9:._-]{1,256}$/u.test(parsed.policyVersion) ||
     (parsed.failpoint !== undefined && parsed.failpoint !== "after_root_claim" && parsed.failpoint !== "after_case_events" && parsed.failpoint !== "after_binding_receipt")) fail("atomic_admission_options_invalid");
   const resolvedDurableState = durableState(parsed.durableState, "atomic_admission_options_invalid");
+  const resolvedClaimToken = claimToken(parsed.deploymentClaimToken, "atomic_admission_options_invalid");
+  const resolvedRecoveryAuthorization = recoveryAuthorization(parsed.recoveryActivationAuthorization, "atomic_admission_options_invalid");
+  if ((resolvedClaimToken || resolvedRecoveryAuthorization) && !resolvedDurableState) fail("atomic_admission_options_invalid");
+  if (resolvedRecoveryAuthorization && !resolvedClaimToken) fail("atomic_admission_options_invalid");
+  if (resolvedClaimToken) {
+    const claim = consumeCaseDurableDeploymentClaimToken(resolvedClaimToken);
+    if (claim.municipalityId !== parsed.municipalityId || claim.releaseDigest !== resolvedDurableState?.sourceReleaseDigest) {
+      fail("atomic_admission_options_invalid");
+    }
+  }
   return Object.freeze({
     rootDir: resolvedDurableState ? safeDurableRoot(parsed.rootDir as string) : safeRoot(parsed.rootDir as string), municipalityId: parsed.municipalityId,
     policyVersion: parsed.policyVersion, actorRegistry: actorRegistry(parsed.actorRegistry, "atomic_admission_options_invalid"),
@@ -304,11 +386,14 @@ function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required
     requiredDepartmentIds: requiredDepartments(parsed.requiredDepartmentIds, "atomic_admission_options_invalid"),
     failpoint: parsed.failpoint as SqliteAtomicTopicCaseAdmissionOptions["failpoint"],
     durableState: resolvedDurableState,
+    deploymentClaimToken: resolvedClaimToken,
+    recoveryActivationAuthorization: resolvedRecoveryAuthorization,
   });
 }
 
 /** Stable basename helper: seals contain only this name, never a host path. */
 export function caseShutdownSealFilename(): typeof CASE_SHUTDOWN_SEAL_FILENAME { return CASE_SHUTDOWN_SEAL_FILENAME; }
+export function caseRecoveryActivationFilename(): typeof CASE_RECOVERY_ACTIVATION_FILENAME { return CASE_RECOVERY_ACTIVATION_FILENAME; }
 
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -343,63 +428,9 @@ function requireUtcTimestamp(value: unknown, code: string): string {
   return value;
 }
 
-/** Strict, canonical verifier for a durable owner shutdown receipt.  It is
- * intentionally a narrow public API: callers can validate archive material
- * without gaining any database-opening capability. */
-export function verifyCaseShutdownSeal(value: unknown): CaseShutdownSealV1 {
-  const parsed = ownKeys(value, [
-    "closedAtUtc", "configFingerprint", "databaseBasename", "databaseByteLength", "databaseSchemaVersion",
-    "databaseSha256", "municipalityId", "recoveryEvidence", "schemaVersion", "sealChecksum", "sourceReleaseDigest", "walCheckpoint",
-  ], "atomic_admission_seal_invalid");
-  if (parsed.schemaVersion !== "case_shutdown_seal_v1" || typeof parsed.municipalityId !== "string" || !MUNICIPALITY_ID.test(parsed.municipalityId) ||
-    parsed.databaseSchemaVersion !== SCHEMA_VERSION || typeof parsed.configFingerprint !== "string" || !SHA256.test(parsed.configFingerprint) ||
-    typeof parsed.sourceReleaseDigest !== "string" || !SHA256.test(parsed.sourceReleaseDigest) ||
-    parsed.databaseBasename !== `stadtstack-${parsed.municipalityId}-atomic-admission.sqlite` ||
-    typeof parsed.databaseByteLength !== "number" || !Number.isSafeInteger(parsed.databaseByteLength) || parsed.databaseByteLength < 1 ||
-    typeof parsed.databaseSha256 !== "string" || !SHA256.test(parsed.databaseSha256) ||
-    typeof parsed.sealChecksum !== "string" || !SHA256.test(parsed.sealChecksum)) fail("atomic_admission_seal_invalid");
-  const closedAtUtc = requireUtcTimestamp(parsed.closedAtUtc, "atomic_admission_seal_invalid");
-  const walCheckpoint = ownKeys(parsed.walCheckpoint, ["busy", "checkpointed", "log", "mode"], "atomic_admission_seal_invalid");
-  const checkpointBusy = walCheckpoint.busy;
-  const checkpointLog = walCheckpoint.log;
-  const checkpointed = walCheckpoint.checkpointed;
-  if (walCheckpoint.mode !== "TRUNCATE" || typeof checkpointBusy !== "number" || typeof checkpointLog !== "number" ||
-    typeof checkpointed !== "number" || !Number.isSafeInteger(checkpointBusy) || !Number.isSafeInteger(checkpointLog) ||
-    !Number.isSafeInteger(checkpointed) || checkpointBusy !== 0 || checkpointLog < 0 || checkpointed < 0 ||
-    checkpointLog !== checkpointed) {
-    fail("atomic_admission_seal_invalid");
-  }
-  const recoveryEvidence = verifyCaseStateRecoveryEvidence(parsed.recoveryEvidence);
-  const municipalityCasePrefix = `urn:stadtstack:case:test:${parsed.municipalityId}:`;
-  if (recoveryEvidence.orderedHeads.some((head) => !head.caseId.startsWith(municipalityCasePrefix))) {
-    fail("atomic_admission_seal_invalid");
-  }
-  const { sealChecksum, ...withoutChecksum } = parsed;
-  if (checksum(withoutChecksum) !== sealChecksum) fail("atomic_admission_seal_invalid");
-  return deepFreeze({
-    schemaVersion: "case_shutdown_seal_v1" as const,
-    municipalityId: parsed.municipalityId,
-    databaseSchemaVersion: SCHEMA_VERSION,
-    configFingerprint: parsed.configFingerprint,
-    sourceReleaseDigest: parsed.sourceReleaseDigest,
-    databaseBasename: parsed.databaseBasename,
-    databaseByteLength: parsed.databaseByteLength,
-    databaseSha256: parsed.databaseSha256,
-    closedAtUtc,
-    walCheckpoint: Object.freeze({
-      mode: "TRUNCATE" as const,
-      busy: checkpointBusy,
-      log: checkpointLog,
-      checkpointed,
-    }),
-    recoveryEvidence,
-    sealChecksum,
-  });
-}
-
-function writeCanonicalSeal(rootDir: string, seal: CaseShutdownSealV1): void {
+function writeCanonicalSeal(rootDir: string, seal: CaseShutdownSealV2): void {
   const target = join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME);
-  ensureNotSymlink(target);
+  canonicalReceiptPresent(target, "atomic_admission_seal_invalid");
   const temporary = join(rootDir, `.${CASE_SHUTDOWN_SEAL_FILENAME}.${process.pid}.${randomUUID()}.tmp`);
   let descriptor: number | undefined;
   try {
@@ -409,8 +440,9 @@ function writeCanonicalSeal(rootDir: string, seal: CaseShutdownSealV1): void {
     while (offset < bytes.length) offset += writeSync(descriptor, bytes, offset);
     fsyncSync(descriptor);
     closeSync(descriptor); descriptor = undefined;
-    ensureNotSymlink(target);
+    canonicalReceiptPresent(target, "atomic_admission_seal_invalid");
     renameSync(temporary, target);
+    if (!canonicalReceiptPresent(target, "atomic_admission_seal_invalid")) fail("atomic_admission_seal_invalid");
     const directoryDescriptor = openSync(rootDir, "r");
     try { fsyncSync(directoryDescriptor); } finally { closeSync(directoryDescriptor); }
   } catch (error) {
@@ -423,11 +455,10 @@ function writeCanonicalSeal(rootDir: string, seal: CaseShutdownSealV1): void {
 /** A prior seal certifies the preceding closed epoch only.  Once a new live
  * owner acquires the state, remove that certificate before opening municipal
  * state so a failed later shutdown can never leave a stale success behind. */
-function readCanonicalPriorSeal(rootDir: string): CaseShutdownSealV1 | undefined {
+function readCanonicalPriorSeal(rootDir: string): CaseShutdownSealV2 | undefined {
   const target = join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME);
-  ensureNotSymlink(target);
-  if (!existsSync(target)) return undefined;
-  let previous: CaseShutdownSealV1;
+  if (!canonicalReceiptPresent(target, "atomic_admission_seal_invalid")) return undefined;
+  let previous: CaseShutdownSealV2;
   const encoded = readFileSync(target, "utf8");
   try { previous = verifyCaseShutdownSeal(JSON.parse(encoded)); }
   catch { fail("atomic_admission_seal_invalid"); }
@@ -461,6 +492,287 @@ function invalidatePriorSeal(rootDir: string, municipalityId: string): void {
   unlinkSync(target);
   const directoryDescriptor = openSync(rootDir, "r");
   try { fsyncSync(directoryDescriptor); } finally { closeSync(directoryDescriptor); }
+}
+
+function closedDatabaseIdentity(rootDir: string, seal: CaseShutdownSealV2): Readonly<{ basename: string; byteLength: number; sha256: string }> {
+  if (seal.municipalityId === "") fail("atomic_admission_recovery_seal_invalid");
+  const databasePath = join(rootDir, seal.databaseBasename);
+  for (const suffix of ["", "-wal", "-shm"] as const) {
+    const candidate = `${databasePath}${suffix}`;
+    ensureNotSymlink(candidate);
+    if (suffix !== "" && existsSync(candidate) && statSync(candidate).size !== 0) {
+      fail("atomic_admission_recovery_sidecar_nonempty");
+    }
+  }
+  if (!existsSync(databasePath)) fail("atomic_admission_recovery_seal_invalid");
+  const databaseStat = statSync(databasePath);
+  if (!databaseStat.isFile() || databaseStat.size !== seal.databaseByteLength || sha256File(databasePath) !== seal.databaseSha256) {
+    fail("atomic_admission_recovery_seal_invalid");
+  }
+  return Object.freeze({ basename: seal.databaseBasename, byteLength: databaseStat.size, sha256: seal.databaseSha256 });
+}
+
+function requireExistingRecoveryDatabase(databasePath: string): Readonly<{ dev: number; ino: number }> {
+  ensureNotSymlink(databasePath);
+  if (!existsSync(databasePath)) fail("atomic_admission_recovery_database_required");
+  const databaseStat = statSync(databasePath);
+  if (!databaseStat.isFile() || databaseStat.size < 1) fail("atomic_admission_recovery_database_required");
+  return Object.freeze({ dev: databaseStat.dev, ino: databaseStat.ino });
+}
+
+function activationMarkerBody(marker: Omit<CaseRecoveryActivationMarkerV2, "markerChecksum">): Record<string, unknown> {
+  return {
+    schemaVersion: marker.schemaVersion, municipalityId: marker.municipalityId, sourceReleaseDigest: marker.sourceReleaseDigest,
+    sourceDeploymentClaimChecksum: marker.sourceDeploymentClaimChecksum, targetDeploymentClaimChecksum: marker.targetDeploymentClaimChecksum,
+    sourceDeploymentClaim: marker.sourceDeploymentClaim, targetDeploymentClaim: marker.targetDeploymentClaim,
+    sourceSeal: marker.sourceSeal,
+    sourcePvc: marker.sourcePvc, targetPvc: marker.targetPvc, targetPvName: marker.targetPvName,
+    recoveryOperationId: marker.recoveryOperationId, recoveryAttestationChecksum: marker.recoveryAttestationChecksum,
+    shutdownSealChecksum: marker.shutdownSealChecksum, databaseBasename: marker.databaseBasename,
+    databaseByteLength: marker.databaseByteLength, databaseSha256: marker.databaseSha256,
+    expiresAtUtc: marker.expiresAtUtc, activatedAtUtc: marker.activatedAtUtc,
+  };
+}
+
+function verifyRecoveryActivationMarker(value: unknown): CaseRecoveryActivationMarkerV2 {
+  const parsed = ownKeys(value, [
+    "activatedAtUtc", "databaseBasename", "databaseByteLength", "databaseSha256", "expiresAtUtc",
+    "markerChecksum", "municipalityId", "recoveryAttestationChecksum", "recoveryOperationId", "schemaVersion", "shutdownSealChecksum",
+    "sourceDeploymentClaim", "sourceDeploymentClaimChecksum", "sourcePvc", "sourceReleaseDigest", "sourceSeal", "targetDeploymentClaim", "targetDeploymentClaimChecksum", "targetPvName", "targetPvc",
+  ], "atomic_admission_recovery_marker_invalid");
+  if (parsed.schemaVersion !== "case_recovery_activation_v2" || typeof parsed.markerChecksum !== "string" || !SHA256.test(parsed.markerChecksum)) {
+    fail("atomic_admission_recovery_marker_invalid");
+  }
+  const sourcePvc = ownKeys(parsed.sourcePvc, ["name", "namespace", "uid"], "atomic_admission_recovery_marker_invalid");
+  const targetPvc = ownKeys(parsed.targetPvc, ["name", "namespace", "uid"], "atomic_admission_recovery_marker_invalid");
+  let sourceDeploymentClaim: CaseDurableDeploymentClaim;
+  let targetDeploymentClaim: CaseDurableDeploymentClaim;
+  let sourceSeal: CaseShutdownSealV2;
+  try { sourceDeploymentClaim = verifyCaseDurableDeploymentClaim(parsed.sourceDeploymentClaim); targetDeploymentClaim = verifyCaseDurableDeploymentClaim(parsed.targetDeploymentClaim); sourceSeal = verifyCaseShutdownSeal(parsed.sourceSeal); }
+  catch { fail("atomic_admission_recovery_marker_invalid"); }
+  if (typeof parsed.municipalityId !== "string" || !MUNICIPALITY_ID.test(parsed.municipalityId) || typeof parsed.sourceReleaseDigest !== "string" || !SHA256.test(parsed.sourceReleaseDigest) ||
+    typeof parsed.sourceDeploymentClaimChecksum !== "string" || !SHA256.test(parsed.sourceDeploymentClaimChecksum) || typeof parsed.targetDeploymentClaimChecksum !== "string" || !SHA256.test(parsed.targetDeploymentClaimChecksum) ||
+    typeof sourcePvc.namespace !== "string" || !KUBERNETES_NAME.test(sourcePvc.namespace) || typeof sourcePvc.name !== "string" || !KUBERNETES_NAME.test(sourcePvc.name) || typeof sourcePvc.uid !== "string" || !KUBERNETES_UID.test(sourcePvc.uid) ||
+    typeof targetPvc.namespace !== "string" || !KUBERNETES_NAME.test(targetPvc.namespace) || typeof targetPvc.name !== "string" || !KUBERNETES_NAME.test(targetPvc.name) || typeof targetPvc.uid !== "string" || !KUBERNETES_UID.test(targetPvc.uid) ||
+    typeof parsed.targetPvName !== "string" || !KUBERNETES_NAME.test(parsed.targetPvName) || typeof parsed.recoveryOperationId !== "string" || !UUID_V7.test(parsed.recoveryOperationId) || typeof parsed.recoveryAttestationChecksum !== "string" || !SHA256.test(parsed.recoveryAttestationChecksum) || typeof parsed.shutdownSealChecksum !== "string" || !SHA256.test(parsed.shutdownSealChecksum) ||
+    typeof parsed.databaseBasename !== "string" || !/^[A-Za-z0-9._-]{1,256}$/u.test(parsed.databaseBasename) ||
+    typeof parsed.databaseByteLength !== "number" || !Number.isSafeInteger(parsed.databaseByteLength) || parsed.databaseByteLength < 1 ||
+    typeof parsed.databaseSha256 !== "string" || !SHA256.test(parsed.databaseSha256)) fail("atomic_admission_recovery_marker_invalid");
+  const marker = Object.freeze({
+    schemaVersion: "case_recovery_activation_v2" as const,
+    municipalityId: parsed.municipalityId, sourceReleaseDigest: parsed.sourceReleaseDigest,
+    sourceDeploymentClaimChecksum: parsed.sourceDeploymentClaimChecksum, targetDeploymentClaimChecksum: parsed.targetDeploymentClaimChecksum,
+    sourceDeploymentClaim, targetDeploymentClaim,
+    sourceSeal,
+    sourcePvc: Object.freeze({ namespace: sourcePvc.namespace, name: sourcePvc.name, uid: sourcePvc.uid }), targetPvc: Object.freeze({ namespace: targetPvc.namespace, name: targetPvc.name, uid: targetPvc.uid }),
+    targetPvName: parsed.targetPvName, recoveryOperationId: parsed.recoveryOperationId,
+    recoveryAttestationChecksum: parsed.recoveryAttestationChecksum,
+    shutdownSealChecksum: parsed.shutdownSealChecksum, databaseBasename: parsed.databaseBasename,
+    databaseByteLength: parsed.databaseByteLength, databaseSha256: parsed.databaseSha256,
+    expiresAtUtc: requireUtcTimestamp(parsed.expiresAtUtc, "atomic_admission_recovery_marker_invalid"),
+    activatedAtUtc: requireUtcTimestamp(parsed.activatedAtUtc, "atomic_admission_recovery_marker_invalid"),
+    markerChecksum: parsed.markerChecksum,
+  });
+  if (checksum(activationMarkerBody(marker)) !== marker.markerChecksum ||
+    new Date(marker.activatedAtUtc).getTime() >= new Date(marker.expiresAtUtc).getTime() ||
+    marker.sourceDeploymentClaim.claimChecksum !== marker.sourceDeploymentClaimChecksum || marker.targetDeploymentClaim.claimChecksum !== marker.targetDeploymentClaimChecksum ||
+    marker.sourceDeploymentClaim.municipalityId !== marker.municipalityId || marker.sourceDeploymentClaim.releaseDigest !== marker.sourceReleaseDigest ||
+    marker.targetDeploymentClaim.municipalityId !== marker.municipalityId || marker.sourceDeploymentClaimChecksum === marker.targetDeploymentClaimChecksum ||
+    marker.sourceDeploymentClaim.pvc.namespace !== marker.sourcePvc.namespace || marker.sourceDeploymentClaim.pvc.name !== marker.sourcePvc.name || marker.sourceDeploymentClaim.pvc.uid !== marker.sourcePvc.uid ||
+    marker.targetDeploymentClaim.pvc.namespace !== marker.targetPvc.namespace || marker.targetDeploymentClaim.pvc.name !== marker.targetPvc.name || marker.targetDeploymentClaim.pvc.uid !== marker.targetPvc.uid || marker.targetDeploymentClaim.pvName !== marker.targetPvName || marker.sourcePvc.uid === marker.targetPvc.uid ||
+    marker.sourceSeal.sealChecksum !== marker.shutdownSealChecksum || marker.sourceSeal.deploymentClaimChecksum !== marker.sourceDeploymentClaimChecksum ||
+    marker.sourceSeal.municipalityId !== marker.municipalityId || marker.sourceSeal.sourceReleaseDigest !== marker.sourceReleaseDigest ||
+    marker.sourceSeal.databaseBasename !== marker.databaseBasename || marker.sourceSeal.databaseByteLength !== marker.databaseByteLength || marker.sourceSeal.databaseSha256 !== marker.databaseSha256) {
+    fail("atomic_admission_recovery_marker_invalid");
+  }
+  return deepFreeze(marker);
+}
+
+function readCanonicalRecoveryActivationMarker(rootDir: string): CaseRecoveryActivationMarkerV2 | undefined {
+  const target = join(rootDir, CASE_RECOVERY_ACTIVATION_FILENAME);
+  if (!canonicalReceiptPresent(target, "atomic_admission_recovery_marker_invalid")) return undefined;
+  let marker: CaseRecoveryActivationMarkerV2;
+  const encoded = readFileSync(target, "utf8");
+  try { marker = verifyRecoveryActivationMarker(JSON.parse(encoded)); }
+  catch { fail("atomic_admission_recovery_marker_invalid"); }
+  if (encoded !== `${canonicalJson(marker)}\n`) fail("atomic_admission_recovery_marker_invalid");
+  return marker;
+}
+
+function writeCanonicalRecoveryActivationMarker(rootDir: string, marker: CaseRecoveryActivationMarkerV2): void {
+  const target = join(rootDir, CASE_RECOVERY_ACTIVATION_FILENAME);
+  if (canonicalReceiptPresent(target, "atomic_admission_recovery_marker_invalid")) fail("atomic_admission_recovery_marker_exists");
+  const temporary = join(rootDir, `.${CASE_RECOVERY_ACTIVATION_FILENAME}.${process.pid}.${randomUUID()}.tmp`);
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(temporary, "wx", 0o600);
+    const bytes = Buffer.from(`${canonicalJson(marker)}\n`, "utf8");
+    let offset = 0;
+    while (offset < bytes.length) offset += writeSync(descriptor, bytes, offset);
+    fsyncSync(descriptor);
+    closeSync(descriptor); descriptor = undefined;
+    if (canonicalReceiptPresent(target, "atomic_admission_recovery_marker_invalid")) fail("atomic_admission_recovery_marker_exists");
+    renameSync(temporary, target);
+    if (!canonicalReceiptPresent(target, "atomic_admission_recovery_marker_invalid")) fail("atomic_admission_recovery_marker_invalid");
+    const directoryDescriptor = openSync(rootDir, "r");
+    try { fsyncSync(directoryDescriptor); } finally { closeSync(directoryDescriptor); }
+  } catch (error) {
+    if (descriptor !== undefined) try { closeSync(descriptor); } catch { /* best effort */ }
+    if (existsSync(temporary)) try { unlinkSync(temporary); } catch { /* best effort */ }
+    throw error;
+  }
+}
+
+function removeRecoveryActivationMarker(rootDir: string): void {
+  const target = join(rootDir, CASE_RECOVERY_ACTIVATION_FILENAME);
+  if (!canonicalReceiptPresent(target, "atomic_admission_recovery_marker_invalid")) return;
+  // Parsing first prevents cleanup from hiding a corrupted recovery receipt.
+  readCanonicalRecoveryActivationMarker(rootDir);
+  unlinkSync(target);
+  const directoryDescriptor = openSync(rootDir, "r");
+  try { fsyncSync(directoryDescriptor); } finally { closeSync(directoryDescriptor); }
+}
+
+function createRecoveryActivationMarker(
+  seal: CaseShutdownSealV2,
+  database: Readonly<{ basename: string; byteLength: number; sha256: string }>,
+  sourceClaim: CaseDurableDeploymentClaim,
+  lease: ReturnType<typeof consumeStagingCaseRecoveryActivationLease>,
+): CaseRecoveryActivationMarkerV2 {
+  const { gate, targetClaim } = lease;
+  if (gate.municipalityId !== seal.municipalityId || gate.sourceReleaseDigest !== seal.sourceReleaseDigest ||
+    gate.shutdownSealChecksum !== seal.sealChecksum || gate.sourceDeploymentClaimChecksum !== sourceClaim.claimChecksum ||
+    new Date(gate.expiresAtUtc).getTime() <= new Date(gate.verifiedAtUtc).getTime()) {
+    fail("atomic_admission_recovery_activation_mismatch");
+  }
+  const unsigned = {
+    schemaVersion: "case_recovery_activation_v2" as const,
+    municipalityId: gate.municipalityId, sourceReleaseDigest: gate.sourceReleaseDigest,
+    sourceDeploymentClaimChecksum: sourceClaim.claimChecksum, targetDeploymentClaimChecksum: targetClaim.claimChecksum,
+    sourceDeploymentClaim: sourceClaim, targetDeploymentClaim: targetClaim,
+    sourceSeal: seal,
+    sourcePvc: Object.freeze({ namespace: sourceClaim.pvc.namespace, name: sourceClaim.pvc.name, uid: sourceClaim.pvc.uid }),
+    targetPvc: Object.freeze({ namespace: targetClaim.pvc.namespace, name: targetClaim.pvc.name, uid: targetClaim.pvc.uid }), targetPvName: targetClaim.pvName,
+    recoveryOperationId: gate.recoveryOperationId, recoveryAttestationChecksum: gate.recoveryAttestationChecksum, shutdownSealChecksum: gate.shutdownSealChecksum,
+    databaseBasename: database.basename, databaseByteLength: database.byteLength, databaseSha256: database.sha256,
+    expiresAtUtc: gate.expiresAtUtc, activatedAtUtc: gate.verifiedAtUtc,
+  };
+  return verifyRecoveryActivationMarker({ ...unsigned, markerChecksum: checksum(unsigned) });
+}
+
+function sameRecoveryActivation(left: CaseRecoveryActivationMarkerV2, right: CaseRecoveryActivationMarkerV2): boolean {
+  return left.schemaVersion === right.schemaVersion && left.municipalityId === right.municipalityId &&
+    left.sourceReleaseDigest === right.sourceReleaseDigest &&
+    left.sourceDeploymentClaimChecksum === right.sourceDeploymentClaimChecksum && left.targetDeploymentClaimChecksum === right.targetDeploymentClaimChecksum &&
+    left.sourceDeploymentClaim.claimChecksum === right.sourceDeploymentClaim.claimChecksum && left.targetDeploymentClaim.claimChecksum === right.targetDeploymentClaim.claimChecksum &&
+    left.sourcePvc.namespace === right.sourcePvc.namespace && left.sourcePvc.name === right.sourcePvc.name && left.sourcePvc.uid === right.sourcePvc.uid &&
+    left.targetPvc.namespace === right.targetPvc.namespace && left.targetPvc.name === right.targetPvc.name &&
+    left.targetPvc.uid === right.targetPvc.uid && left.targetPvName === right.targetPvName &&
+    left.recoveryOperationId === right.recoveryOperationId && left.recoveryAttestationChecksum === right.recoveryAttestationChecksum &&
+    left.shutdownSealChecksum === right.shutdownSealChecksum && left.databaseBasename === right.databaseBasename &&
+    left.databaseByteLength === right.databaseByteLength && left.databaseSha256 === right.databaseSha256 &&
+    left.expiresAtUtc === right.expiresAtUtc;
+}
+
+/**
+ * A marker is durable across processes, while an activation authorization is
+ * deliberately process-local.  Do not let a fresh process turn its clock
+ * backwards and replay an older signed gate merely because its in-memory
+ * authorization watermark is empty.  Equality is allowed: an exact retry of
+ * the gate that created the marker is still a valid recovery continuation.
+ */
+function assertRecoveryGateNotOlderThanMarker(
+  marker: CaseRecoveryActivationMarkerV2,
+  verifiedAtUtc: string,
+): void {
+  const markerTime = new Date(marker.activatedAtUtc).getTime();
+  const verifiedTime = new Date(verifiedAtUtc).getTime();
+  if (!Number.isFinite(markerTime) || !Number.isFinite(verifiedTime) || verifiedTime < markerTime) {
+    fail("atomic_admission_recovery_activation_stale");
+  }
+}
+
+function prepareRecoveryActivation(
+  rootDir: string,
+  municipalityId: string,
+  authorization: StagingCaseRecoveryActivationAuthorization,
+  expectedTargetClaim: CaseDurableDeploymentClaim,
+): void {
+  const marker = readCanonicalRecoveryActivationMarker(rootDir);
+  const persistedSeal = readCanonicalPriorSeal(rootDir);
+  const seal = persistedSeal ?? marker?.sourceSeal;
+  if (!seal || seal.municipalityId !== municipalityId) fail("atomic_admission_recovery_seal_required");
+  if (seal.deploymentClaimChecksum === null) fail("atomic_admission_recovery_source_claim_required");
+  const currentClaim = readCanonicalCaseDurableDeploymentClaim(rootDir);
+  if (marker) {
+    if (persistedSeal) {
+      if (persistedSeal.sealChecksum !== marker.sourceSeal.sealChecksum || !currentClaim ||
+        (!sameCaseDurableDeploymentClaim(currentClaim, marker.sourceDeploymentClaim) &&
+          !sameCaseDurableDeploymentClaim(currentClaim, marker.targetDeploymentClaim))) {
+        fail("atomic_admission_recovery_marker_mismatch");
+      }
+    } else if (!currentClaim || !sameCaseDurableDeploymentClaim(currentClaim, marker.targetDeploymentClaim)) {
+      // Marker -> claim rotation -> source-seal invalidation is the only legal
+      // order. A source claim with no local source seal cannot be an honest
+      // crash state and must never be repaired by guessing.
+      fail("atomic_admission_recovery_claim_mismatch");
+    }
+  }
+  const database = persistedSeal ? closedDatabaseIdentity(rootDir, seal) : Object.freeze({ basename: seal.databaseBasename, byteLength: seal.databaseByteLength, sha256: seal.databaseSha256 });
+  const sourceClaim = marker ? marker.sourceDeploymentClaim : currentClaim;
+  // A renewed signed Operations workflow must still reproduce the marker's
+  // exact source and target claims; the receipt itself grants no authority.
+  if (!sourceClaim || sourceClaim.claimChecksum !== seal.deploymentClaimChecksum) fail("atomic_admission_recovery_source_claim_required");
+  let lease: ReturnType<typeof consumeStagingCaseRecoveryActivationLease>;
+  try { lease = consumeStagingCaseRecoveryActivationLease(consumeStagingCaseRecoveryActivationAuthorization(authorization, sourceClaim, seal, database)); }
+  catch { fail("atomic_admission_recovery_activation_unavailable"); }
+  if (!sameCaseDurableDeploymentClaim(lease.targetClaim, expectedTargetClaim)) {
+    fail("atomic_admission_recovery_activation_unavailable");
+  }
+  const expected = createRecoveryActivationMarker(seal, database, sourceClaim, lease);
+  if (marker) {
+    assertRecoveryGateNotOlderThanMarker(marker, lease.gate.verifiedAtUtc);
+    if (!sameRecoveryActivation(marker, expected)) {
+      fail("atomic_admission_recovery_marker_mismatch");
+    }
+    const targetClaim = lease.targetClaim;
+    if (!currentClaim || (!sameCaseDurableDeploymentClaim(currentClaim, sourceClaim) && !sameCaseDurableDeploymentClaim(currentClaim, targetClaim))) fail("atomic_admission_recovery_claim_mismatch");
+    if (sameCaseDurableDeploymentClaim(currentClaim, sourceClaim)) replaceCanonicalCaseDurableDeploymentClaim(rootDir, sourceClaim, targetClaim);
+    return;
+  }
+  writeCanonicalRecoveryActivationMarker(rootDir, expected);
+  replaceCanonicalCaseDurableDeploymentClaim(rootDir, sourceClaim, lease.targetClaim);
+}
+
+function refreshRecoveryActivationAgainstMarker(
+  authorization: StagingCaseRecoveryActivationAuthorization,
+  marker: CaseRecoveryActivationMarkerV2,
+  expectedTargetClaim: CaseDurableDeploymentClaim,
+): void {
+  const database = Object.freeze({
+    basename: marker.databaseBasename,
+    byteLength: marker.databaseByteLength,
+    sha256: marker.databaseSha256,
+  });
+  let lease: ReturnType<typeof consumeStagingCaseRecoveryActivationLease>;
+  try {
+    lease = consumeStagingCaseRecoveryActivationLease(consumeStagingCaseRecoveryActivationAuthorization(
+      authorization,
+      marker.sourceDeploymentClaim,
+      marker.sourceSeal,
+      database,
+    ));
+  } catch { fail("atomic_admission_recovery_activation_unavailable"); }
+  if (!sameCaseDurableDeploymentClaim(lease.targetClaim, expectedTargetClaim)) {
+    fail("atomic_admission_recovery_activation_unavailable");
+  }
+  assertRecoveryGateNotOlderThanMarker(marker, lease.gate.verifiedAtUtc);
+  if (!sameRecoveryActivation(marker, createRecoveryActivationMarker(
+    marker.sourceSeal,
+    database,
+    marker.sourceDeploymentClaim,
+    lease,
+  ))) fail("atomic_admission_recovery_marker_mismatch");
 }
 
 type DurableOwnerLock = Readonly<{ release(): void }>;
@@ -532,11 +844,20 @@ function acquireDurableOwnerLock(rootDir: string, municipalityId: string): Durab
     const binding = ownerState.municipalityId;
     const priorSeal = readCanonicalPriorSeal(rootDir);
     const databaseMunicipality = existingDatabaseMunicipality(rootDir);
+    const priorClaim = readCanonicalCaseDurableDeploymentClaim(rootDir);
+    const recoveryMarker = readCanonicalRecoveryActivationMarker(rootDir);
     if (priorSeal && databaseMunicipality && priorSeal.municipalityId !== databaseMunicipality) {
       fail("atomic_admission_seal_invalid");
     }
-    const existingMunicipality = priorSeal?.municipalityId ?? databaseMunicipality;
-    if (existingMunicipality && existingMunicipality !== municipalityId) fail("atomic_admission_store_binding_mismatch");
+    const recordedMunicipalities = [
+      priorSeal?.municipalityId,
+      databaseMunicipality,
+      priorClaim?.municipalityId,
+      recoveryMarker?.municipalityId,
+    ].filter((value): value is string => value !== undefined);
+    if (new Set(recordedMunicipalities).size > 1 || recordedMunicipalities.some((value) => value !== municipalityId)) {
+      fail("atomic_admission_store_binding_mismatch");
+    }
     if (binding && binding !== municipalityId) fail("atomic_admission_store_binding_mismatch");
     if (!binding) {
       lockDb.prepare("INSERT INTO durable_store_binding(singleton,municipality_id) VALUES(1,?)").run(municipalityId);
@@ -552,6 +873,8 @@ function acquireDurableOwnerLock(rootDir: string, municipalityId: string): Durab
       "atomic_admission_path_symlink_forbidden",
       "atomic_admission_owner_store_invalid",
       "atomic_admission_seal_invalid",
+      "atomic_admission_recovery_marker_invalid",
+      "case_durable_deployment_claim_invalid",
       "atomic_admission_store_binding_mismatch",
     ].includes(error.message)) throw error;
     fail("atomic_admission_owner_locked");
@@ -605,8 +928,41 @@ function eventFromRow(caseId: string, row: EventRow): CoordinatorJournalEvent {
   return event;
 }
 
-function ensureSchema(db: DatabaseSync): void {
-  db.exec(`
+const ATOMIC_SCHEMA_SQL = Object.freeze({
+  atomic_municipality_meta: `CREATE TABLE atomic_municipality_meta (
+      municipality_id TEXT PRIMARY KEY, schema_version TEXT NOT NULL, config_fingerprint TEXT NOT NULL
+    ) STRICT`,
+  atomic_case_meta: `CREATE TABLE atomic_case_meta (
+      case_id TEXT PRIMARY KEY, municipality_id TEXT NOT NULL, namespace TEXT NOT NULL UNIQUE,
+      options_fingerprint TEXT NOT NULL, case_version INTEGER NOT NULL CHECK(case_version >= 0), head_checksum TEXT NOT NULL,
+      FOREIGN KEY(municipality_id) REFERENCES atomic_municipality_meta(municipality_id)
+    ) STRICT`,
+  atomic_case_events: `CREATE TABLE atomic_case_events (
+      case_id TEXT NOT NULL, case_version INTEGER NOT NULL CHECK(case_version >= 1), event_id TEXT NOT NULL,
+      event_type TEXT NOT NULL, prior_event_checksum TEXT NOT NULL, actor_json TEXT NOT NULL, payload_json TEXT NOT NULL,
+      payload_checksum TEXT NOT NULL, correction_of TEXT, event_checksum TEXT NOT NULL,
+      PRIMARY KEY(case_id, case_version), UNIQUE(case_id, event_id), FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT`,
+  atomic_case_idempotency: `CREATE TABLE atomic_case_idempotency (
+      case_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, fingerprint TEXT NOT NULL, receipt_json TEXT NOT NULL,
+      PRIMARY KEY(case_id, idempotency_key), FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT`,
+  atomic_root_claims: `CREATE TABLE atomic_root_claims (
+      municipality_id TEXT NOT NULL, root_event_id TEXT NOT NULL, candidate_event_id TEXT NOT NULL, case_id TEXT NOT NULL,
+      PRIMARY KEY(municipality_id, root_event_id), UNIQUE(municipality_id, candidate_event_id), FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT`,
+  atomic_binding_receipts: `CREATE TABLE atomic_binding_receipts (
+      case_id TEXT PRIMARY KEY, municipality_id TEXT NOT NULL, root_event_id TEXT NOT NULL UNIQUE, receipt_json TEXT NOT NULL,
+      FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT`,
+  atomic_binding_outbox: `CREATE TABLE atomic_binding_outbox (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT, case_id TEXT NOT NULL UNIQUE, receipt_json TEXT NOT NULL,
+      receipt_checksum TEXT NOT NULL, FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
+    ) STRICT`,
+});
+
+function ensureSchema(db: DatabaseSync, createIfMissing = true): void {
+  if (createIfMissing) db.exec(`
     CREATE TABLE IF NOT EXISTS atomic_municipality_meta (
       municipality_id TEXT PRIMARY KEY, schema_version TEXT NOT NULL, config_fingerprint TEXT NOT NULL
     ) STRICT;
@@ -638,9 +994,14 @@ function ensureSchema(db: DatabaseSync): void {
       receipt_checksum TEXT NOT NULL, FOREIGN KEY(case_id) REFERENCES atomic_case_meta(case_id)
     ) STRICT;
   `);
-  const names = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>).map((row) => row.name);
+  const schemaRows = db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all() as Array<{
+    type?: string; name?: string; tbl_name?: string; sql?: string;
+  }>;
+  const names = schemaRows.map((row) => row.name);
   const expected = ["atomic_binding_outbox", "atomic_binding_receipts", "atomic_case_events", "atomic_case_idempotency", "atomic_case_meta", "atomic_municipality_meta", "atomic_root_claims"];
-  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) fail("atomic_admission_schema_invalid");
+  if (names.length !== expected.length || names.some((name, index) => name !== expected[index]) ||
+    schemaRows.some((row) => row.type !== "table" || row.tbl_name !== row.name || typeof row.name !== "string" ||
+      row.sql !== ATOMIC_SCHEMA_SQL[row.name as keyof typeof ATOMIC_SCHEMA_SQL])) fail("atomic_admission_schema_invalid");
   const columns: Readonly<Record<string, readonly string[]>> = {
     atomic_municipality_meta: ["municipality_id", "schema_version", "config_fingerprint"],
     atomic_case_meta: ["case_id", "municipality_id", "namespace", "options_fingerprint", "case_version", "head_checksum"],
@@ -654,6 +1015,37 @@ function ensureSchema(db: DatabaseSync): void {
     const actual = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((row) => row.name);
     if (actual.length !== expectedColumns.length || actual.some((name, index) => name !== expectedColumns[index])) fail("atomic_admission_schema_invalid");
   }
+}
+
+function captureCaseStateRecoveryEvidence(db: DatabaseSync): CaseStateRecoveryEvidenceV1 {
+  const caseJournalHeads = (db.prepare("SELECT case_id,case_version,head_checksum FROM atomic_case_meta ORDER BY case_id").all() as Array<{
+    case_id: string; case_version: number; head_checksum: string;
+  }>).map((row) => {
+    if (typeof row.case_id !== "string" || !Number.isSafeInteger(row.case_version) || row.case_version < 3 || !SHA256.test(row.head_checksum)) {
+      fail("atomic_admission_seal_integrity_invalid");
+    }
+    return Object.freeze({ caseId: row.case_id, caseVersion: row.case_version, journalHeadChecksum: row.head_checksum });
+  });
+  const outboxEntries = (db.prepare("SELECT sequence,receipt_json,receipt_checksum FROM atomic_binding_outbox ORDER BY sequence").all() as Array<{
+    sequence: number; receipt_json: string; receipt_checksum: string;
+  }>).map((row) => {
+    if (!Number.isSafeInteger(row.sequence) || row.sequence < 1 || !SHA256.test(row.receipt_checksum)) fail("atomic_admission_seal_integrity_invalid");
+    const receipt = verifyPublicCaseBindingReceipt(parseJson(row.receipt_json, "atomic_admission_seal_integrity_invalid"));
+    if (receipt.receiptChecksum !== row.receipt_checksum) fail("atomic_admission_seal_integrity_invalid");
+    return Object.freeze({ sequence: row.sequence, receipt: clone(receipt) });
+  });
+  return verifyCaseStateRecoveryEvidence(createCaseStateRecoveryEvidence({ caseJournalHeads, outboxEntries }));
+}
+
+function truncateWalCheckpoint(db: DatabaseSync): Readonly<{ mode: "TRUNCATE"; busy: number; log: number; checkpointed: number }> {
+  const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy?: number; log?: number; checkpointed?: number } | undefined;
+  const busy = checkpoint?.busy;
+  const log = checkpoint?.log;
+  const checkpointed = checkpoint?.checkpointed;
+  if (typeof busy !== "number" || typeof log !== "number" || typeof checkpointed !== "number" ||
+    !Number.isSafeInteger(busy) || !Number.isSafeInteger(log) || !Number.isSafeInteger(checkpointed) ||
+    busy !== 0 || log < 0 || checkpointed < 0 || log !== checkpointed) fail("atomic_admission_seal_checkpoint_invalid");
+  return Object.freeze({ mode: "TRUNCATE" as const, busy, log, checkpointed });
 }
 
 function sameActor(left: ActorBinding, right: ActorBinding): boolean { return left.actorId === right.actorId && left.actorClass === right.actorClass; }
@@ -719,19 +1111,6 @@ export function createSqliteAtomicTopicCaseAdmission(
       if (!hasAgent || !hasReviewer) fail("atomic_admission_options_invalid");
     }
   }
-  const databasePath = join(config.rootDir, `stadtstack-${config.municipalityId}-atomic-admission.sqlite`);
-  ensureNotSymlink(databasePath); ensureNotSymlink(`${databasePath}-wal`); ensureNotSymlink(`${databasePath}-shm`);
-  // Acquire before opening the municipal database.  This ensures a second
-  // durable process is rejected without observing or migrating municipal
-  // state, while legacy tmp-only callers retain their multi-connection seam.
-  const durableOwner = config.durableState ? acquireDurableOwnerLock(config.rootDir, config.municipalityId) : undefined;
-  try { if (durableOwner) invalidatePriorSeal(config.rootDir, config.municipalityId); }
-  catch (error) { durableOwner?.release(); throw error; }
-  let db: DatabaseSync;
-  try { db = new DatabaseSync(databasePath, { timeout: 5000, enableForeignKeyConstraints: true }); }
-  catch (error) { durableOwner?.release(); throw error; }
-  let closed = false;
-  let shutdownSeal: CaseShutdownSealV1 | undefined;
   const configFingerprint = checksum({
     schemaVersion: SCHEMA_VERSION, municipalityId: config.municipalityId, policyVersion: config.policyVersion,
     actorRegistry: [...config.actorRegistry].sort((left, right) => `${left.actorClass}:${left.actorId}`.localeCompare(`${right.actorClass}:${right.actorId}`)),
@@ -739,27 +1118,222 @@ export function createSqliteAtomicTopicCaseAdmission(
     allowedSignerPubkeys: [...config.allowedSignerPubkeys].sort(),
     allowedAgentPubkeys: [...config.allowedAgentPubkeys].sort(),
   });
+  const databaseBasename = `stadtstack-${config.municipalityId}-atomic-admission.sqlite`;
+  const databasePath = join(config.rootDir, databaseBasename);
+  ensureNotSymlink(databasePath); ensureNotSymlink(`${databasePath}-wal`); ensureNotSymlink(`${databasePath}-shm`);
+  // Acquire before opening the municipal database.  This ensures a second
+  // durable process is rejected without observing or migrating municipal
+  // state, while legacy tmp-only callers retain their multi-connection seam.
+  const durableOwner = config.durableState ? acquireDurableOwnerLock(config.rootDir, config.municipalityId) : undefined;
+  let activeDeploymentClaim: CaseDurableDeploymentClaim | undefined;
+  let recoveryBaseline: CaseStateRecoveryEvidenceV1 | undefined;
+  let existingDatabaseIdentity: Readonly<{ dev: number; ino: number }> | undefined;
+  let bootstrapReceiptForTransition: CaseStoreBootstrapV1 | undefined;
   try {
-    db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
-    const pragmas = {
-      journal: db.prepare("PRAGMA journal_mode").get() as { journal_mode: string },
-      sync: db.prepare("PRAGMA synchronous").get() as { synchronous: number },
-      foreign: db.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number },
-    };
-    if (pragmas.journal.journal_mode.toLowerCase() !== "wal" || pragmas.sync.synchronous !== 2 || pragmas.foreign.foreign_keys !== 1) fail("atomic_admission_pragmas_invalid");
-    ensureSchema(db);
-    db.exec("BEGIN IMMEDIATE");
-    const prior = db.prepare("SELECT schema_version,config_fingerprint FROM atomic_municipality_meta WHERE municipality_id=?").get(config.municipalityId) as { schema_version: string; config_fingerprint: string } | undefined;
-    if (prior) {
-      if (prior.schema_version !== SCHEMA_VERSION || prior.config_fingerprint !== configFingerprint) fail("atomic_admission_config_mismatch");
-    } else {
-      db.prepare("INSERT INTO atomic_municipality_meta(municipality_id,schema_version,config_fingerprint) VALUES(?,?,?)").run(config.municipalityId, SCHEMA_VERSION, configFingerprint);
+    if (durableOwner) {
+      const expectedTargetClaim = config.deploymentClaimToken
+        ? consumeCaseDurableDeploymentClaimToken(config.deploymentClaimToken)
+        : undefined;
+      const marker = readCanonicalRecoveryActivationMarker(config.rootDir);
+      const cleanSeal = readCanonicalPriorSeal(config.rootDir);
+      const claimedAtStart = readCanonicalCaseDurableDeploymentClaim(config.rootDir);
+      let bootstrap = readCanonicalCaseStoreBootstrap(config.rootDir);
+      let openEpoch = readCanonicalCaseOpenEpoch(config.rootDir);
+      if ((marker && (bootstrap || openEpoch)) || (bootstrap && cleanSeal)) {
+        fail("atomic_admission_epoch_state_invalid");
+      }
+      if (bootstrap && openEpoch) {
+        if (!expectedTargetClaim || !claimedAtStart ||
+          !sameCaseDurableDeploymentClaim(bootstrap.deploymentClaim, expectedTargetClaim) ||
+          !sameCaseDurableDeploymentClaim(openEpoch.deploymentClaim, expectedTargetClaim) ||
+          !sameCaseDurableDeploymentClaim(claimedAtStart, expectedTargetClaim) ||
+          bootstrap.configFingerprint !== configFingerprint || openEpoch.configFingerprint !== configFingerprint) {
+          fail("atomic_admission_epoch_state_invalid");
+        }
+        removeCanonicalCaseStoreBootstrap(config.rootDir);
+        bootstrap = undefined;
+      }
+      if (bootstrap && (!expectedTargetClaim || !sameCaseDurableDeploymentClaim(bootstrap.deploymentClaim, expectedTargetClaim) ||
+        bootstrap.configFingerprint !== configFingerprint || bootstrap.databaseBasename !== databaseBasename)) {
+        fail("atomic_admission_deployment_claim_mismatch");
+      }
+      if (openEpoch && (!expectedTargetClaim || !claimedAtStart ||
+        !sameCaseDurableDeploymentClaim(openEpoch.deploymentClaim, expectedTargetClaim) ||
+        !sameCaseDurableDeploymentClaim(claimedAtStart, expectedTargetClaim) || openEpoch.configFingerprint !== configFingerprint)) {
+        fail("atomic_admission_deployment_claim_mismatch");
+      }
+      // Configuration drift is checked before reconciliation, marker writes,
+      // claim rotation, or seal invalidation. A wrong application policy must
+      // leave every recovery receipt byte-for-byte available for inspection
+      // and for a subsequent exact retry.
+      const initialEpochSeal = cleanSeal ?? marker?.sourceSeal;
+      if (initialEpochSeal && initialEpochSeal.configFingerprint !== configFingerprint) {
+        fail("atomic_admission_config_mismatch");
+      }
+      // A clean seal written before an old ordinary epoch receipt was removed
+      // is a completed shutdown. Only the exact deployment token may consume
+      // the stale epoch receipt; then the new seal becomes the next baseline.
+      if (openEpoch && cleanSeal && claimedAtStart) {
+        if (!expectedTargetClaim || !sameCaseDurableDeploymentClaim(expectedTargetClaim, claimedAtStart) ||
+          cleanSeal.deploymentClaimChecksum !== expectedTargetClaim.claimChecksum ||
+          cleanSeal.sourceReleaseDigest !== expectedTargetClaim.releaseDigest) {
+          fail("atomic_admission_deployment_claim_mismatch");
+        }
+        closedDatabaseIdentity(config.rootDir, cleanSeal);
+        removeCanonicalCaseOpenEpoch(config.rootDir);
+        openEpoch = undefined;
+      }
+      if (!claimedAtStart && expectedTargetClaim && !marker && !cleanSeal && !bootstrap && !openEpoch) {
+        if (existingDatabaseMunicipality(config.rootDir)) fail("atomic_admission_deployment_claim_bootstrap_not_empty");
+        bootstrap = createCaseStoreBootstrap({
+          municipalityId: config.municipalityId,
+          deploymentClaim: expectedTargetClaim,
+          configFingerprint,
+          databaseBasename,
+        });
+        writeCanonicalCaseStoreBootstrap(config.rootDir, bootstrap);
+      }
+      // Crash after writing the new target seal but before marker cleanup is a
+      // completed clean shutdown, not a recovery retry. Reconcile only the
+      // exact target claim/seal/database combination.
+      let reconciledCompletedRecovery = false;
+      if (marker && cleanSeal && claimedAtStart && expectedTargetClaim &&
+        sameCaseDurableDeploymentClaim(expectedTargetClaim, marker.targetDeploymentClaim) &&
+        cleanSeal.deploymentClaimChecksum === marker.targetDeploymentClaimChecksum &&
+        sameCaseDurableDeploymentClaim(claimedAtStart, marker.targetDeploymentClaim) && cleanSeal.municipalityId === marker.municipalityId &&
+        cleanSeal.sourceReleaseDigest === marker.targetDeploymentClaim.releaseDigest && cleanSeal.sourceReleaseDigest === config.durableState?.sourceReleaseDigest &&
+        cleanSeal.databaseBasename === marker.databaseBasename) {
+        closedDatabaseIdentity(config.rootDir, cleanSeal);
+        if (config.recoveryActivationAuthorization) {
+          if (!expectedTargetClaim) fail("atomic_admission_options_invalid");
+          refreshRecoveryActivationAgainstMarker(config.recoveryActivationAuthorization, marker, expectedTargetClaim);
+        }
+        removeRecoveryActivationMarker(config.rootDir);
+        reconciledCompletedRecovery = true;
+      }
+      const remainingMarker = readCanonicalRecoveryActivationMarker(config.rootDir);
+      if (remainingMarker && !config.recoveryActivationAuthorization) fail("atomic_admission_recovery_marker_requires_activation");
+      if (config.recoveryActivationAuthorization && !reconciledCompletedRecovery) {
+        if (!expectedTargetClaim) fail("atomic_admission_options_invalid");
+        prepareRecoveryActivation(config.rootDir, config.municipalityId, config.recoveryActivationAuthorization, expectedTargetClaim);
+      }
+      const existingClaim = readCanonicalCaseDurableDeploymentClaim(config.rootDir);
+      if (existingClaim) {
+        if (!expectedTargetClaim || !sameCaseDurableDeploymentClaim(existingClaim, expectedTargetClaim)) {
+          // Exact identity intentionally rejects ordinary in-place image/binding
+          // changes; a separately reviewed upgrade transition is required.
+          fail("atomic_admission_deployment_claim_mismatch");
+        }
+      } else if (expectedTargetClaim) {
+        const currentBootstrap = readCanonicalCaseStoreBootstrap(config.rootDir);
+        if (!currentBootstrap || !sameCaseDurableDeploymentClaim(currentBootstrap.deploymentClaim, expectedTargetClaim) ||
+          existingDatabaseMunicipality(config.rootDir) || readCanonicalPriorSeal(config.rootDir) || remainingMarker || readCanonicalCaseOpenEpoch(config.rootDir)) {
+          fail("atomic_admission_deployment_claim_bootstrap_not_empty");
+        }
+        writeCanonicalCaseDurableDeploymentClaim(config.rootDir, expectedTargetClaim);
+      }
+      const claimBeforeOpen = readCanonicalCaseDurableDeploymentClaim(config.rootDir);
+      const sealBeforeOpen = readCanonicalPriorSeal(config.rootDir);
+      const markerBeforeOpen = readCanonicalRecoveryActivationMarker(config.rootDir);
+      const bootstrapBeforeOpen = readCanonicalCaseStoreBootstrap(config.rootDir);
+      let openEpochBeforeOpen = readCanonicalCaseOpenEpoch(config.rootDir);
+      if ((markerBeforeOpen && (bootstrapBeforeOpen || openEpochBeforeOpen)) ||
+        (bootstrapBeforeOpen && (openEpochBeforeOpen || sealBeforeOpen))) fail("atomic_admission_epoch_state_invalid");
+      const epochSeal = sealBeforeOpen ?? markerBeforeOpen?.sourceSeal;
+      if (epochSeal && epochSeal.configFingerprint !== configFingerprint) fail("atomic_admission_config_mismatch");
+      if (sealBeforeOpen) {
+        if (markerBeforeOpen) {
+          if (!claimBeforeOpen || !sameCaseDurableDeploymentClaim(claimBeforeOpen, markerBeforeOpen.targetDeploymentClaim) ||
+            sealBeforeOpen.sealChecksum !== markerBeforeOpen.sourceSeal.sealChecksum) {
+            fail("atomic_admission_recovery_marker_mismatch");
+          }
+        } else if (claimBeforeOpen
+          ? sealBeforeOpen.deploymentClaimChecksum !== claimBeforeOpen.claimChecksum
+          : sealBeforeOpen.deploymentClaimChecksum !== null) {
+          fail("atomic_admission_deployment_claim_mismatch");
+        }
+      }
+      if (sealBeforeOpen && !markerBeforeOpen && expectedTargetClaim) {
+        if (!claimBeforeOpen || !sameCaseDurableDeploymentClaim(claimBeforeOpen, expectedTargetClaim) || openEpochBeforeOpen) {
+          fail("atomic_admission_deployment_claim_mismatch");
+        }
+        openEpochBeforeOpen = createCaseOpenEpoch({
+          municipalityId: config.municipalityId,
+          deploymentClaim: expectedTargetClaim,
+          configFingerprint,
+          databaseBasename: sealBeforeOpen.databaseBasename,
+          baselineShutdownSeal: sealBeforeOpen,
+        });
+        writeCanonicalCaseOpenEpoch(config.rootDir, openEpochBeforeOpen);
+      }
+      if (markerBeforeOpen) {
+        existingDatabaseIdentity = requireExistingRecoveryDatabase(databasePath);
+        recoveryBaseline = verifyCaseStateRecoveryEvidence(markerBeforeOpen.sourceSeal.recoveryEvidence);
+      } else if (openEpochBeforeOpen) {
+        if (!claimBeforeOpen || !sameCaseDurableDeploymentClaim(claimBeforeOpen, openEpochBeforeOpen.deploymentClaim)) {
+          fail("atomic_admission_deployment_claim_mismatch");
+        }
+        existingDatabaseIdentity = requireExistingRecoveryDatabase(databasePath);
+        recoveryBaseline = verifyCaseStateRecoveryEvidence(openEpochBeforeOpen.baselineShutdownSeal.recoveryEvidence);
+      } else if (bootstrapBeforeOpen) {
+        if (!claimBeforeOpen || !sameCaseDurableDeploymentClaim(claimBeforeOpen, bootstrapBeforeOpen.deploymentClaim)) {
+          fail("atomic_admission_epoch_state_invalid");
+        }
+        bootstrapReceiptForTransition = bootstrapBeforeOpen;
+      } else if (expectedTargetClaim) {
+        fail("atomic_admission_unclean_epoch_requires_recovery");
+      }
+      invalidatePriorSeal(config.rootDir, config.municipalityId);
+      activeDeploymentClaim = readCanonicalCaseDurableDeploymentClaim(config.rootDir);
     }
-    db.exec("COMMIT");
-  } catch (error) {
-    try { db.exec("ROLLBACK"); } catch { /* best-effort after failed bootstrap */ }
-    db.close(); durableOwner?.release(); throw error;
   }
+  catch (error) { durableOwner?.release(); throw error; }
+  const openMunicipalDatabase = (
+    expectedIdentity: Readonly<{ dev: number; ino: number }> | undefined,
+    createSchema: boolean,
+  ): DatabaseSync => {
+    const databaseLocation = expectedIdentity ? pathToFileURL(databasePath) : databasePath;
+    if (databaseLocation instanceof URL) databaseLocation.searchParams.set("mode", "rw");
+    const openedDatabase = new DatabaseSync(databaseLocation, { timeout: 5000, enableForeignKeyConstraints: true });
+    try {
+      if (expectedIdentity) {
+        const opened = statSync(databasePath);
+        if (!opened.isFile() || opened.dev !== expectedIdentity.dev || opened.ino !== expectedIdentity.ino) {
+          fail("atomic_admission_recovery_database_required");
+        }
+      }
+      openedDatabase.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
+      const pragmas = {
+        journal: openedDatabase.prepare("PRAGMA journal_mode").get() as { journal_mode: string },
+        sync: openedDatabase.prepare("PRAGMA synchronous").get() as { synchronous: number },
+        foreign: openedDatabase.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number },
+      };
+      if (pragmas.journal.journal_mode.toLowerCase() !== "wal" || pragmas.sync.synchronous !== 2 || pragmas.foreign.foreign_keys !== 1) fail("atomic_admission_pragmas_invalid");
+      ensureSchema(openedDatabase, createSchema);
+      openedDatabase.exec("BEGIN IMMEDIATE");
+      const prior = openedDatabase.prepare("SELECT schema_version,config_fingerprint FROM atomic_municipality_meta WHERE municipality_id=?")
+        .get(config.municipalityId) as { schema_version: string; config_fingerprint: string } | undefined;
+      if (prior) {
+        if (prior.schema_version !== SCHEMA_VERSION || prior.config_fingerprint !== configFingerprint) fail("atomic_admission_config_mismatch");
+      } else if (!createSchema) {
+        fail("atomic_admission_recovery_database_below_baseline");
+      } else {
+        openedDatabase.prepare("INSERT INTO atomic_municipality_meta(municipality_id,schema_version,config_fingerprint) VALUES(?,?,?)")
+          .run(config.municipalityId, SCHEMA_VERSION, configFingerprint);
+      }
+      openedDatabase.exec("COMMIT");
+      return openedDatabase;
+    } catch (error) {
+      try { openedDatabase.exec("ROLLBACK"); } catch { /* best-effort after failed bootstrap */ }
+      openedDatabase.close();
+      throw error;
+    }
+  };
+  let db: DatabaseSync;
+  try { db = openMunicipalDatabase(existingDatabaseIdentity, recoveryBaseline === undefined); }
+  catch (error) { durableOwner?.release(); throw error; }
+  let closed = false;
+  let shutdownSeal: CaseShutdownSealV2 | undefined;
   const ensureOpen = (): void => { if (closed) fail("atomic_admission_closed"); };
   const withReadSnapshot = <T>(operation: () => T): T => {
     ensureOpen();
@@ -919,6 +1493,40 @@ export function createSqliteAtomicTopicCaseAdmission(
     for (const meta of metaRows) validateCaseUnit(meta);
   };
 
+  const assertRecoveryEvidenceDominated = (baselineValue: CaseStateRecoveryEvidenceV1): void => {
+    let baseline: CaseStateRecoveryEvidenceV1;
+    try { baseline = verifyCaseStateRecoveryEvidence(baselineValue); }
+    catch { fail("atomic_admission_recovery_database_below_baseline"); }
+    const caseJournalHeads = baseline.orderedHeads.map((head) => {
+      const current = db.prepare("SELECT case_version FROM atomic_case_meta WHERE case_id=?").get(head.caseId) as { case_version?: number } | undefined;
+      const baselineEvent = db.prepare("SELECT event_checksum FROM atomic_case_events WHERE case_id=? AND case_version=?")
+        .get(head.caseId, head.caseVersion) as { event_checksum?: string } | undefined;
+      if (!current || !Number.isSafeInteger(current.case_version) || (current.case_version as number) < head.caseVersion ||
+        baselineEvent?.event_checksum !== head.journalHeadChecksum) {
+        fail("atomic_admission_recovery_database_below_baseline");
+      }
+      return head;
+    });
+    const outboxEntries = baseline.orderedBindingEvidence.map((binding) => {
+      const row = db.prepare("SELECT case_id,receipt_json,receipt_checksum FROM atomic_binding_outbox WHERE sequence=?")
+        .get(binding.sequence) as { case_id?: string; receipt_json?: string; receipt_checksum?: string } | undefined;
+      if (!row || row.case_id !== binding.caseId || row.receipt_checksum !== binding.receiptChecksum || typeof row.receipt_json !== "string") {
+        fail("atomic_admission_recovery_database_below_baseline");
+      }
+      let receipt: PublicCaseBindingReceiptV1;
+      try { receipt = verifyPublicCaseBindingReceipt(parseJson(row.receipt_json, "atomic_admission_recovery_database_below_baseline")); }
+      catch { fail("atomic_admission_recovery_database_below_baseline"); }
+      if (receipt.caseId !== binding.caseId || receipt.rootEventId !== binding.rootEventId || receipt.receiptChecksum !== binding.receiptChecksum) {
+        fail("atomic_admission_recovery_database_below_baseline");
+      }
+      return Object.freeze({ sequence: binding.sequence, receipt });
+    });
+    let rebuilt: CaseStateRecoveryEvidenceV1;
+    try { rebuilt = createCaseStateRecoveryEvidence({ caseJournalHeads, outboxEntries }); }
+    catch { fail("atomic_admission_recovery_database_below_baseline"); }
+    if (canonicalJson(rebuilt) !== canonicalJson(baseline)) fail("atomic_admission_recovery_database_below_baseline");
+  };
+
   const readCaseCount = (): number => {
     const row = db.prepare("SELECT COUNT(*) AS case_count FROM atomic_case_meta").get() as { case_count?: number } | undefined;
     if (!row || !Number.isSafeInteger(row.case_count) || (row.case_count as number) < 0) fail("atomic_admission_unit_corrupt");
@@ -928,12 +1536,75 @@ export function createSqliteAtomicTopicCaseAdmission(
   try {
     withReadSnapshot(() => {
       validateDatabase();
+      if (recoveryBaseline) assertRecoveryEvidenceDominated(recoveryBaseline);
       if (config.durableState && readCaseCount() > CASE_STATE_RECOVERY_MAX_CASES) {
         fail("atomic_admission_capacity_exhausted");
       }
     });
   }
   catch (error) { db.close(); closed = true; durableOwner?.release(); throw error; }
+
+  if (bootstrapReceiptForTransition) {
+    try {
+      if (!config.durableState || !activeDeploymentClaim ||
+        !sameCaseDurableDeploymentClaim(activeDeploymentClaim, bootstrapReceiptForTransition.deploymentClaim)) {
+        fail("atomic_admission_epoch_state_invalid");
+      }
+      validateDatabase();
+      const integrityRows = db.prepare("PRAGMA integrity_check").all() as Array<{ integrity_check?: string }>;
+      if (integrityRows.length !== 1 || integrityRows[0]?.integrity_check !== "ok") fail("atomic_admission_seal_integrity_invalid");
+      const baselineEvidence = captureCaseStateRecoveryEvidence(db);
+      const walCheckpoint = truncateWalCheckpoint(db);
+      db.close();
+      closed = true;
+      for (const suffix of ["-wal", "-shm"] as const) {
+        const sidecar = `${databasePath}${suffix}`;
+        ensureNotSymlink(sidecar);
+        if (existsSync(sidecar) && statSync(sidecar).size !== 0) fail("atomic_admission_seal_sidecar_nonempty");
+      }
+      ensureNotSymlink(databasePath);
+      const databaseStat = statSync(databasePath);
+      if (!databaseStat.isFile() || databaseStat.size < 1) fail("atomic_admission_seal_database_invalid");
+      const unsignedBaselineSeal = {
+        schemaVersion: "case_shutdown_seal_v2" as const,
+        municipalityId: config.municipalityId,
+        databaseSchemaVersion: SCHEMA_VERSION,
+        configFingerprint,
+        sourceReleaseDigest: config.durableState.sourceReleaseDigest,
+        deploymentClaimChecksum: activeDeploymentClaim.claimChecksum,
+        databaseBasename,
+        databaseByteLength: databaseStat.size,
+        databaseSha256: sha256File(databasePath),
+        closedAtUtc: new Date().toISOString(),
+        walCheckpoint,
+        recoveryEvidence: baselineEvidence,
+      };
+      const baselineSeal = verifyCaseShutdownSeal({
+        ...unsignedBaselineSeal,
+        sealChecksum: checksum(unsignedBaselineSeal),
+      });
+      writeCanonicalCaseOpenEpoch(config.rootDir, createCaseOpenEpoch({
+        municipalityId: config.municipalityId,
+        deploymentClaim: activeDeploymentClaim,
+        configFingerprint,
+        databaseBasename,
+        baselineShutdownSeal: baselineSeal,
+      }));
+      removeCanonicalCaseStoreBootstrap(config.rootDir);
+      const identity = requireExistingRecoveryDatabase(databasePath);
+      db = openMunicipalDatabase(identity, false);
+      closed = false;
+      recoveryBaseline = baselineEvidence;
+      withReadSnapshot(() => {
+        validateDatabase();
+        assertRecoveryEvidenceDominated(baselineEvidence);
+      });
+    } catch (error) {
+      if (!closed) { db.close(); closed = true; }
+      durableOwner?.release();
+      throw error;
+    }
+  }
 
   const admit = async (callerInput: AtomicTopicCaseAdmissionV1): Promise<PublicCaseBindingReceiptV1> => {
     ensureOpen();
@@ -1121,53 +1792,31 @@ export function createSqliteAtomicTopicCaseAdmission(
     },
   });
 
-  const sealAndClose = (): CaseShutdownSealV1 => {
+  const sealAndClose = (): CaseShutdownSealV2 => {
     if (!config.durableState) fail("atomic_admission_seal_unavailable");
     if (shutdownSeal) return shutdownSeal;
     ensureOpen();
+    const assertDeploymentClaimUnchanged = (): string | null => {
+      const current = readCanonicalCaseDurableDeploymentClaim(config.rootDir);
+      if ((activeDeploymentClaim === undefined) !== (current === undefined) ||
+        (activeDeploymentClaim && current && !sameCaseDurableDeploymentClaim(activeDeploymentClaim, current))) {
+        fail("atomic_admission_deployment_claim_mismatch");
+      }
+      return activeDeploymentClaim?.claimChecksum ?? null;
+    };
     // Do every verification before the checkpoint and before touching the
     // previous seal.  A failed check leaves the live owner lock in place so a
     // human can inspect or explicitly invoke close() for emergency cleanup.
     let recoveryEvidence: CaseStateRecoveryEvidenceV1 | undefined;
     let walCheckpoint: Readonly<{ mode: "TRUNCATE"; busy: number; log: number; checkpointed: number }> | undefined;
     try {
+      assertDeploymentClaimUnchanged();
       validateDatabase();
       const integrityRows = db.prepare("PRAGMA integrity_check").all() as Array<{ integrity_check?: string }>;
       if (integrityRows.length !== 1 || integrityRows[0]?.integrity_check !== "ok") fail("atomic_admission_seal_integrity_invalid");
 
-      const caseJournalHeads = (db.prepare("SELECT case_id,case_version,head_checksum FROM atomic_case_meta ORDER BY case_id").all() as Array<{
-        case_id: string; case_version: number; head_checksum: string;
-      }>).map((row) => {
-        if (typeof row.case_id !== "string" || !Number.isSafeInteger(row.case_version) || row.case_version < 3 || !SHA256.test(row.head_checksum)) {
-          fail("atomic_admission_seal_integrity_invalid");
-        }
-        return Object.freeze({ caseId: row.case_id, caseVersion: row.case_version, journalHeadChecksum: row.head_checksum });
-      });
-      const outboxEntries = (db.prepare("SELECT sequence,receipt_json,receipt_checksum FROM atomic_binding_outbox ORDER BY sequence").all() as Array<{
-        sequence: number; receipt_json: string; receipt_checksum: string;
-      }>).map((row) => {
-        if (!Number.isSafeInteger(row.sequence) || row.sequence < 1 || !SHA256.test(row.receipt_checksum)) fail("atomic_admission_seal_integrity_invalid");
-        const receipt = verifyPublicCaseBindingReceipt(parseJson(row.receipt_json, "atomic_admission_seal_integrity_invalid"));
-        if (receipt.receiptChecksum !== row.receipt_checksum) fail("atomic_admission_seal_integrity_invalid");
-        return Object.freeze({ sequence: row.sequence, receipt: clone(receipt) });
-      });
-      recoveryEvidence = verifyCaseStateRecoveryEvidence(createCaseStateRecoveryEvidence({ caseJournalHeads, outboxEntries }));
-
-      const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy?: number; log?: number; checkpointed?: number } | undefined;
-      const checkpointBusy = checkpoint?.busy;
-      const checkpointLog = checkpoint?.log;
-      const checkpointed = checkpoint?.checkpointed;
-      if (typeof checkpointBusy !== "number" || typeof checkpointLog !== "number" || typeof checkpointed !== "number" ||
-        !Number.isSafeInteger(checkpointBusy) || !Number.isSafeInteger(checkpointLog) || !Number.isSafeInteger(checkpointed) ||
-        checkpointBusy !== 0 || checkpointLog < 0 || checkpointed < 0 || checkpointLog !== checkpointed) {
-        fail("atomic_admission_seal_checkpoint_invalid");
-      }
-      walCheckpoint = Object.freeze({
-        mode: "TRUNCATE" as const,
-        busy: checkpointBusy,
-        log: checkpointLog,
-        checkpointed,
-      });
+      recoveryEvidence = captureCaseStateRecoveryEvidence(db);
+      walCheckpoint = truncateWalCheckpoint(db);
     } catch (error) {
       // The municipal DB and the durable owner transaction intentionally stay
       // open.  Do not create, replace, or release a successful seal on any
@@ -1190,12 +1839,14 @@ export function createSqliteAtomicTopicCaseAdmission(
       ensureNotSymlink(databasePath);
       const dbStat = statSync(databasePath);
       if (!dbStat.isFile() || dbStat.size < 1) fail("atomic_admission_seal_database_invalid");
+      const deploymentClaimChecksum = assertDeploymentClaimUnchanged();
       const unsigned = {
-        schemaVersion: "case_shutdown_seal_v1" as const,
+        schemaVersion: "case_shutdown_seal_v2" as const,
         municipalityId: config.municipalityId,
         databaseSchemaVersion: SCHEMA_VERSION,
         configFingerprint,
         sourceReleaseDigest: config.durableState.sourceReleaseDigest,
+        deploymentClaimChecksum,
         databaseBasename: `stadtstack-${config.municipalityId}-atomic-admission.sqlite`,
         databaseByteLength: dbStat.size,
         databaseSha256: sha256File(databasePath),
@@ -1205,6 +1856,11 @@ export function createSqliteAtomicTopicCaseAdmission(
       };
       const seal = verifyCaseShutdownSeal({ ...unsigned, sealChecksum: checksum(unsigned) });
       writeCanonicalSeal(config.rootDir, seal);
+      // A fresh, fsync'd clean-shutdown seal supersedes the one-time recovery
+      // activation receipt.  Never silently retain a marker after a normal
+      // close; if cleanup fails, keep the owner lock and fail closed.
+      removeRecoveryActivationMarker(config.rootDir);
+      removeCanonicalCaseOpenEpoch(config.rootDir);
       shutdownSeal = seal;
       durableOwner?.release();
       return seal;

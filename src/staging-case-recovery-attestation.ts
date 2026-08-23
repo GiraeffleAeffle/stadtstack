@@ -1,7 +1,7 @@
 import { createHash, createPublicKey, verify as verifyEd25519 } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
-import { verifyCaseShutdownSeal, type CaseShutdownSealV1 } from "./adapters/sqlite-atomic-topic-case-admission.ts";
+import { verifyCaseShutdownSeal, type CaseShutdownSealV2 } from "./case-shutdown-seal.ts";
 
 /** Pure, credential-free verifier for an Operations-reviewed recovery point.
  * It deliberately has no filesystem, bucket, Kubernetes, deployment, or civic
@@ -21,12 +21,16 @@ export type StagingCaseRecoveryGateInput = Readonly<{
 }>;
 
 export type StagingCaseRecoveryGate = Readonly<{
-  readonly schemaVersion: "staging_case_recovery_gate_v1";
+  readonly schemaVersion: "staging_case_recovery_gate_v2";
 }>;
 
 export type StagingCaseRecoveryGateFacts = Readonly<{
   municipalityId: string;
   sourceReleaseDigest: string;
+  sourcePvcNamespace: string;
+  sourcePvcName: string;
+  sourcePvcUid: string;
+  sourceDeploymentClaimChecksum: string;
   controlDeploymentBindingChecksum: string;
   targetPvcNamespace: string;
   targetPvcName: string;
@@ -34,7 +38,13 @@ export type StagingCaseRecoveryGateFacts = Readonly<{
   targetPvName: string;
   recoveryOperationId: string;
   recoveryAttestationChecksum: string;
+  shutdownSealChecksum: string;
+  shutdownClosedAtUtc: string;
+  databaseBasename: string;
+  databaseByteLength: number;
+  databaseSha256: string;
   expiresAtUtc: string;
+  verifiedAtUtc: string;
 }>;
 
 type RecoveryPolicy = Readonly<{
@@ -87,7 +97,7 @@ type CatalogLocator = Readonly<{
 }>;
 
 type RecoveryAttestation = Readonly<{
-  schemaVersion: "staging_case_recovery_attestation_v1";
+  schemaVersion: "staging_case_recovery_attestation_v2";
   deploymentEnvironment: "staging";
   municipalityId: string;
   storeId: string;
@@ -108,6 +118,7 @@ type RecoveryAttestation = Readonly<{
     databaseSchemaVersion: string;
     configFingerprint: string;
     sourceReleaseDigest: string;
+    deploymentClaimChecksum: string;
     databaseBasename: string;
     databaseByteLength: number;
     databaseSha256: string;
@@ -150,7 +161,8 @@ const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const BASE64URL = /^[A-Za-z0-9_-]+$/u;
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const DECIMAL = /^[1-9][0-9]{0,18}$/u;
-const gateFacts = new WeakMap<object, StagingCaseRecoveryGateFacts>();
+type StoredStagingCaseRecoveryGateFacts = Omit<StagingCaseRecoveryGateFacts, "verifiedAtUtc">;
+const gateFacts = new WeakMap<object, StoredStagingCaseRecoveryGateFacts>();
 
 function fail(code: string): never { throw new Error(code); }
 
@@ -362,13 +374,14 @@ function signedEnvelope(value: RecoveryAttestation): Record<string, unknown> {
 
 function parseSealBinding(value: unknown, code: string): RecoveryAttestation["seal"] {
   const record = exactRecord(value, [
-    "sealChecksum", "closedAtUtc", "databaseSchemaVersion", "configFingerprint", "sourceReleaseDigest", "databaseBasename",
+    "sealChecksum", "closedAtUtc", "databaseSchemaVersion", "configFingerprint", "sourceReleaseDigest", "deploymentClaimChecksum", "databaseBasename",
     "databaseByteLength", "databaseSha256", "recoveryEvidenceChecksum", "caseCount", "outboxCursor", "headsAggregateChecksum", "publicProjectionChecksum",
   ], code);
   return Object.freeze({
     sealChecksum: checksumValue(record.sealChecksum, code), closedAtUtc: utc(record.closedAtUtc, code),
     databaseSchemaVersion: text(record.databaseSchemaVersion, /^[A-Za-z0-9._-]{1,128}$/u, 128, code),
     configFingerprint: checksumValue(record.configFingerprint, code), sourceReleaseDigest: checksumValue(record.sourceReleaseDigest, code),
+    deploymentClaimChecksum: checksumValue(record.deploymentClaimChecksum, code),
     databaseBasename: text(record.databaseBasename, /^[A-Za-z0-9._-]{1,256}$/u, 256, code),
     databaseByteLength: positiveBytes(record.databaseByteLength, code), databaseSha256: checksumValue(record.databaseSha256, code),
     recoveryEvidenceChecksum: checksumValue(record.recoveryEvidenceChecksum, code), caseCount: safeCount(record.caseCount, code),
@@ -425,12 +438,12 @@ function parseAttestation(value: unknown): RecoveryAttestation {
     "targetPvName", "seal", "restoreReport", "issuedAtUtc", "expiresAtUtc", "signerKeyId", "signerKeyVersion", "signatureAlgorithm",
     "attestationChecksum", "signature",
   ], "staging_case_recovery_attestation_invalid");
-  if (record.schemaVersion !== "staging_case_recovery_attestation_v1" || record.deploymentEnvironment !== "staging") {
+  if (record.schemaVersion !== "staging_case_recovery_attestation_v2" || record.deploymentEnvironment !== "staging") {
     fail("staging_case_recovery_attestation_invalid");
   }
   const receipt = parseObjectLocator(record.completionReceipt, "staging_case_recovery_attestation_invalid", true);
   const parsed = Object.freeze({
-    schemaVersion: "staging_case_recovery_attestation_v1" as const,
+    schemaVersion: "staging_case_recovery_attestation_v2" as const,
     deploymentEnvironment: "staging" as const,
     municipalityId: text(record.municipalityId, MUNICIPALITY, 63, "staging_case_recovery_attestation_invalid"),
     storeId: identifier(record.storeId, "staging_case_recovery_attestation_invalid"),
@@ -475,7 +488,7 @@ function sourceValue(source: StagingCaseRecoverySource, unavailable: string): un
   try { return source.read(); } catch { fail(unavailable); }
 }
 
-function recoveryEvidenceChecksum(seal: CaseShutdownSealV1): string { return checksum(seal.recoveryEvidence); }
+function recoveryEvidenceChecksum(seal: CaseShutdownSealV2): string { return checksum(seal.recoveryEvidence); }
 
 function sameLocator(a: ObjectLocator, b: ObjectLocator): boolean {
   return a.bucket === b.bucket && a.key === b.key && a.objectVersion === b.objectVersion && a.checksum === b.checksum;
@@ -496,7 +509,7 @@ function verifySignature(policy: RecoveryPolicy, attestation: RecoveryAttestatio
   if (!canonicalSpki.equals(Buffer.from(policy.signer.spkiDerBase64url, "base64url"))) {
     fail("staging_case_recovery_attestation_key_invalid");
   }
-  const message = Buffer.from(`stadtstack:staging-case-recovery-attestation:v1\0${canonical(signedEnvelope(attestation))}`, "utf8");
+  const message = Buffer.from(`stadtstack:staging-case-recovery-attestation:v2\0${canonical(signedEnvelope(attestation))}`, "utf8");
   try {
     if (!verifySignatureNode(message, key, Buffer.from(attestation.signature, "base64url"))) fail("staging_case_recovery_attestation_signature_invalid");
   } catch (error) {
@@ -509,7 +522,7 @@ function verifySignatureNode(message: Buffer, key: ReturnType<typeof createPubli
   return verifyEd25519(null, message, key, signature);
 }
 
-function verifyBindings(policy: RecoveryPolicy, catalog: CatalogLocator, seal: CaseShutdownSealV1, attestation: RecoveryAttestation, now: string): void {
+function verifyBindings(policy: RecoveryPolicy, catalog: CatalogLocator, seal: CaseShutdownSealV2, attestation: RecoveryAttestation, now: string): void {
   const evidence = seal.recoveryEvidence;
   const sealFacts = attestation.seal;
   if (catalog.deploymentEnvironment !== policy.deploymentEnvironment || attestation.deploymentEnvironment !== policy.deploymentEnvironment ||
@@ -522,7 +535,8 @@ function verifyBindings(policy: RecoveryPolicy, catalog: CatalogLocator, seal: C
     !sameLocator(attestation.encryptedManifest, catalog.encryptedManifest) || attestation.sourcePvcUid !== policy.sourcePvc.uid ||
     attestation.targetPvcUid !== policy.targetPvc.uid || attestation.targetPvcUid === attestation.sourcePvcUid || attestation.targetPvName !== policy.targetPvName ||
     sealFacts.sealChecksum !== seal.sealChecksum || sealFacts.closedAtUtc !== seal.closedAtUtc || sealFacts.databaseSchemaVersion !== seal.databaseSchemaVersion ||
-    sealFacts.configFingerprint !== seal.configFingerprint || sealFacts.sourceReleaseDigest !== seal.sourceReleaseDigest || sealFacts.databaseBasename !== seal.databaseBasename ||
+    sealFacts.configFingerprint !== seal.configFingerprint || sealFacts.sourceReleaseDigest !== seal.sourceReleaseDigest ||
+    sealFacts.deploymentClaimChecksum !== seal.deploymentClaimChecksum || sealFacts.databaseBasename !== seal.databaseBasename ||
     sealFacts.databaseByteLength !== seal.databaseByteLength || sealFacts.databaseSha256 !== seal.databaseSha256 ||
     sealFacts.recoveryEvidenceChecksum !== recoveryEvidenceChecksum(seal) || sealFacts.caseCount !== evidence.orderedHeads.length ||
     sealFacts.outboxCursor !== evidence.outboxCursor || sealFacts.headsAggregateChecksum !== evidence.headsAggregateChecksum ||
@@ -571,20 +585,24 @@ export function createStagingCaseRecoveryGateFromReviewedSources(input: StagingC
   if (typeof pin !== "string" || !SHA256.test(pin) || pin !== policy.policyChecksum) fail("staging_case_recovery_policy_pin_mismatch");
   let rawSeal: unknown;
   try { rawSeal = sourceValue(sources[2]!, "staging_case_recovery_seal_source_unavailable"); } catch { fail("staging_case_recovery_seal_source_unavailable"); }
-  let seal: CaseShutdownSealV1;
+  let seal: CaseShutdownSealV2;
   try { seal = verifyCaseShutdownSeal(rawSeal); } catch { fail("staging_case_recovery_seal_invalid"); }
   const catalog = parseCatalog(sourceValue(sources[3]!, "staging_case_recovery_catalog_source_unavailable"));
   const attestation = parseAttestation(sourceValue(sources[4]!, "staging_case_recovery_attestation_source_unavailable"));
   const now = readClock(clock);
   verifyBindings(policy, catalog, seal, attestation, now);
   verifySignature(policy, attestation);
-  const gate: StagingCaseRecoveryGate = Object.freeze({ schemaVersion: "staging_case_recovery_gate_v1" });
+  const gate: StagingCaseRecoveryGate = Object.freeze({ schemaVersion: "staging_case_recovery_gate_v2" });
   gateFacts.set(gate, Object.freeze({
     municipalityId: policy.municipalityId, sourceReleaseDigest: seal.sourceReleaseDigest,
+    sourcePvcNamespace: policy.sourcePvc.namespace, sourcePvcName: policy.sourcePvc.name, sourcePvcUid: policy.sourcePvc.uid,
+    sourceDeploymentClaimChecksum: seal.deploymentClaimChecksum ?? fail("staging_case_recovery_attestation_binding_mismatch"),
     controlDeploymentBindingChecksum: policy.controlDeploymentBindingChecksum,
     targetPvcNamespace: policy.targetPvc.namespace, targetPvcName: policy.targetPvc.name,
     targetPvcUid: policy.targetPvc.uid, targetPvName: policy.targetPvName,
     recoveryOperationId: policy.recoveryOperationId, recoveryAttestationChecksum: attestation.attestationChecksum, expiresAtUtc: attestation.expiresAtUtc,
+    shutdownSealChecksum: seal.sealChecksum, shutdownClosedAtUtc: seal.closedAtUtc,
+    databaseBasename: seal.databaseBasename, databaseByteLength: seal.databaseByteLength, databaseSha256: seal.databaseSha256,
   }));
   return gate;
 }
@@ -599,5 +617,5 @@ export function consumeStagingCaseRecoveryGateForRuntime(
   if (!facts) fail("staging_case_recovery_gate_invalid");
   const now = readClock(captureClock(trustedClock));
   if (instant(now) >= instant(facts.expiresAtUtc)) fail("staging_case_recovery_gate_expired");
-  return facts;
+  return Object.freeze({ ...facts, verifiedAtUtc: now });
 }

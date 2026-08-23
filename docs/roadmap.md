@@ -46,11 +46,32 @@ are not application inputs, while the reference factories remain loopback-only.
 A pure recovery-attestation verifier now checks the separately pinned policy,
 catalog CAS locator, local shutdown seal, signed restore statement, exact fresh
 PVC identity, four-hour RTO and closure-derived 24-hour expiry without gaining
-filesystem, bucket, Kubernetes, signing or civic capability. The live
-critical-section Adapter, recovery activation marker, backup/restore proof,
-workload and Flux binding do not exist yet. Staff control and public read remain separate identities
-and network surfaces; Röbel Web and Mecky receive neither the staff credential
-nor SQLite access.
+filesystem, bucket, Kubernetes, signing or civic capability. The reference
+control composition now consumes that gate only while holding the durable
+single-writer lock. It revalidates the local seal, closed database bytes and
+empty sidecars, binds the exact reviewed PVC/PV and deployment checksum, writes
+one canonical fsync'd v2 Recovery Activation Marker, atomically rotates the
+source deployment claim to the exact target claim, and only then invalidates
+the old seal and opens SQLite. The marker carries the complete source claim,
+target claim and source seal, so an interrupted activated process can restart
+only after renewed signed-gate verification at or after the marker's durable
+activation time; a marker alone grants nothing and a process-local clock reset
+cannot move that floor backwards.
+The v2 shutdown seal binds the active deployment claim. A canonical fsync'd
+bootstrap receipt permits the one empty-store initialization, while an ordinary
+open-epoch receipt records its last clean seal; a recovery marker supplies its
+own source-seal baseline. Existing durable databases open only read/write with
+the exact schema and must dominate that baseline. Signed evidence is rechecked
+immediately before each listener's own bind, with admission last. A later
+failed check synchronously rolls back already-bound probe/outbox listeners and
+uses a recovery-specific non-sealing abort, so the marker survives and ordinary
+startup remains blocked. A target clean seal is allowed only after the complete
+listener set reached ready. This does not claim there was zero transient socket exposure. Exact claim matching
+currently blocks ordinary in-place release changes until a separate reviewed
+claim-transition slice exists. The real encrypted backup/restore drill, immutable
+workloads and Flux binding do not exist yet. Staff control and public read
+remain separate identities and network surfaces; Röbel Web and Mecky receive
+neither the staff credential nor SQLite access.
 
 The next accepted administration seam renders one exact Department package as
 an effect-free, idempotent workspace request. A separately authorized
@@ -72,13 +93,14 @@ the two Röbel GET routes. It does not crawl or deploy a public endpoint.
 Next implementation slices are:
 
 1. merge the green stacked Case boundary, continuation, transport, runtime,
-   recovery-gate and durable-seal slices in dependency order;
-2. review the control deployment preflight, the pure signed recovery verifier
-   and their matching still-inert Operations evidence inventories;
-3. add the durable-lock recovery activation Adapter and fsync'd marker, then
-   prove a quiesced, encrypted backup can restore byte-identically to the exact
-   fresh claim under ADR 0023 before any control activation;
-4. admit immutable control/public images and the protected policy migration,
+   recovery-gate, durable-seal, deployment-preflight and recovery-activation
+   slices in dependency order;
+2. merge their matching still-inert Operations evidence inventories without
+   reconciling a workload;
+3. prove a quiesced, encrypted backup can restore byte-identically to the exact
+   fresh claim under ADR 0023 and produce the signed activation inputs before
+   any control activation;
+4. admit immutable control/public/backup/verifier images and the protected policy migration,
    then let Flux reconcile only the reviewed resources;
 5. let Röbel discover the Case binding receipt by its signed discussion root
    and advance the public journey without receiving an admission credential;

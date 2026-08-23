@@ -66,11 +66,12 @@ function restoreReportBody(value: Record<string, any>): Record<string, unknown> 
 function seal() {
   const recoveryEvidence = createCaseStateRecoveryEvidence({ caseJournalHeads: [], outboxEntries: [] });
   const unsigned = {
-    schemaVersion: "case_shutdown_seal_v1" as const,
+    schemaVersion: "case_shutdown_seal_v2" as const,
     municipalityId: MUNICIPALITY,
     databaseSchemaVersion: "sqlite_atomic_topic_case_admission_v1",
     configFingerprint: CHECKSUM("a"),
     sourceReleaseDigest: CHECKSUM("b"),
+    deploymentClaimChecksum: CHECKSUM("f"),
     databaseBasename: `stadtstack-${MUNICIPALITY}-atomic-admission.sqlite`,
     databaseByteLength: 1234,
     databaseSha256: CHECKSUM("c"),
@@ -117,7 +118,7 @@ function fixture() {
   } as Record<string, any>;
   policy.policyChecksum = digest(policyBody(policy));
   const attestation = {
-    schemaVersion: "staging_case_recovery_attestation_v1",
+    schemaVersion: "staging_case_recovery_attestation_v2",
     deploymentEnvironment: "staging",
     municipalityId: MUNICIPALITY, storeId: STORE, recoveryOperationId: OPERATION,
     policyChecksum: policy.policyChecksum, controlDeploymentBindingChecksum: policy.controlDeploymentBindingChecksum,
@@ -125,7 +126,7 @@ function fixture() {
     completionReceipt: { ...completionReceipt }, encryptedManifest: { ...encryptedManifest }, sourcePvcUid: SOURCE_PVC, targetPvcUid: TARGET_PVC, targetPvName: "pvc-restored",
     seal: {
       sealChecksum: shutdownSeal.sealChecksum, closedAtUtc: shutdownSeal.closedAtUtc, databaseSchemaVersion: shutdownSeal.databaseSchemaVersion,
-      configFingerprint: shutdownSeal.configFingerprint, sourceReleaseDigest: shutdownSeal.sourceReleaseDigest, databaseBasename: shutdownSeal.databaseBasename,
+      configFingerprint: shutdownSeal.configFingerprint, sourceReleaseDigest: shutdownSeal.sourceReleaseDigest, deploymentClaimChecksum: shutdownSeal.deploymentClaimChecksum, databaseBasename: shutdownSeal.databaseBasename,
       databaseByteLength: shutdownSeal.databaseByteLength, databaseSha256: shutdownSeal.databaseSha256, recoveryEvidenceChecksum: evidenceChecksum,
       caseCount: 0, outboxCursor: 0, headsAggregateChecksum: shutdownSeal.recoveryEvidence.headsAggregateChecksum,
       publicProjectionChecksum: shutdownSeal.recoveryEvidence.publicProjectionChecksum,
@@ -145,7 +146,7 @@ function fixture() {
   attestation.attestationChecksum = digest(attestationBody(attestation));
   const envelope = { ...attestation };
   delete envelope.signature;
-  attestation.signature = sign(null, Buffer.from(`stadtstack:staging-case-recovery-attestation:v1\0${canonical(envelope)}`, "utf8"), pair.privateKey).toString("base64url");
+  attestation.signature = sign(null, Buffer.from(`stadtstack:staging-case-recovery-attestation:v2\0${canonical(envelope)}`, "utf8"), pair.privateKey).toString("base64url");
   return { policy, catalog, shutdownSeal, attestation };
 }
 
@@ -169,9 +170,14 @@ test("valid signed evidence yields a data-free operational recovery gate", () =>
   const facts = consumeStagingCaseRecoveryGateForRuntime(gate, Object.freeze({ now: () => NOW }));
   assert.deepEqual(facts, {
     municipalityId: MUNICIPALITY, sourceReleaseDigest: value.shutdownSeal.sourceReleaseDigest,
+    sourcePvcNamespace: "stadtstack-roebel", sourcePvcName: "case-source", sourcePvcUid: SOURCE_PVC,
+    sourceDeploymentClaimChecksum: value.shutdownSeal.deploymentClaimChecksum,
     controlDeploymentBindingChecksum: CHECKSUM("f"), targetPvcNamespace: "stadtstack-roebel", targetPvcName: "case-restore",
     targetPvcUid: TARGET_PVC, targetPvName: "pvc-restored", recoveryOperationId: OPERATION,
-    recoveryAttestationChecksum: value.attestation.attestationChecksum, expiresAtUtc: EXPIRES,
+    recoveryAttestationChecksum: value.attestation.attestationChecksum,
+    shutdownSealChecksum: value.shutdownSeal.sealChecksum, shutdownClosedAtUtc: CLOSED,
+    databaseBasename: value.shutdownSeal.databaseBasename, databaseByteLength: value.shutdownSeal.databaseByteLength,
+    databaseSha256: value.shutdownSeal.databaseSha256, expiresAtUtc: EXPIRES, verifiedAtUtc: NOW,
   });
   assert.throws(() => consumeStagingCaseRecoveryGateForRuntime(
     gate,

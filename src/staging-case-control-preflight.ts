@@ -97,6 +97,10 @@ export type StagingCaseControlDeploymentRuntimeFacts = Readonly<{
   readonly releaseDigest: string;
   readonly bindingChecksum: string;
   readonly durableRootDir: string;
+  readonly pvcNamespace: string;
+  readonly pvcName: string;
+  readonly pvcUid: string;
+  readonly pvName: string;
   readonly listeners: readonly StagingCaseControlListenerIdentity[];
 }>;
 
@@ -451,6 +455,10 @@ export function createStagingCaseControlDeploymentProof(
     releaseDigest: binding.releaseDigest,
     bindingChecksum: binding.bindingChecksum,
     durableRootDir: binding.storage.rootDir,
+    pvcNamespace: binding.storage.pvcNamespace,
+    pvcName: binding.storage.pvcName,
+    pvcUid: binding.storage.pvcUid,
+    pvName: binding.storage.pvName,
     listeners: Object.freeze([...binding.listeners]),
   });
   proofFacts.set(proof, facts);

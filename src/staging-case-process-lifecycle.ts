@@ -55,6 +55,13 @@ export type StagingCaseProcessLifecycleConfig = {
   listeners: readonly StagingCaseProcessListener[];
   release: () => void | Promise<void>;
   drainTimeoutMs: number;
+  /**
+   * Optional synchronous admission guard.  It runs while the process is
+   * still in its ordered startup turn, immediately before each child bind.
+   * The guard is deliberately not an async capability: a returned value is
+   * treated as a failed startup rather than being awaited.
+   */
+  beforeBind?: (listenerId: string) => void;
 };
 
 export type StagingCaseProcessLifecycle = Readonly<{
@@ -84,16 +91,29 @@ function invalid(): never { throw new Error("staging_case_process_config_invalid
 function startFailed(): Error { return new Error("staging_case_process_start_failed"); }
 function releaseFailed(): Error { return new Error("staging_case_process_release_failed"); }
 
-function exactObject(value: unknown, fields: readonly string[]): Record<string, unknown> {
+function exactObject(
+  value: unknown,
+  fields: readonly string[],
+  optionalFields: readonly string[] = [],
+): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value) || utilTypes.isProxy(value) ||
     Object.getPrototypeOf(value) !== Object.prototype) invalid();
   const keys = Reflect.ownKeys(value);
-  if (keys.length !== fields.length || keys.some((key) => typeof key !== "string" || !fields.includes(key))) invalid();
-  for (const field of fields) {
+  const allowedFields = [...fields, ...optionalFields];
+  if (keys.length < fields.length || keys.length > allowedFields.length ||
+    keys.some((key) => typeof key !== "string" || !allowedFields.includes(key)) ||
+    fields.some((field) => !keys.includes(field)) ||
+    new Set(keys).size !== keys.length) invalid();
+  for (const field of allowedFields) {
+    if (!keys.includes(field)) continue;
     const descriptor = Object.getOwnPropertyDescriptor(value, field);
     if (!descriptor || descriptor.get || descriptor.set || !descriptor.enumerable) invalid();
   }
   return value as Record<string, unknown>;
+}
+
+function isAsyncGuard(value: Function): boolean {
+  return utilTypes.isAsyncFunction(value);
 }
 
 function exactArray(value: unknown): readonly unknown[] {
@@ -113,8 +133,9 @@ function captureConfig(input: StagingCaseProcessLifecycleConfig): Readonly<{
   listeners: readonly CapturedListener[];
   release: () => void | Promise<void>;
   drainTimeoutMs: number;
+  beforeBind: ((listenerId: string) => void) | undefined;
 }> {
-  const parsed = exactObject(input, ["listeners", "release", "drainTimeoutMs"]);
+  const parsed = exactObject(input, ["listeners", "release", "drainTimeoutMs"], ["beforeBind"]);
   const rawListeners = exactArray(parsed.listeners);
   const ids = new Set<string>();
   const servers = new Set<Server>();
@@ -158,10 +179,14 @@ function captureConfig(input: StagingCaseProcessLifecycleConfig): Readonly<{
   if (typeof parsed.release !== "function" || utilTypes.isProxy(parsed.release) ||
     !Number.isSafeInteger(parsed.drainTimeoutMs) || (parsed.drainTimeoutMs as number) < 100 ||
     (parsed.drainTimeoutMs as number) > 10_000) invalid();
+  const beforeBind = parsed.beforeBind;
+  if (beforeBind !== undefined && (typeof beforeBind !== "function" || utilTypes.isProxy(beforeBind) ||
+    isAsyncGuard(beforeBind))) invalid();
   return Object.freeze({
     listeners: Object.freeze(listeners),
     release: parsed.release as () => void | Promise<void>,
     drainTimeoutMs: parsed.drainTimeoutMs as number,
+    beforeBind: beforeBind as ((listenerId: string) => void) | undefined,
   });
 }
 
@@ -237,6 +262,13 @@ export function createStagingCaseProcessLifecycle(
       try {
         for (const child of children) {
           if (closingRequested) return;
+          if (config.beforeBind) {
+            // Keep this synchronous call adjacent to the child start.  A
+            // thenable/Promise return is rejected as a startup failure; it is
+            // never awaited and therefore cannot open a bind-time race.
+            const result = config.beforeBind(child.id);
+            if (result !== undefined) throw startFailed();
+          }
           await child.lifecycle.start();
           const childHealth = child.lifecycle.health();
           if (!childHealth.ready || childHealth.port === null) throw startFailed();

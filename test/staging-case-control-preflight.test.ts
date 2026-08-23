@@ -163,27 +163,32 @@ function sourceFiles(root: string): readonly string[] {
 }
 
 test("the supported Interface boundary restricts internal proof imports to control composition", () => {
-  const allowedConsumers = new Map<string, ReadonlySet<string>>([
-    ["consumeStagingCaseControlDeploymentProofForRuntime", new Set(["staging-case-control-runtime.ts"])],
-    ["createStagingCaseControlListenerBindPlans", new Set(["staging-case-control-runtime.ts"])],
-    ["assertStagingCaseControlListenerBindPlan", new Set([
-      "staging-case-control-runtime.ts",
-      "staging-case-process-lifecycle.ts",
-      "staging-case-runtime-lifecycle.ts",
-    ])],
+  const boundaries = new Map<string, Readonly<{ definition: string; consumers: ReadonlySet<string> }>>([
+    ["consumeStagingCaseControlDeploymentProofForRuntime", { definition: "staging-case-control-preflight.ts", consumers: new Set(["staging-case-control-runtime.ts", "case-durable-deployment-claim.ts"]) }],
+    ["createStagingCaseControlDeploymentProofFromReviewedSources", { definition: "staging-case-control-preflight.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
+    ["createStagingCaseControlListenerBindPlans", { definition: "staging-case-control-preflight.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
+    ["assertStagingCaseControlListenerBindPlan", { definition: "staging-case-control-preflight.ts", consumers: new Set([
+      "staging-case-control-runtime.ts", "staging-case-process-lifecycle.ts", "staging-case-runtime-lifecycle.ts",
+    ]) }],
+    ["createCaseDurableDeploymentClaimToken", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
+    ["consumeCaseDurableDeploymentClaimToken", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts", "staging-case-recovery-activation-authority.ts"]) }],
+    ["readCanonicalCaseDurableDeploymentClaim", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
+    ["writeCanonicalCaseDurableDeploymentClaim", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
+    ["replaceCanonicalCaseDurableDeploymentClaim", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
+    ["createStagingCaseRecoveryActivationAuthorization", { definition: "staging-case-recovery-activation-authority.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
+    ["consumeStagingCaseRecoveryActivationAuthorization", { definition: "staging-case-recovery-activation-authority.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
+    ["consumeStagingCaseRecoveryActivationLease", { definition: "staging-case-recovery-activation-authority.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
+    ["assertStagingCaseRecoveryActivationAuthorizationFresh", { definition: "staging-case-recovery-activation-authority.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
+    ["createStagingCaseRecoveryGateFromReviewedSources", { definition: "staging-case-recovery-attestation.ts", consumers: new Set(["staging-case-recovery-activation-authority.ts"]) }],
+    ["consumeStagingCaseRecoveryGateForRuntime", { definition: "staging-case-recovery-attestation.ts", consumers: new Set(["staging-case-recovery-activation-authority.ts"]) }],
   ]);
-  const sourceCreation = "createStagingCaseControlDeploymentProofFromReviewedSources";
   for (const path of sourceFiles(resolve("src"))) {
     const source = readFileSync(path, "utf8");
     const name = path.slice(path.lastIndexOf("/") + 1);
-    if (!source.includes("./staging-case-control-preflight.ts")) continue;
-    for (const [symbol, consumers] of allowedConsumers) {
-      if (source.includes(symbol)) {
-        assert.equal(consumers.has(name), true, `${name} must not import ${symbol}`);
+    for (const [symbol, boundary] of boundaries) {
+      if (name !== boundary.definition && source.includes(symbol)) {
+        assert.equal(boundary.consumers.has(name), true, `${name} must not import ${symbol}`);
       }
-    }
-    if (source.includes(sourceCreation)) {
-      assert.equal(name, "staging-case-control-runtime.ts", `${name} must not create deployment proofs from sources`);
     }
   }
 });
@@ -198,6 +203,10 @@ test("a canonical reviewed binding plus exact local observation yields an opaque
   assert.equal(resolved.durableRootDir, value.storage.rootDir);
   assert.equal(resolved.municipalityId, "roebel-mueritz");
   assert.equal(resolved.releaseDigest, value.releaseDigest);
+  assert.equal(resolved.pvcNamespace, value.storage.pvcNamespace);
+  assert.equal(resolved.pvcName, value.storage.pvcName);
+  assert.equal(resolved.pvcUid, value.storage.pvcUid);
+  assert.equal(resolved.pvName, value.storage.pvName);
   assert.deepEqual(resolved.listeners, [
     { id: "admission", port: 18085, bindScope: "pod_network" },
     { id: "private-outbox", port: 18087, bindScope: "pod_network" },

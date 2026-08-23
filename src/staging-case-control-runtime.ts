@@ -6,6 +6,10 @@ import {
   type SqliteAtomicTopicCaseAdmissionOptions,
 } from "./adapters/sqlite-atomic-topic-case-admission.ts";
 import {
+  createCaseDurableDeploymentClaimToken,
+  type CaseDurableDeploymentClaimToken,
+} from "./case-durable-deployment-claim.ts";
+import {
   createCredentialFreeCaseBindingOutboxServer,
 } from "./credential-free-case-binding-outbox-server.ts";
 import {
@@ -33,6 +37,14 @@ import {
   createStagingCaseStewardTokenAuthenticator,
   type StagingCaseStewardCredential,
 } from "./staging-case-steward-token-authenticator.ts";
+import {
+  type StagingCaseRecoveryGateInput,
+} from "./staging-case-recovery-attestation.ts";
+import {
+  assertStagingCaseRecoveryActivationAuthorizationFresh,
+  createStagingCaseRecoveryActivationAuthorization,
+  type StagingCaseRecoveryActivationAuthorization,
+} from "./staging-case-recovery-activation-authority.ts";
 import { createStagingRuntimeProbeServer } from "./staging-runtime-probe-server.ts";
 import type { ActorRegistration } from "./civic-case-coordinator.ts";
 
@@ -87,6 +99,14 @@ export type OperationsBoundStagingCaseControlRuntimeConfig = Readonly<{
   reviewedBindingSource: StagingCaseControlReviewedBindingSource;
   bindingPinSource: StagingCaseControlBindingPinSource;
   storageObserver: StagingCaseControlStorageObserver;
+  application: OperationsBoundStagingCaseControlApplicationConfig;
+}>;
+
+export type RecoveryActivatedOperationsBoundStagingCaseControlRuntimeConfig = Readonly<{
+  reviewedBindingSource: StagingCaseControlReviewedBindingSource;
+  bindingPinSource: StagingCaseControlBindingPinSource;
+  storageObserver: StagingCaseControlStorageObserver;
+  recovery: StagingCaseRecoveryGateInput;
   application: OperationsBoundStagingCaseControlApplicationConfig;
 }>;
 
@@ -260,6 +280,21 @@ function captureDurableState(value: unknown): DurableSingleWriterState | undefin
   });
 }
 
+function captureRecoveryGateInput(value: unknown): StagingCaseRecoveryGateInput {
+  const parsed = exactRecord(value, [
+    "recoveryPolicySource", "recoveryPolicyPinSource", "shutdownSealSource",
+    "catalogLocatorSource", "recoveryAttestationSource", "clock",
+  ]);
+  return Object.freeze({
+    recoveryPolicySource: parsed.recoveryPolicySource as StagingCaseRecoveryGateInput["recoveryPolicySource"],
+    recoveryPolicyPinSource: parsed.recoveryPolicyPinSource as StagingCaseRecoveryGateInput["recoveryPolicyPinSource"],
+    shutdownSealSource: parsed.shutdownSealSource as StagingCaseRecoveryGateInput["shutdownSealSource"],
+    catalogLocatorSource: parsed.catalogLocatorSource as StagingCaseRecoveryGateInput["catalogLocatorSource"],
+    recoveryAttestationSource: parsed.recoveryAttestationSource as StagingCaseRecoveryGateInput["recoveryAttestationSource"],
+    clock: parsed.clock as StagingCaseRecoveryGateInput["clock"],
+  });
+}
+
 function captureConfig(input: StagingCaseControlRuntimeConfig): CapturedConfig {
   const parsed = allowedRecord(input, [
     "deploymentEnvironment", "rootDir", "municipalityId", "policyVersion", "actorRegistry",
@@ -361,6 +396,8 @@ function deploymentPlans(proofValue: unknown): DeploymentListenerPlans {
 function composeStagingCaseControlRuntime(
   config: CapturedConfig,
   deployedListeners?: DeploymentListenerPlans,
+  deploymentClaimToken?: CaseDurableDeploymentClaimToken,
+  recoveryActivationAuthorization?: StagingCaseRecoveryActivationAuthorization,
 ): StagingCaseControlRuntime {
   const sqliteOptions: SqliteAtomicTopicCaseAdmissionOptions = {
     rootDir: config.rootDir,
@@ -371,18 +408,21 @@ function composeStagingCaseControlRuntime(
     allowedAgentPubkeys: config.allowedAgentPubkeys,
     ...(config.requiredDepartmentIds === undefined ? {} : { requiredDepartmentIds: config.requiredDepartmentIds }),
     ...(config.durableState === undefined ? {} : { durableState: config.durableState }),
+    ...(deploymentClaimToken === undefined ? {} : { deploymentClaimToken }),
+    ...(recoveryActivationAuthorization === undefined ? {} : { recoveryActivationAuthorization }),
   };
-  const authenticator = createStagingCaseStewardTokenAuthenticator({
-    deploymentEnvironment: "staging",
-    credentials: config.credentials,
-  });
-
   let durable: ReturnType<typeof createSqliteAtomicTopicCaseAdmission> | null = null;
   let released = false;
+  // A recovery marker is the durable proof that the restored target is still
+  // mid-activation.  Until every listener has become ready it must survive
+  // any failed freshness check, bind failure, or early close.  In particular,
+  // do not turn a failed recovery into a clean target seal merely because the
+  // lifecycle's rollback invokes its release callback.
+  let recoveryReadyForSeal = recoveryActivationAuthorization === undefined;
   const release = (): void => {
     if (released) return;
     if (durable) {
-      if (config.durableState) durable.sealAndClose();
+      if (config.durableState && recoveryReadyForSeal) durable.sealAndClose();
       else durable.close();
     }
     released = true;
@@ -390,6 +430,12 @@ function composeStagingCaseControlRuntime(
 
   try {
     durable = createSqliteAtomicTopicCaseAdmission(sqliteOptions);
+    // The durable owner, including any recovery activation, is established
+    // before credentials or listener-bearing services are constructed.
+    const authenticator = createStagingCaseStewardTokenAuthenticator({
+      deploymentEnvironment: "staging",
+      credentials: config.credentials,
+    });
     const control = createRoebelCaseStewardControlService({
       municipalityId: config.municipalityId,
       policyVersion: config.policyVersion,
@@ -427,8 +473,18 @@ function composeStagingCaseControlRuntime(
       ],
       release,
       drainTimeoutMs: config.drainTimeoutMs,
+      ...(recoveryActivationAuthorization === undefined ? {} : {
+        beforeBind: () => assertStagingCaseRecoveryActivationAuthorizationFresh(recoveryActivationAuthorization),
+      }),
     });
-    return Object.freeze({ start: lifecycle.start, health: lifecycle.health, close: lifecycle.close });
+    const start = async (): Promise<void> => {
+      await lifecycle.start();
+      // This continuation only runs after all three children have reported
+      // ready. If close raced with startup, lifecycle reports stopped/draining
+      // instead and recovery remains on the non-sealing abort path.
+      if (lifecycle.health().ready) recoveryReadyForSeal = true;
+    };
+    return Object.freeze({ start, health: lifecycle.health, close: lifecycle.close });
   } catch (error) {
     release();
     throw error;
@@ -464,5 +520,41 @@ export function createOperationsBoundStagingCaseControlRuntime(
   });
   const deployment = consumeStagingCaseControlDeploymentProofForRuntime(proof);
   const config = captureOperationsApplication(parsed.application, deployment);
-  return composeStagingCaseControlRuntime(config, deploymentPlans(proof));
+  return composeStagingCaseControlRuntime(
+    config,
+    deploymentPlans(proof),
+    createCaseDurableDeploymentClaimToken(proof),
+  );
+}
+
+/**
+ * Recovery-only reviewed composition. The signed evidence is constructed and
+ * consumed inside the durable-owner critical section, before credentials,
+ * municipal SQLite, servers or Pod-network listeners exist.
+ */
+export function createRecoveryActivatedOperationsBoundStagingCaseControlRuntime(
+  input: RecoveryActivatedOperationsBoundStagingCaseControlRuntimeConfig,
+): StagingCaseControlRuntime {
+  const parsed = exactRecord(input, [
+    "reviewedBindingSource", "bindingPinSource", "storageObserver", "recovery", "application",
+  ]);
+  const proof = createStagingCaseControlDeploymentProofFromReviewedSources({
+    reviewedBindingSource: parsed.reviewedBindingSource as StagingCaseControlReviewedBindingSource,
+    bindingPinSource: parsed.bindingPinSource as StagingCaseControlBindingPinSource,
+    storageObserver: parsed.storageObserver as StagingCaseControlStorageObserver,
+  });
+  const deployment = consumeStagingCaseControlDeploymentProofForRuntime(proof);
+  const recovery = captureRecoveryGateInput(parsed.recovery);
+  const config = captureOperationsApplication(parsed.application, deployment);
+  const deploymentClaimToken = createCaseDurableDeploymentClaimToken(proof);
+  const recoveryActivationAuthorization = createStagingCaseRecoveryActivationAuthorization({
+    targetDeploymentClaimToken: deploymentClaimToken,
+    recovery,
+  });
+  return composeStagingCaseControlRuntime(
+    config,
+    deploymentPlans(proof),
+    deploymentClaimToken,
+    recoveryActivationAuthorization,
+  );
 }
