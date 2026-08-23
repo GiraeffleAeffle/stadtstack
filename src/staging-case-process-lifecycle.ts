@@ -112,7 +112,7 @@ function exactObject(
   return value as Record<string, unknown>;
 }
 
-function isAsyncGuard(value: (...args: never[]) => unknown): boolean {
+function isAsyncGuard(value: unknown): boolean {
   return utilTypes.isAsyncFunction(value);
 }
 
