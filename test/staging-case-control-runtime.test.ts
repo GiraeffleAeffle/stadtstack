@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test, { after, type TestContext } from "node:test";
 
 import { finalizeEvent, getPublicKey, type Event as NostrEvent } from "nostr-tools/pure";
@@ -12,6 +13,10 @@ import {
   createStagingCaseControlRuntime,
   type StagingCaseControlRuntimeConfig,
 } from "../src/staging-case-control-runtime.ts";
+import {
+  CASE_SHUTDOWN_SEAL_FILENAME,
+  verifyCaseShutdownSeal,
+} from "../src/adapters/sqlite-atomic-topic-case-admission.ts";
 import { CREDENTIAL_FREE_CASE_BINDING_OUTBOX_PATH } from "../src/credential-free-case-binding-outbox-server.ts";
 import type { CitizenSignedTopicSuggestionV1 } from "../src/citizen-suggestion.ts";
 
@@ -102,7 +107,7 @@ function candidate(): { sourceDiscussion: NostrEvent; sourceAnswer: NostrEvent; 
   };
 }
 
-function config(rootDir: string): StagingCaseControlRuntimeConfig {
+function config(rootDir: string, durable = false): StagingCaseControlRuntimeConfig {
   return {
     deploymentEnvironment: "staging",
     rootDir,
@@ -129,6 +134,12 @@ function config(rootDir: string): StagingCaseControlRuntimeConfig {
       admission: { host: "127.0.0.1", port: 0 },
     },
     drainTimeoutMs: 500,
+    ...(durable ? {
+      durableState: {
+        mode: "durable_single_writer" as const,
+        sourceReleaseDigest: `sha256:${"d".repeat(64)}`,
+      },
+    } : {}),
   };
 }
 
@@ -247,4 +258,59 @@ test("close is idempotent, releases SQLite after listeners stop, and permits a c
   t.after(async () => second.close());
   await second.start();
   assert.equal(second.health().ready, true);
+});
+
+test("durable runtime drains its listeners, seals one admitted Case, and cleanly reopens", async () => {
+  const rootDir = root();
+  const first = createStagingCaseControlRuntime(config(rootDir, true));
+  await first.start();
+  const ports = first.health().ports;
+  const value = candidate();
+  const body = JSON.stringify({
+    schemaVersion: "roebel_case_steward_admission_request_v1",
+    sourceDiscussion: value.sourceDiscussion,
+    sourceAnswer: value.sourceAnswer,
+    signedSuggestion: value.signedSuggestion,
+  });
+  const admitted = await request(ports.admission!, "POST", "/v1/nostr/suggestions/admit", {
+    host: "127.0.0.1",
+    authorization: `Bearer ${TOKEN}`,
+    "content-type": "application/json; charset=utf-8",
+    "content-length": String(Buffer.byteLength(body, "utf8")),
+  }, body);
+  assert.equal(admitted.status, 200);
+
+  await first.close();
+  assert.equal(first.health().phase, "stopped");
+  const sealPath = join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME);
+  const firstSeal = verifyCaseShutdownSeal(JSON.parse(readFileSync(sealPath, "utf8")));
+  assert.equal(firstSeal.recoveryEvidence.projectionEntryCount, 1);
+
+  const second = createStagingCaseControlRuntime(config(rootDir, true));
+  assert.equal(existsSync(sealPath), false);
+  await second.start();
+  await second.close();
+  const secondSeal = verifyCaseShutdownSeal(JSON.parse(readFileSync(sealPath, "utf8")));
+  assert.deepEqual(secondSeal.recoveryEvidence, firstSeal.recoveryEvidence);
+});
+
+test("durable runtime redacts a failed checkpoint and cannot leave a stale success seal", async () => {
+  const rootDir = root();
+  const runtime = createStagingCaseControlRuntime(config(rootDir, true));
+  await runtime.start();
+  const originalPrepare = DatabaseSync.prototype.prepare;
+  DatabaseSync.prototype.prepare = function patchedPrepare(sql: string) {
+    const statement = originalPrepare.call(this, sql);
+    if (sql === "PRAGMA wal_checkpoint(TRUNCATE)") {
+      Object.defineProperty(statement, "get", { value: () => ({ busy: 1, log: 0, checkpointed: 0 }) });
+    }
+    return statement;
+  };
+  try {
+    await assert.rejects(runtime.close(), /staging_case_process_release_failed/u);
+    assert.equal(existsSync(join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME)), false);
+    assert.throws(() => createStagingCaseControlRuntime(config(rootDir, true)), /atomic_admission_owner_locked/u);
+  } finally {
+    DatabaseSync.prototype.prepare = originalPrepare;
+  }
 });

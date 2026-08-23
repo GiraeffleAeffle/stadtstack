@@ -38,18 +38,28 @@ process lifetime and released by process death. It is not a persistent sentinel
 file and cannot be confused with the durable shutdown seal written only after a
 successful checkpoint and close.
 
-Until the SQLite Adapter accepts a production path contract, the claim is
-mounted at one exact non-symlink directory below `/tmp`, as required by the
-current staging-only Adapter. This is a staging compatibility constraint, not
-a recommendation for production storage. The container must fail before
-binding any civic listener if the directory, ownership, filesystem capacity,
-owner lock or database integrity check is invalid.
+The SQLite Adapter now accepts durable mode only at one exact, existing,
+non-symlink directory; the legacy multi-connection reference mode remains
+restricted below the system temporary directory. That path check and the
+root-global live owner lock are a reference foundation, not a live storage
+claim. Before any non-loopback civic listener binds, Operations must also prove
+the expected uid/gid and permissions, filesystem type and free-space floor,
+StorageClass/PVC identity and the reviewed bind composition. A mismatch must
+fail before the listener becomes ready.
 
 The live storage contract must capture the claim's access and volume modes,
 StorageClass, requested capacity and minimum free-space threshold, filesystem,
 reclaim policy, binding mode and topology, expansion support and volume
 encryption evidence. No manifest may invent a StorageClass name or silently
 select the cluster default.
+
+The staging recovery-evidence format and durable owner have one matching,
+reviewed operational capacity of 10,000 Cases per municipal store. A new Case
+is rejected before its first row commits when that capacity is reached, so a
+valid store can never cross into an unsealable state. This is storage
+backpressure, not a civic eligibility or rejection decision: the system must
+report admission unavailable, preserve already admitted Cases, and require a
+reviewed capacity/evidence-format migration before reopening intake.
 
 The state claim is not part of an ordinary pruning application Kustomization.
 It is either outside Flux inventory or in a separate reviewed state

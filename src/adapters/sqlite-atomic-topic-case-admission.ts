@@ -1,9 +1,30 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  readSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { types as utilTypes } from "node:util";
+
+import {
+  CASE_STATE_RECOVERY_MAX_CASES,
+  createCaseStateRecoveryEvidence,
+  verifyCaseStateRecoveryEvidence,
+  type CaseStateRecoveryEvidenceV1,
+} from "../case-state-recovery-evidence.ts";
 
 import {
   createPublicCaseBindingReceipt,
@@ -42,6 +63,37 @@ const HEX64 = /^[0-9a-f]{64}$/u;
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const NAMESPACE = /^case-[0-9a-f]{32}$/u;
+const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+
+/** The fixed, basename-only seal written by a clean durable-owner shutdown. */
+export const CASE_SHUTDOWN_SEAL_FILENAME = "case-shutdown-seal-v1.json";
+const CASE_STATE_OWNER_DATABASE_FILENAME = "stadtstack-case-state-owner.sqlite";
+const CASE_STATE_OWNER_SCHEMA = "CREATE TABLE durable_store_binding(singleton INTEGER NOT NULL PRIMARY KEY CHECK(singleton=1),municipality_id TEXT NOT NULL) STRICT";
+
+export type DurableSingleWriterState = Readonly<{
+  mode: "durable_single_writer";
+  sourceReleaseDigest: string;
+}>;
+
+export type CaseShutdownSealV1 = Readonly<{
+  schemaVersion: "case_shutdown_seal_v1";
+  municipalityId: string;
+  databaseSchemaVersion: typeof SCHEMA_VERSION;
+  configFingerprint: string;
+  sourceReleaseDigest: string;
+  databaseBasename: string;
+  databaseByteLength: number;
+  databaseSha256: string;
+  closedAtUtc: string;
+  walCheckpoint: Readonly<{
+    mode: "TRUNCATE";
+    busy: number;
+    log: number;
+    checkpointed: number;
+  }>;
+  recoveryEvidence: CaseStateRecoveryEvidenceV1;
+  sealChecksum: string;
+}>;
 
 export type SqliteAtomicTopicCaseAdmissionOptions = {
   rootDir: string;
@@ -56,6 +108,9 @@ export type SqliteAtomicTopicCaseAdmissionOptions = {
   requiredDepartmentIds?: readonly string[];
   /** Test-only rollback seam. It is never an admission capability. */
   failpoint?: "after_root_claim" | "after_case_events" | "after_binding_receipt";
+  /** Opt-in persistent state. Legacy adapters remain tmp-only and can retain
+   * their existing multi-connection test behavior. */
+  durableState?: DurableSingleWriterState;
 };
 
 export type SqliteAtomicTopicCaseAdmission = {
@@ -64,6 +119,12 @@ export type SqliteAtomicTopicCaseAdmission = {
   /** Private composition-root seam.  It never creates Cases: only an already
    * atomically admitted Case can be reopened with its pinned journal/config. */
   caseCoordinators: Readonly<{ open(caseId: string): CivicCaseCoordinator }>;
+  /** A legacy tmp-only adapter has no durable state to seal and rejects this
+   * call with `atomic_admission_seal_unavailable`. */
+  sealAndClose(): CaseShutdownSealV1;
+  /** Legacy close, or an explicit emergency abandonment after a failed seal.
+   * It never writes a durable success seal and must not be used as the normal
+   * shutdown path by a durable runtime. */
   close(): void;
 };
 
@@ -163,8 +224,25 @@ function safeRoot(rootDir: string): string {
   return resolved;
 }
 
+/** Durable state has a deliberately narrower path contract than the legacy
+ * tmp-only test adapter: the caller must name the exact existing directory,
+ * without a normalising alias or a symlink at either end. */
+function safeDurableRoot(rootDir: string): string {
+  if (typeof rootDir !== "string" || !isAbsolute(rootDir) || rootDir !== resolve(rootDir) || rootDir.split(/[\\/]/u).includes("..") || !existsSync(rootDir)) {
+    fail("atomic_admission_root_invalid");
+  }
+  const stat = lstatSync(rootDir);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(rootDir) !== rootDir) fail("atomic_admission_root_invalid");
+  return rootDir;
+}
+
 function ensureNotSymlink(path: string): void {
-  if (existsSync(path) && lstatSync(path).isSymbolicLink()) fail("atomic_admission_path_symlink_forbidden");
+  try {
+    if (lstatSync(path).isSymbolicLink()) fail("atomic_admission_path_symlink_forbidden");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
 }
 
 function frozenStringSet(value: unknown, code: string): readonly string[] {
@@ -205,18 +283,284 @@ function requiredDepartments(value: unknown, code: string): readonly string[] | 
   return Object.freeze([...value] as string[]);
 }
 
-function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required<Omit<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds">> & Pick<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds"> {
-  const parsed = allowedKeys(input, ["actorRegistry", "allowedAgentPubkeys", "allowedSignerPubkeys", "failpoint", "municipalityId", "policyVersion", "requiredDepartmentIds", "rootDir"], "atomic_admission_options_invalid");
+function durableState(value: unknown, code: string): DurableSingleWriterState | undefined {
+  if (value === undefined) return undefined;
+  const parsed = ownKeys(value, ["mode", "sourceReleaseDigest"], code);
+  if (parsed.mode !== "durable_single_writer" || typeof parsed.sourceReleaseDigest !== "string" || !SHA256.test(parsed.sourceReleaseDigest)) fail(code);
+  return Object.freeze({ mode: "durable_single_writer" as const, sourceReleaseDigest: parsed.sourceReleaseDigest });
+}
+
+function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required<Omit<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds" | "durableState">> & Pick<SqliteAtomicTopicCaseAdmissionOptions, "failpoint" | "requiredDepartmentIds" | "durableState"> {
+  const parsed = allowedKeys(input, ["actorRegistry", "allowedAgentPubkeys", "allowedSignerPubkeys", "durableState", "failpoint", "municipalityId", "policyVersion", "requiredDepartmentIds", "rootDir"], "atomic_admission_options_invalid");
   if (typeof parsed.municipalityId !== "string" || !MUNICIPALITY_ID.test(parsed.municipalityId) ||
     typeof parsed.policyVersion !== "string" || !/^[A-Za-z0-9:._-]{1,256}$/u.test(parsed.policyVersion) ||
     (parsed.failpoint !== undefined && parsed.failpoint !== "after_root_claim" && parsed.failpoint !== "after_case_events" && parsed.failpoint !== "after_binding_receipt")) fail("atomic_admission_options_invalid");
+  const resolvedDurableState = durableState(parsed.durableState, "atomic_admission_options_invalid");
   return Object.freeze({
-    rootDir: safeRoot(parsed.rootDir as string), municipalityId: parsed.municipalityId,
+    rootDir: resolvedDurableState ? safeDurableRoot(parsed.rootDir as string) : safeRoot(parsed.rootDir as string), municipalityId: parsed.municipalityId,
     policyVersion: parsed.policyVersion, actorRegistry: actorRegistry(parsed.actorRegistry, "atomic_admission_options_invalid"),
     allowedSignerPubkeys: frozenStringSet(parsed.allowedSignerPubkeys, "atomic_admission_options_invalid"),
     allowedAgentPubkeys: frozenStringSet(parsed.allowedAgentPubkeys, "atomic_admission_options_invalid"),
     requiredDepartmentIds: requiredDepartments(parsed.requiredDepartmentIds, "atomic_admission_options_invalid"),
     failpoint: parsed.failpoint as SqliteAtomicTopicCaseAdmissionOptions["failpoint"],
+    durableState: resolvedDurableState,
+  });
+}
+
+/** Stable basename helper: seals contain only this name, never a host path. */
+export function caseShutdownSealFilename(): typeof CASE_SHUTDOWN_SEAL_FILENAME { return CASE_SHUTDOWN_SEAL_FILENAME; }
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+function sha256File(path: string): string {
+  // Hash the closed database in bounded memory; a legitimate persistent
+  // volume must never force the control process to allocate the whole file.
+  const descriptor = openSync(path, "r");
+  const hash = createHash("sha256");
+  const chunk = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    for (;;) {
+      const bytesRead = readSync(descriptor, chunk, 0, chunk.length, null);
+      if (bytesRead === 0) break;
+      hash.update(chunk.subarray(0, bytesRead));
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+
+function requireUtcTimestamp(value: unknown, code: string): string {
+  if (typeof value !== "string" || !UTC_TIMESTAMP.test(value)) fail(code);
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) fail(code);
+  return value;
+}
+
+/** Strict, canonical verifier for a durable owner shutdown receipt.  It is
+ * intentionally a narrow public API: callers can validate archive material
+ * without gaining any database-opening capability. */
+export function verifyCaseShutdownSeal(value: unknown): CaseShutdownSealV1 {
+  const parsed = ownKeys(value, [
+    "closedAtUtc", "configFingerprint", "databaseBasename", "databaseByteLength", "databaseSchemaVersion",
+    "databaseSha256", "municipalityId", "recoveryEvidence", "schemaVersion", "sealChecksum", "sourceReleaseDigest", "walCheckpoint",
+  ], "atomic_admission_seal_invalid");
+  if (parsed.schemaVersion !== "case_shutdown_seal_v1" || typeof parsed.municipalityId !== "string" || !MUNICIPALITY_ID.test(parsed.municipalityId) ||
+    parsed.databaseSchemaVersion !== SCHEMA_VERSION || typeof parsed.configFingerprint !== "string" || !SHA256.test(parsed.configFingerprint) ||
+    typeof parsed.sourceReleaseDigest !== "string" || !SHA256.test(parsed.sourceReleaseDigest) ||
+    parsed.databaseBasename !== `stadtstack-${parsed.municipalityId}-atomic-admission.sqlite` ||
+    typeof parsed.databaseByteLength !== "number" || !Number.isSafeInteger(parsed.databaseByteLength) || parsed.databaseByteLength < 1 ||
+    typeof parsed.databaseSha256 !== "string" || !SHA256.test(parsed.databaseSha256) ||
+    typeof parsed.sealChecksum !== "string" || !SHA256.test(parsed.sealChecksum)) fail("atomic_admission_seal_invalid");
+  requireUtcTimestamp(parsed.closedAtUtc, "atomic_admission_seal_invalid");
+  const walCheckpoint = ownKeys(parsed.walCheckpoint, ["busy", "checkpointed", "log", "mode"], "atomic_admission_seal_invalid");
+  if (walCheckpoint.mode !== "TRUNCATE" || !Number.isSafeInteger(walCheckpoint.busy) || !Number.isSafeInteger(walCheckpoint.log) ||
+    !Number.isSafeInteger(walCheckpoint.checkpointed) || walCheckpoint.busy !== 0 || walCheckpoint.log < 0 ||
+    walCheckpoint.checkpointed < 0 || walCheckpoint.log !== walCheckpoint.checkpointed) {
+    fail("atomic_admission_seal_invalid");
+  }
+  const recoveryEvidence = verifyCaseStateRecoveryEvidence(parsed.recoveryEvidence);
+  const municipalityCasePrefix = `urn:stadtstack:case:test:${parsed.municipalityId}:`;
+  if (recoveryEvidence.orderedHeads.some((head) => !head.caseId.startsWith(municipalityCasePrefix))) {
+    fail("atomic_admission_seal_invalid");
+  }
+  const { sealChecksum, ...withoutChecksum } = parsed;
+  if (checksum(withoutChecksum) !== sealChecksum) fail("atomic_admission_seal_invalid");
+  return deepFreeze({
+    schemaVersion: "case_shutdown_seal_v1" as const,
+    municipalityId: parsed.municipalityId,
+    databaseSchemaVersion: SCHEMA_VERSION,
+    configFingerprint: parsed.configFingerprint,
+    sourceReleaseDigest: parsed.sourceReleaseDigest,
+    databaseBasename: parsed.databaseBasename,
+    databaseByteLength: parsed.databaseByteLength,
+    databaseSha256: parsed.databaseSha256,
+    closedAtUtc: parsed.closedAtUtc,
+    walCheckpoint: Object.freeze({
+      mode: "TRUNCATE" as const,
+      busy: walCheckpoint.busy as number,
+      log: walCheckpoint.log as number,
+      checkpointed: walCheckpoint.checkpointed as number,
+    }),
+    recoveryEvidence,
+    sealChecksum,
+  });
+}
+
+function writeCanonicalSeal(rootDir: string, seal: CaseShutdownSealV1): void {
+  const target = join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME);
+  ensureNotSymlink(target);
+  const temporary = join(rootDir, `.${CASE_SHUTDOWN_SEAL_FILENAME}.${process.pid}.${randomUUID()}.tmp`);
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(temporary, "wx", 0o600);
+    const bytes = Buffer.from(`${canonicalJson(seal)}\n`, "utf8");
+    let offset = 0;
+    while (offset < bytes.length) offset += writeSync(descriptor, bytes, offset);
+    fsyncSync(descriptor);
+    closeSync(descriptor); descriptor = undefined;
+    ensureNotSymlink(target);
+    renameSync(temporary, target);
+    const directoryDescriptor = openSync(rootDir, "r");
+    try { fsyncSync(directoryDescriptor); } finally { closeSync(directoryDescriptor); }
+  } catch (error) {
+    if (descriptor !== undefined) try { closeSync(descriptor); } catch { /* best effort */ }
+    if (existsSync(temporary)) try { unlinkSync(temporary); } catch { /* best effort */ }
+    throw error;
+  }
+}
+
+/** A prior seal certifies the preceding closed epoch only.  Once a new live
+ * owner acquires the state, remove that certificate before opening municipal
+ * state so a failed later shutdown can never leave a stale success behind. */
+function readCanonicalPriorSeal(rootDir: string): CaseShutdownSealV1 | undefined {
+  const target = join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME);
+  ensureNotSymlink(target);
+  if (!existsSync(target)) return undefined;
+  let previous: CaseShutdownSealV1;
+  const encoded = readFileSync(target, "utf8");
+  try { previous = verifyCaseShutdownSeal(JSON.parse(encoded)); }
+  catch { fail("atomic_admission_seal_invalid"); }
+  if (encoded !== `${canonicalJson(previous)}\n`) fail("atomic_admission_seal_invalid");
+  return previous;
+}
+
+function existingDatabaseMunicipality(rootDir: string): string | undefined {
+  const databaseName = /^stadtstack-([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)-atomic-admission\.sqlite$/u;
+  const matches = readdirSync(rootDir).flatMap((entry) => {
+    const match = databaseName.exec(entry);
+    if (!match) return [];
+    ensureNotSymlink(join(rootDir, entry));
+    return [match[1]!];
+  });
+  if (matches.length > 1) fail("atomic_admission_store_binding_mismatch");
+  return matches[0];
+}
+
+function invalidatePriorSeal(rootDir: string, municipalityId: string): void {
+  const target = join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME);
+  const previous = readCanonicalPriorSeal(rootDir);
+  if (!previous) return;
+  if (previous.municipalityId !== municipalityId) fail("atomic_admission_seal_invalid");
+  const databasePath = join(rootDir, previous.databaseBasename);
+  ensureNotSymlink(databasePath);
+  if (!existsSync(databasePath)) fail("atomic_admission_seal_invalid");
+  const databaseStat = statSync(databasePath);
+  if (!databaseStat.isFile() || databaseStat.size !== previous.databaseByteLength ||
+    sha256File(databasePath) !== previous.databaseSha256) fail("atomic_admission_seal_invalid");
+  unlinkSync(target);
+  const directoryDescriptor = openSync(rootDir, "r");
+  try { fsyncSync(directoryDescriptor); } finally { closeSync(directoryDescriptor); }
+}
+
+type DurableOwnerLock = Readonly<{ release(): void }>;
+
+type OwnerBindingState = Readonly<{ schemaPresent: boolean; municipalityId?: string }>;
+
+function readValidatedOwnerBinding(lockDb: DatabaseSync): OwnerBindingState {
+  const integrity = lockDb.prepare("PRAGMA integrity_check").all() as Array<{ integrity_check?: string }>;
+  if (integrity.length !== 1 || integrity[0]?.integrity_check !== "ok") fail("atomic_admission_owner_store_invalid");
+  const schema = lockDb.prepare(`
+    SELECT type,name,tbl_name,sql
+    FROM sqlite_schema
+    WHERE name NOT LIKE 'sqlite_%'
+    ORDER BY type,name
+  `).all() as Array<{ type?: string; name?: string; tbl_name?: string; sql?: string }>;
+  if (schema.length === 0) return Object.freeze({ schemaPresent: false });
+  const version = lockDb.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
+  if (version?.user_version !== 1 || schema.length !== 1 || schema[0]?.type !== "table" ||
+    schema[0]?.name !== "durable_store_binding" || schema[0]?.tbl_name !== "durable_store_binding" ||
+    schema[0]?.sql !== CASE_STATE_OWNER_SCHEMA) fail("atomic_admission_owner_store_invalid");
+  const columns = lockDb.prepare("PRAGMA table_info(durable_store_binding)").all() as Array<{
+    cid?: number; name?: string; type?: string; notnull?: number; dflt_value?: unknown; pk?: number;
+  }>;
+  if (columns.length !== 2 ||
+    columns[0]?.cid !== 0 || columns[0]?.name !== "singleton" || columns[0]?.type !== "INTEGER" ||
+    columns[0]?.notnull !== 1 || columns[0]?.dflt_value !== null || columns[0]?.pk !== 1 ||
+    columns[1]?.cid !== 1 || columns[1]?.name !== "municipality_id" || columns[1]?.type !== "TEXT" ||
+    columns[1]?.notnull !== 1 || columns[1]?.dflt_value !== null || columns[1]?.pk !== 0) {
+    fail("atomic_admission_owner_store_invalid");
+  }
+  const indexes = lockDb.prepare("PRAGMA index_list(durable_store_binding)").all();
+  const foreignKeys = lockDb.prepare("PRAGMA foreign_key_list(durable_store_binding)").all();
+  if (indexes.length !== 0 || foreignKeys.length !== 0) fail("atomic_admission_owner_store_invalid");
+  const bindings = lockDb.prepare("SELECT singleton,municipality_id FROM durable_store_binding ORDER BY singleton").all() as Array<{
+    singleton?: number; municipality_id?: string;
+  }>;
+  if (bindings.length > 1 || (bindings.length === 1 &&
+    (bindings[0]?.singleton !== 1 || typeof bindings[0]?.municipality_id !== "string" ||
+      !MUNICIPALITY_ID.test(bindings[0].municipality_id)))) fail("atomic_admission_owner_store_invalid");
+  return Object.freeze(bindings.length === 0
+    ? { schemaPresent: true }
+    : { schemaPresent: true, municipalityId: bindings[0]!.municipality_id! });
+}
+
+/** SQLite owns the liveness semantics here.  There is no sentinel file to
+ * clean up: a process death releases its BEGIN EXCLUSIVE transaction. The
+ * tiny persistent database records store identity, never owner liveness. */
+function acquireDurableOwnerLock(rootDir: string, municipalityId: string): DurableOwnerLock {
+  const lockPath = join(rootDir, CASE_STATE_OWNER_DATABASE_FILENAME);
+  ensureNotSymlink(lockPath); ensureNotSymlink(`${lockPath}-journal`); ensureNotSymlink(`${lockPath}-wal`); ensureNotSymlink(`${lockPath}-shm`);
+  let lockDb: DatabaseSync | undefined;
+  try {
+    lockDb = new DatabaseSync(lockPath, { timeout: 0, enableForeignKeyConstraints: true });
+    lockDb.exec(`
+      PRAGMA journal_mode=DELETE;
+      PRAGMA busy_timeout=0;
+      BEGIN EXCLUSIVE;
+    `);
+    let ownerState = readValidatedOwnerBinding(lockDb);
+    if (!ownerState.schemaPresent) {
+      const objects = lockDb.prepare("SELECT COUNT(*) AS object_count FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").get() as {
+        object_count?: number;
+      } | undefined;
+      if (objects?.object_count !== 0) fail("atomic_admission_owner_store_invalid");
+      lockDb.exec(`${CASE_STATE_OWNER_SCHEMA}; PRAGMA user_version=1;`);
+      ownerState = readValidatedOwnerBinding(lockDb);
+      if (!ownerState.schemaPresent) fail("atomic_admission_owner_store_invalid");
+    }
+    const binding = ownerState.municipalityId;
+    const priorSeal = readCanonicalPriorSeal(rootDir);
+    const databaseMunicipality = existingDatabaseMunicipality(rootDir);
+    if (priorSeal && databaseMunicipality && priorSeal.municipalityId !== databaseMunicipality) {
+      fail("atomic_admission_seal_invalid");
+    }
+    const existingMunicipality = priorSeal?.municipalityId ?? databaseMunicipality;
+    if (existingMunicipality && existingMunicipality !== municipalityId) fail("atomic_admission_store_binding_mismatch");
+    if (binding && binding !== municipalityId) fail("atomic_admission_store_binding_mismatch");
+    if (!binding) {
+      lockDb.prepare("INSERT INTO durable_store_binding(singleton,municipality_id) VALUES(1,?)").run(municipalityId);
+      if (readValidatedOwnerBinding(lockDb).municipalityId !== municipalityId) fail("atomic_admission_owner_store_invalid");
+      lockDb.exec("COMMIT; BEGIN EXCLUSIVE");
+    }
+    const journal = lockDb.prepare("PRAGMA journal_mode").get() as { journal_mode?: string } | undefined;
+    const busy = lockDb.prepare("PRAGMA busy_timeout").get() as { timeout?: number } | undefined;
+    if (journal?.journal_mode?.toLowerCase() !== "delete" || busy?.timeout !== 0) fail("atomic_admission_owner_locked");
+  } catch (error) {
+    try { lockDb?.close(); } catch { /* best effort after lock denial */ }
+    if (error instanceof Error && [
+      "atomic_admission_path_symlink_forbidden",
+      "atomic_admission_owner_store_invalid",
+      "atomic_admission_seal_invalid",
+      "atomic_admission_store_binding_mismatch",
+    ].includes(error.message)) throw error;
+    fail("atomic_admission_owner_locked");
+  }
+  let released = false;
+  return Object.freeze({
+    release() {
+      if (released) return;
+      released = true;
+      try { lockDb?.exec("ROLLBACK"); } catch { /* close also rolls back */ }
+      try { lockDb?.close(); } catch { /* no live sentinel remains */ }
+      lockDb = undefined;
+    },
   });
 }
 
@@ -373,8 +717,17 @@ export function createSqliteAtomicTopicCaseAdmission(
   }
   const databasePath = join(config.rootDir, `stadtstack-${config.municipalityId}-atomic-admission.sqlite`);
   ensureNotSymlink(databasePath); ensureNotSymlink(`${databasePath}-wal`); ensureNotSymlink(`${databasePath}-shm`);
-  const db = new DatabaseSync(databasePath, { timeout: 5000, enableForeignKeyConstraints: true });
+  // Acquire before opening the municipal database.  This ensures a second
+  // durable process is rejected without observing or migrating municipal
+  // state, while legacy tmp-only callers retain their multi-connection seam.
+  const durableOwner = config.durableState ? acquireDurableOwnerLock(config.rootDir, config.municipalityId) : undefined;
+  try { if (durableOwner) invalidatePriorSeal(config.rootDir, config.municipalityId); }
+  catch (error) { durableOwner?.release(); throw error; }
+  let db: DatabaseSync;
+  try { db = new DatabaseSync(databasePath, { timeout: 5000, enableForeignKeyConstraints: true }); }
+  catch (error) { durableOwner?.release(); throw error; }
   let closed = false;
+  let shutdownSeal: CaseShutdownSealV1 | undefined;
   const configFingerprint = checksum({
     schemaVersion: SCHEMA_VERSION, municipalityId: config.municipalityId, policyVersion: config.policyVersion,
     actorRegistry: [...config.actorRegistry].sort((left, right) => `${left.actorClass}:${left.actorId}`.localeCompare(`${right.actorClass}:${right.actorId}`)),
@@ -401,7 +754,7 @@ export function createSqliteAtomicTopicCaseAdmission(
     db.exec("COMMIT");
   } catch (error) {
     try { db.exec("ROLLBACK"); } catch { /* best-effort after failed bootstrap */ }
-    db.close(); throw error;
+    db.close(); durableOwner?.release(); throw error;
   }
   const ensureOpen = (): void => { if (closed) fail("atomic_admission_closed"); };
   const withReadSnapshot = <T>(operation: () => T): T => {
@@ -562,8 +915,21 @@ export function createSqliteAtomicTopicCaseAdmission(
     for (const meta of metaRows) validateCaseUnit(meta);
   };
 
-  try { withReadSnapshot(validateDatabase); }
-  catch (error) { db.close(); closed = true; throw error; }
+  const readCaseCount = (): number => {
+    const row = db.prepare("SELECT COUNT(*) AS case_count FROM atomic_case_meta").get() as { case_count?: number } | undefined;
+    if (!row || !Number.isSafeInteger(row.case_count) || (row.case_count as number) < 0) fail("atomic_admission_unit_corrupt");
+    return row.case_count as number;
+  };
+
+  try {
+    withReadSnapshot(() => {
+      validateDatabase();
+      if (config.durableState && readCaseCount() > CASE_STATE_RECOVERY_MAX_CASES) {
+        fail("atomic_admission_capacity_exhausted");
+      }
+    });
+  }
+  catch (error) { db.close(); closed = true; durableOwner?.release(); throw error; }
 
   const admit = async (callerInput: AtomicTopicCaseAdmissionV1): Promise<PublicCaseBindingReceiptV1> => {
     ensureOpen();
@@ -608,6 +974,12 @@ export function createSqliteAtomicTopicCaseAdmission(
             if (receipt.candidateEventId !== pending.verified.signedSuggestion.event.id) fail("case_binding_root_conflict");
             db.exec("COMMIT");
             return { status: "duplicate" as const, receipt: { caseVersion: receipt.caseVersion, eventIds: [...receipt.caseEventIds], journalHeadChecksum: receipt.journalHeadChecksum } };
+          }
+          // This is an explicit staging storage-safety limit, not a civic
+          // eligibility decision. Reject before the first Case row so every
+          // successfully committed durable store remains sealable.
+          if (config.durableState && readCaseCount() >= CASE_STATE_RECOVERY_MAX_CASES) {
+            fail("atomic_admission_capacity_exhausted");
           }
           db.prepare("INSERT INTO atomic_case_meta(case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum) VALUES(?,?,?,?,?,?)")
             .run(pending.caseId, config.municipalityId, namespace, append.optionsFingerprint, 0, genesisChecksum(pending.caseId));
@@ -744,10 +1116,105 @@ export function createSqliteAtomicTopicCaseAdmission(
       });
     },
   });
+
+  const sealAndClose = (): CaseShutdownSealV1 => {
+    if (!config.durableState) fail("atomic_admission_seal_unavailable");
+    if (shutdownSeal) return shutdownSeal;
+    ensureOpen();
+    // Do every verification before the checkpoint and before touching the
+    // previous seal.  A failed check leaves the live owner lock in place so a
+    // human can inspect or explicitly invoke close() for emergency cleanup.
+    let recoveryEvidence: CaseStateRecoveryEvidenceV1 | undefined;
+    let walCheckpoint: Readonly<{ mode: "TRUNCATE"; busy: number; log: number; checkpointed: number }> | undefined;
+    try {
+      validateDatabase();
+      const integrityRows = db.prepare("PRAGMA integrity_check").all() as Array<{ integrity_check?: string }>;
+      if (integrityRows.length !== 1 || integrityRows[0]?.integrity_check !== "ok") fail("atomic_admission_seal_integrity_invalid");
+
+      const caseJournalHeads = (db.prepare("SELECT case_id,case_version,head_checksum FROM atomic_case_meta ORDER BY case_id").all() as Array<{
+        case_id: string; case_version: number; head_checksum: string;
+      }>).map((row) => {
+        if (typeof row.case_id !== "string" || !Number.isSafeInteger(row.case_version) || row.case_version < 3 || !SHA256.test(row.head_checksum)) {
+          fail("atomic_admission_seal_integrity_invalid");
+        }
+        return Object.freeze({ caseId: row.case_id, caseVersion: row.case_version, journalHeadChecksum: row.head_checksum });
+      });
+      const outboxEntries = (db.prepare("SELECT sequence,receipt_json,receipt_checksum FROM atomic_binding_outbox ORDER BY sequence").all() as Array<{
+        sequence: number; receipt_json: string; receipt_checksum: string;
+      }>).map((row) => {
+        if (!Number.isSafeInteger(row.sequence) || row.sequence < 1 || !SHA256.test(row.receipt_checksum)) fail("atomic_admission_seal_integrity_invalid");
+        const receipt = verifyPublicCaseBindingReceipt(parseJson(row.receipt_json, "atomic_admission_seal_integrity_invalid"));
+        if (receipt.receiptChecksum !== row.receipt_checksum) fail("atomic_admission_seal_integrity_invalid");
+        return Object.freeze({ sequence: row.sequence, receipt: clone(receipt) });
+      });
+      recoveryEvidence = verifyCaseStateRecoveryEvidence(createCaseStateRecoveryEvidence({ caseJournalHeads, outboxEntries }));
+
+      const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy?: number; log?: number; checkpointed?: number } | undefined;
+      if (!checkpoint || !Number.isSafeInteger(checkpoint.busy) || !Number.isSafeInteger(checkpoint.log) ||
+        !Number.isSafeInteger(checkpoint.checkpointed) || checkpoint.busy !== 0 || checkpoint.log < 0 ||
+        checkpoint.checkpointed < 0 || checkpoint.log !== checkpoint.checkpointed) {
+        fail("atomic_admission_seal_checkpoint_invalid");
+      }
+      walCheckpoint = Object.freeze({
+        mode: "TRUNCATE" as const,
+        busy: checkpoint.busy as number,
+        log: checkpoint.log as number,
+        checkpointed: checkpoint.checkpointed as number,
+      });
+    } catch (error) {
+      // The municipal DB and the durable owner transaction intentionally stay
+      // open.  Do not create, replace, or release a successful seal on any
+      // failed verification/checkpoint path.
+      throw error;
+    }
+
+    // From here the database is closed but the owner lock remains live until
+    // the canonical, fsync'd seal is present.  close() can still release it if
+    // the post-close filesystem proof fails.
+    db.close();
+    closed = true;
+    try {
+      if (!recoveryEvidence || !walCheckpoint) fail("atomic_admission_seal_integrity_invalid");
+      for (const suffix of ["-wal", "-shm"] as const) {
+        const sidecar = `${databasePath}${suffix}`;
+        ensureNotSymlink(sidecar);
+        if (existsSync(sidecar) && statSync(sidecar).size !== 0) fail("atomic_admission_seal_sidecar_nonempty");
+      }
+      ensureNotSymlink(databasePath);
+      const dbStat = statSync(databasePath);
+      if (!dbStat.isFile() || dbStat.size < 1) fail("atomic_admission_seal_database_invalid");
+      const unsigned = {
+        schemaVersion: "case_shutdown_seal_v1" as const,
+        municipalityId: config.municipalityId,
+        databaseSchemaVersion: SCHEMA_VERSION,
+        configFingerprint,
+        sourceReleaseDigest: config.durableState.sourceReleaseDigest,
+        databaseBasename: `stadtstack-${config.municipalityId}-atomic-admission.sqlite`,
+        databaseByteLength: dbStat.size,
+        databaseSha256: sha256File(databasePath),
+        closedAtUtc: new Date().toISOString(),
+        walCheckpoint,
+        recoveryEvidence,
+      };
+      const seal = verifyCaseShutdownSeal({ ...unsigned, sealChecksum: checksum(unsigned) });
+      writeCanonicalSeal(config.rootDir, seal);
+      shutdownSeal = seal;
+      durableOwner?.release();
+      return seal;
+    } catch (error) {
+      // Deliberately retain the live lock.  The closed DB cannot be silently
+      // reopened or resealed after an incomplete durability proof.
+      throw error;
+    }
+  };
   return Object.freeze({
     admission: Object.freeze({ admit }),
     outbox,
     caseCoordinators: Object.freeze({ open: openCaseCoordinator }),
-    close() { if (!closed) { db.close(); closed = true; } },
+    sealAndClose,
+    close() {
+      if (!closed) { db.close(); closed = true; }
+      durableOwner?.release();
+    },
   });
 }

@@ -2,6 +2,7 @@ import { types as utilTypes } from "node:util";
 
 import {
   createSqliteAtomicTopicCaseAdmission,
+  type DurableSingleWriterState,
   type SqliteAtomicTopicCaseAdmissionOptions,
 } from "./adapters/sqlite-atomic-topic-case-admission.ts";
 import {
@@ -50,6 +51,9 @@ export type StagingCaseControlRuntimeConfig = Readonly<{
     admission: StagingCaseControlListenerPlan;
   }>;
   drainTimeoutMs: number;
+  /** Opt-in production-path ownership. When present, graceful process release
+   * must seal the durable database instead of merely closing a tmp adapter. */
+  durableState?: DurableSingleWriterState;
 }>;
 
 /** Deliberately capability-free runtime surface. */
@@ -77,12 +81,14 @@ type CapturedConfig = Readonly<{
     admission: StagingCaseControlListenerPlan;
   }>;
   drainTimeoutMs: number;
+  durableState: DurableSingleWriterState | undefined;
 }>;
 
 const ACTOR_ID = /^[A-Za-z0-9:._-]{1,256}$/u;
 const MUNICIPALITY_ID = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const POLICY_VERSION = /^[A-Za-z0-9:._-]{1,256}$/u;
 const HEX64 = /^[0-9a-f]{64}$/u;
+const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const HOST_NAME = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/u;
 const MAX_HOST_BYTES = 253;
 const MAX_CREDENTIALS = 16;
@@ -203,11 +209,22 @@ function captureListener(value: unknown): StagingCaseControlListenerPlan {
   return Object.freeze({ host: "127.0.0.1", port: record.port as number });
 }
 
+function captureDurableState(value: unknown): DurableSingleWriterState | undefined {
+  if (value === undefined) return undefined;
+  const parsed = exactRecord(value, ["mode", "sourceReleaseDigest"]);
+  if (parsed.mode !== "durable_single_writer" || typeof parsed.sourceReleaseDigest !== "string" ||
+    !SHA256.test(parsed.sourceReleaseDigest)) invalid();
+  return Object.freeze({
+    mode: "durable_single_writer" as const,
+    sourceReleaseDigest: parsed.sourceReleaseDigest,
+  });
+}
+
 function captureConfig(input: StagingCaseControlRuntimeConfig): CapturedConfig {
   const parsed = allowedRecord(input, [
     "deploymentEnvironment", "rootDir", "municipalityId", "policyVersion", "actorRegistry",
     "allowedSignerPubkeys", "allowedAgentPubkeys", "requiredDepartmentIds", "credentials",
-    "admissionAllowedHosts", "outboxAllowedHosts", "probeAllowedHosts", "listeners", "drainTimeoutMs",
+    "admissionAllowedHosts", "outboxAllowedHosts", "probeAllowedHosts", "listeners", "drainTimeoutMs", "durableState",
   ]);
   const expected = [
     "deploymentEnvironment", "rootDir", "municipalityId", "policyVersion", "actorRegistry",
@@ -239,6 +256,7 @@ function captureConfig(input: StagingCaseControlRuntimeConfig): CapturedConfig {
       admission: captureListener(listeners.admission),
     }),
     drainTimeoutMs: parsed.drainTimeoutMs as number,
+    durableState: captureDurableState(parsed.durableState),
   });
 }
 
@@ -260,6 +278,7 @@ export function createStagingCaseControlRuntime(
     allowedSignerPubkeys: config.allowedSignerPubkeys,
     allowedAgentPubkeys: config.allowedAgentPubkeys,
     ...(config.requiredDepartmentIds === undefined ? {} : { requiredDepartmentIds: config.requiredDepartmentIds }),
+    ...(config.durableState === undefined ? {} : { durableState: config.durableState }),
   };
   const authenticator = createStagingCaseStewardTokenAuthenticator({
     deploymentEnvironment: "staging",
@@ -270,8 +289,11 @@ export function createStagingCaseControlRuntime(
   let released = false;
   const release = (): void => {
     if (released) return;
+    if (durable) {
+      if (config.durableState) durable.sealAndClose();
+      else durable.close();
+    }
     released = true;
-    durable?.close();
   };
 
   try {
