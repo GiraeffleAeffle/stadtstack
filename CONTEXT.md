@@ -98,6 +98,21 @@ binding projection from an accepted Atomic Case admission unit. It is a read
 model transport, not a second Case journal and not an admission capability.
 _Avoid_: public write queue, mutable projection table, workflow source
 
+**Staging Case Steward credential**:
+A distinct, short-lived secret whose possession is attributed to one pinned
+staging Case Steward actor and municipality scope for the initial admission
+tracer. It cannot prevent sharing or prove a human identity. It is not resident
+identity, production municipal identity, wallet ownership, or authority over
+later Case transitions.
+_Avoid_: admin login, Thirdweb role, Safe owner, municipal account
+
+**Credential-free binding delivery**:
+A private, bounded, read-only transport that carries already-public Case
+binding outbox entries from the single-writer Case workload to the separate
+public projection workload. It has no ACK, cursor write, database access,
+admission command, credential, or civic effect.
+_Avoid_: public database connection, shared Case store, workflow queue
+
 **Review attestation**:
 An accountable statement that a named reviewer accepted or rejected a bounded
 artifact under a stated policy and version.

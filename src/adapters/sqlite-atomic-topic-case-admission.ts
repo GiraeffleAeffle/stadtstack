@@ -10,6 +10,14 @@ import {
   verifyPublicCaseBindingReceipt,
   type PublicCaseBindingReceiptV1,
 } from "../case-binding-projection.ts";
+import type {
+  SynchronousCredentialFreeCaseBindingOutboxReader,
+} from "../case-binding-outbox.ts";
+export type {
+  CaseBindingOutboxEntryV1,
+  CredentialFreeCaseBindingOutboxReader,
+  SynchronousCredentialFreeCaseBindingOutboxReader,
+} from "../case-binding-outbox.ts";
 import {
   createCivicCaseCoordinator,
   type ActorBinding,
@@ -50,19 +58,9 @@ export type SqliteAtomicTopicCaseAdmissionOptions = {
   failpoint?: "after_root_claim" | "after_case_events" | "after_binding_receipt";
 };
 
-export type CaseBindingOutboxEntryV1 = {
-  sequence: number;
-  receipt: PublicCaseBindingReceiptV1;
-};
-
-/** A credential-free, append-only replay seam. There is deliberately no ACK or writer. */
-export type CredentialFreeCaseBindingOutboxReader = {
-  replay(input?: { afterSequence?: number; limit?: number }): readonly CaseBindingOutboxEntryV1[];
-};
-
 export type SqliteAtomicTopicCaseAdmission = {
   admission: AtomicCaseAdmissionPort;
-  outbox: CredentialFreeCaseBindingOutboxReader;
+  outbox: SynchronousCredentialFreeCaseBindingOutboxReader;
   /** Private composition-root seam.  It never creates Cases: only an already
    * atomically admitted Case can be reopened with its pinned journal/config. */
   caseCoordinators: Readonly<{ open(caseId: string): CivicCaseCoordinator }>;
@@ -725,7 +723,7 @@ export function createSqliteAtomicTopicCaseAdmission(
     });
   };
 
-  const outbox: CredentialFreeCaseBindingOutboxReader = Object.freeze({
+  const outbox: SynchronousCredentialFreeCaseBindingOutboxReader = Object.freeze({
     replay(inputValue = {}) {
       ensureOpen();
       const parsed = allowedKeys(inputValue, ["afterSequence", "limit"], "atomic_admission_outbox_request_invalid");

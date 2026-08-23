@@ -56,6 +56,9 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0020](./0020-sealed-case-control-and-public-discovery-transports.md) —
   put staff-only Case control, credential-free Case discovery, and outbox
   hydration behind disjoint, bounded transport capabilities.
+- [ADR 0021](./0021-staging-case-steward-identity-and-credential-free-binding-delivery.md) —
+  use per-steward staging tokens and a private credential-free outbox
+  pull to connect separate control and public binding workloads.
 
 ## Historical
 

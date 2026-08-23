@@ -9,7 +9,7 @@ import {
 import type {
   CaseBindingOutboxEntryV1,
   CredentialFreeCaseBindingOutboxReader,
-} from "./adapters/sqlite-atomic-topic-case-admission.ts";
+} from "./case-binding-outbox.ts";
 
 /** The largest replay page we request from an outbox. */
 export const CASE_BINDING_OUTBOX_PAGE_SIZE = 256;
@@ -21,10 +21,12 @@ export type CaseBindingOutboxProjection = Readonly<{
   /** Credential-free public read model. It has no replay, writer, or admission seam. */
   reader: Pick<CaseBindingProjectionReader, "get" | "getByRootEventId">;
   /** Composition-root operation; this object is never an HTTP handler. */
-  reconcile(): Readonly<{ afterSequence: number; applied: number }>;
+  reconcile(): Promise<Readonly<{ afterSequence: number; applied: number }>>;
 }>;
 
-type Replay = (input?: { afterSequence?: number; limit?: number }) => readonly CaseBindingOutboxEntryV1[];
+type Replay = (
+  input?: { afterSequence?: number; limit?: number },
+) => readonly CaseBindingOutboxEntryV1[] | Promise<readonly CaseBindingOutboxEntryV1[]>;
 
 function fail(code: string): never { throw new Error(code); }
 
@@ -87,20 +89,26 @@ function entry(value: unknown, previousSequence: number): Readonly<CaseBindingOu
  * the active projection, so a faulty incremental replay leaves the prior view
  * intact.
  */
-export function createCaseBindingOutboxProjector(
+export async function createCaseBindingOutboxProjector(
   outbox: CredentialFreeCaseBindingOutboxReader,
-): CaseBindingOutboxProjection {
+): Promise<CaseBindingOutboxProjection> {
   const replay = captureReplay(outbox);
   let receipts: readonly PublicCaseBindingReceiptV1[] = Object.freeze([]);
   let afterSequence = 0;
   let active = createInMemoryCaseBindingProjection();
 
-  const readPending = (): ReadonlyArray<Readonly<CaseBindingOutboxEntryV1>> => {
+  const readPending = async (): Promise<ReadonlyArray<Readonly<CaseBindingOutboxEntryV1>>> => {
     let cursor = afterSequence;
     const pending: Readonly<CaseBindingOutboxEntryV1>[] = [];
     const seenReceiptChecksums = new Set(receipts.map((receipt) => receipt.receiptChecksum));
     for (;;) {
-      const page = strictArray(replay({ afterSequence: cursor, limit: CASE_BINDING_OUTBOX_PAGE_SIZE }), "case_binding_outbox_page_invalid");
+      const page = strictArray(
+        await replay(Object.freeze({
+          afterSequence: cursor,
+          limit: CASE_BINDING_OUTBOX_PAGE_SIZE,
+        })),
+        "case_binding_outbox_page_invalid",
+      );
       if (page.length > CASE_BINDING_OUTBOX_PAGE_SIZE) fail("case_binding_outbox_page_oversized");
       if (page.length === 0) return Object.freeze(pending);
       for (const value of page) {
@@ -114,22 +122,34 @@ export function createCaseBindingOutboxProjector(
     }
   };
 
-  const reconcile = (): Readonly<{ afterSequence: number; applied: number }> => {
-    // Do all untrusted work before replacing the active projection/cursor.
-    const pending = readPending();
-    if (pending.length === 0) return Object.freeze({ afterSequence, applied: 0 });
-    const nextReceipts = Object.freeze([...receipts, ...pending.map((value) => value.receipt)]);
-    const next = createInMemoryCaseBindingProjection(nextReceipts);
-    const nextAfterSequence = pending[pending.length - 1]!.sequence;
-    active = next;
-    receipts = nextReceipts;
-    afterSequence = nextAfterSequence;
-    return Object.freeze({ afterSequence, applied: pending.length });
+  let reconciliation: Promise<Readonly<{ afterSequence: number; applied: number }>> | null = null;
+
+  const reconcile = (): Promise<Readonly<{ afterSequence: number; applied: number }>> => {
+    if (reconciliation) return reconciliation;
+    const operation = (async (): Promise<Readonly<{ afterSequence: number; applied: number }>> => {
+      // Do all untrusted and asynchronous work before replacing the active
+      // projection/cursor. Concurrent callers share this one operation.
+      const pending = await readPending();
+      if (pending.length === 0) return Object.freeze({ afterSequence, applied: 0 });
+      const nextReceipts = Object.freeze([...receipts, ...pending.map((value) => value.receipt)]);
+      const next = createInMemoryCaseBindingProjection(nextReceipts);
+      const nextAfterSequence = pending[pending.length - 1]!.sequence;
+      active = next;
+      receipts = nextReceipts;
+      afterSequence = nextAfterSequence;
+      return Object.freeze({ afterSequence, applied: pending.length });
+    })();
+    reconciliation = operation;
+    void operation.then(
+      () => { if (reconciliation === operation) reconciliation = null; },
+      () => { if (reconciliation === operation) reconciliation = null; },
+    );
+    return operation;
   };
 
-  // Hydration is synchronous and has the same all-or-nothing semantics as
-  // later reconciliation: callers never receive a half-replayed reader.
-  reconcile();
+  // Hydration has the same all-or-nothing semantics as later reconciliation:
+  // callers never receive a half-replayed reader.
+  await reconcile();
 
   const reader: Pick<CaseBindingProjectionReader, "get" | "getByRootEventId"> = Object.freeze({
     get(caseId: string) { return active.reader.get(caseId); },

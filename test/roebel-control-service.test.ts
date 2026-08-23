@@ -16,6 +16,7 @@ import {
   type AtomicCaseAdmissionPort,
   type AtomicTopicCaseAdmissionV1,
 } from "../src/roebel-control-service.ts";
+import { createStagingCaseStewardTokenAuthenticator } from "../src/staging-case-steward-token-authenticator.ts";
 
 const MUNICIPALITY_ID = "roebel-mueritz";
 const TOPIC_ID = "urn:stadtstack:topic:municipality:roebel-mueritz:marienfelder-strasse";
@@ -25,6 +26,8 @@ const AGENT_SECRET = new Uint8Array(32).fill(22);
 const CITIZEN_PUBKEY = getPublicKey(CITIZEN_SECRET);
 const AGENT_PUBKEY = getPublicKey(AGENT_SECRET);
 const RECEIPT_ID = `urn:stadtstack:mecky-answer:${"a".repeat(64)}`;
+const STAGING_STEWARD_TOKEN = createHash("sha256").update("roebel-staging-case-steward").digest("base64url");
+const STAGING_AUTHORIZATION = `Bearer ${STAGING_STEWARD_TOKEN}`;
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -176,13 +179,17 @@ function service(port: AtomicCaseAdmissionPort, allowedAgentPubkeys: string[] = 
     municipalityId: MUNICIPALITY_ID,
     policyVersion: POLICY_VERSION,
     allowedAgentPubkeys,
-    caseStewardAuthenticator: {
-      async authenticate({ authorization }) {
-        return authorization === "steward-token"
-          ? { actorId: "roebel:case-steward", actorClass: "case_steward", municipalityIds: [MUNICIPALITY_ID] }
-          : null;
-      },
-    },
+    caseStewardAuthenticator: createStagingCaseStewardTokenAuthenticator({
+      deploymentEnvironment: "staging",
+      credentials: [{
+        token: STAGING_STEWARD_TOKEN,
+        principal: {
+          actorId: "roebel:case-steward",
+          actorClass: "case_steward",
+          municipalityIds: [MUNICIPALITY_ID],
+        },
+      }],
+    }),
     atomicAdmission: port,
   });
 }
@@ -192,20 +199,23 @@ test("authenticated Röbel Case Steward delegates to the atomic port and its pub
   const control = service(harness.port);
   const denied = await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "citizen-token", body: admissionBody() });
   assert.equal(denied.status, 401);
+  assert.equal(denied.body, "case_steward_required\n");
+  assert.doesNotMatch(denied.body, new RegExp(STAGING_STEWARD_TOKEN, "u"));
   const body = admissionBody();
-  const accepted = await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "steward-token", body });
+  const accepted = await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: STAGING_AUTHORIZATION, body });
   assert.equal(accepted.status, 200);
+  assert.doesNotMatch(accepted.body, new RegExp(STAGING_STEWARD_TOKEN, "u"));
   const receipt = JSON.parse(accepted.body) as PublicCaseBindingReceiptV1;
   assert.equal(receipt.rootEventId, body.sourceDiscussion.id);
   assert.equal(receipt.candidateId, body.signedSuggestion.candidateId);
   assert.equal(receipt.authorityBinding, "none");
   assert.equal(receipt.openDeskWrite, false);
   assert.equal(harness.coordinatorCreations(), 1);
-  const replay = await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "steward-token", body });
+  const replay = await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: STAGING_AUTHORIZATION, body });
   assert.equal(replay.status, 200);
   assert.equal(replay.body, accepted.body);
   assert.equal(harness.coordinatorCreations(), 1);
-  const conflict = await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "steward-token", body: admissionBody("Andere Formulierung") });
+  const conflict = await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: STAGING_AUTHORIZATION, body: admissionBody("Andere Formulierung") });
   assert.equal(conflict.status, 409);
   assert.equal(conflict.body, "case_binding_root_conflict\n");
   assert.equal(await control.respond({ method: "GET", path: `/v1/public/case-bindings/${receipt.caseId}`, authorization: null, body: null }).then((value) => value.status), 404);
@@ -221,16 +231,27 @@ test("control rejects self-asserted authority, caller-selected command fields, a
     municipalityId: MUNICIPALITY_ID,
     policyVersion: POLICY_VERSION,
     allowedAgentPubkeys: [AGENT_PUBKEY],
-    caseStewardAuthenticator: { async authenticate() {
-      return { actorId: "strausberg:case-steward", actorClass: "case_steward", municipalityIds: ["strausberg"] };
-    } },
+    caseStewardAuthenticator: createStagingCaseStewardTokenAuthenticator({
+      deploymentEnvironment: "staging",
+      credentials: [{
+        token: STAGING_STEWARD_TOKEN,
+        principal: {
+          actorId: "strausberg:case-steward",
+          actorClass: "case_steward",
+          municipalityIds: ["strausberg"],
+        },
+      }],
+    }),
     atomicAdmission: harness.port,
   });
-  assert.equal((await wrongScope.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "token", body: admissionBody() })).status, 401);
+  const outOfScope = await wrongScope.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: STAGING_AUTHORIZATION, body: admissionBody() });
+  assert.equal(outOfScope.status, 401);
+  assert.equal(outOfScope.body, "case_steward_required\n");
+  assert.doesNotMatch(outOfScope.body, new RegExp(STAGING_STEWARD_TOKEN, "u"));
   const control = service(harness.port);
-  assert.equal((await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "steward-token", body: { ...admissionBody(), actorBinding: { actorClass: "case_steward" } } })).status, 400);
-  assert.equal((await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "steward-token", body: { ...admissionBody(), expectedCaseVersion: 0 } })).status, 400);
-  assert.equal((await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "steward-token", body: { ...admissionBody(), idempotencyKey: "caller-selected" } })).status, 400);
+  assert.equal((await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: STAGING_AUTHORIZATION, body: { ...admissionBody(), actorBinding: { actorClass: "case_steward" } } })).status, 400);
+  assert.equal((await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: STAGING_AUTHORIZATION, body: { ...admissionBody(), expectedCaseVersion: 0 } })).status, 400);
+  assert.equal((await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: STAGING_AUTHORIZATION, body: { ...admissionBody(), idempotencyKey: "caller-selected" } })).status, 400);
 });
 
 test("authentication precedes body cloning, trust roots are snapshotted, and internal errors are redacted", async () => {
@@ -240,10 +261,10 @@ test("authentication precedes body cloning, trust roots are snapshotted, and int
   allowlist[0] = "d".repeat(64);
   const hostileBody = new Proxy({}, { ownKeys() { throw new Error("body_inspected"); } });
   assert.equal((await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: null, body: hostileBody })).status, 401);
-  assert.equal((await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "steward-token", body: admissionBody() })).status, 200);
+  assert.equal((await control.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: STAGING_AUTHORIZATION, body: admissionBody() })).status, 200);
 
   const failing = service({ async admit() { throw new Error("postgres://secret@internal"); } });
-  const unavailable = await failing.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: "steward-token", body: admissionBody() });
+  const unavailable = await failing.respond({ method: "POST", path: "/v1/nostr/suggestions/admit", authorization: STAGING_AUTHORIZATION, body: admissionBody() });
   assert.equal(unavailable.status, 500);
   assert.equal(unavailable.body, "admission_unavailable\n");
   assert.doesNotMatch(unavailable.body, /postgres|secret|internal/u);

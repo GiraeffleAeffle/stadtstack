@@ -34,10 +34,13 @@ WAL/FULL atomic root claim, Case journal, binding receipt, and append-only
 outbox Adapter. Separate unbound reference servers now enforce a bounded
 staff-only POST surface and credential-free public GET/HEAD surface, while a
 bounded projector atomically rebuilds the public index from the outbox. It
-still has no staff identity adapter, production storage or read-only outbox
-delivery decision, backup/restore proof, bound listener, or deployment
-resources. Staff control and public read must become separate identities and
-network surfaces.
+now selects a staging-only, per-steward Case Steward token Adapter and a private
+credential-free HTTP outbox pull between separate control and public
+workloads. It still has no production municipal identity Adapter, production
+storage decision, backup/restore proof, lifecycle composition, bound live
+listener, or deployment resources. Staff control and public read must become
+separate identities and network surfaces; Röbel Web and Mecky receive neither
+the staff credential nor SQLite access.
 
 The next accepted administration seam renders one exact Department package as
 an effect-free, idempotent workspace request. A separately authorized
@@ -61,10 +64,10 @@ Next implementation slices are:
 1. review and merge the authenticated durable continuation and sealed
    transport references that preserve one reopened Case and separate staff
    control from public discovery;
-2. compose the Case Steward and continuation handlers with a staff identity
-   adapter, durable coordinator factory and Operations-selected read-only
-   outbox delivery, then deploy staff and public routes behind separate
-   workload and ingress policies;
+2. finish the staging steward authenticator, private outbox server/client and
+   two-process lifecycle composition over the durable coordinator factory,
+   then deploy staff and public routes behind separate workload and ingress
+   policies;
 3. let Röbel discover the Case binding receipt by its signed discussion root
    and advance the public journey without receiving an admission credential;
 4. expose the prepared request and handoff state in the Röbel administration
