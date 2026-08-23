@@ -121,7 +121,10 @@ export function classifyRemoteResolveFailure(result) {
   if (result.status === 0 && !result.error) return "success";
   const diagnostic = combined(result);
   if (/(?:\b401\b|\b403\b|UNAUTHORIZED|DENIED|FORBIDDEN|authentication required|invalid (?:token|credential))/iu.test(diagnostic)) return "error";
-  if (/(?:\b404\b|MANIFEST_UNKNOWN|NAME_UNKNOWN)/iu.test(diagnostic)) return "absent";
+  if (
+    /(?:\b404\b|MANIFEST_UNKNOWN|NAME_UNKNOWN)/iu.test(diagnostic) ||
+    /(?:^|\n)Error response from registry: failed to resolve digest: ghcr\.io\/giraeffleaeffle\/stadtstack-case-(?:steward-control|public-binding|restore-verifier):source-[a-f0-9]{40}: not found(?:\n|$)/iu.test(diagnostic)
+  ) return "absent";
   if (/(?:\b429\b|\b5\d\d\b|TOOMANYREQUESTS|UNAVAILABLE|connection (?:reset|refused)|timed?\s*out|timeout|temporary|TLS handshake|no such host|network is unreachable|unexpected EOF|\bEOF\b)/iu.test(diagnostic)) return "retryable";
   return "error";
 }
