@@ -46,6 +46,9 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0017](./0017-reviewed-source-public-transport.md) — expose already
   prepared source snapshots through two exact GET-only routes in a loopback
   reference transport without adding source or civic write authority.
+- [ADR 0018](./0018-role-isolated-case-steward-control-and-public-binding-receipts.md) —
+  isolate human Case admission behind a staff-authenticated control seam and
+  expose only a checksum-bound, GET-only public Case binding receipt.
 
 ## Historical
 

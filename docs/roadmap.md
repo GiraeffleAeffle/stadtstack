@@ -24,6 +24,16 @@ Topic-bound until a resident signs a proposal. A registered human steward then
 uses one idempotent admission command to create the Case and preserve that
 Topic provenance before any department or openDesk round trip begins.
 
+The accepted control seam now keeps that command behind a separately
+authenticated Case Steward interface. The public application may only read a
+checksum-bound Case binding receipt by Case or source-discussion identity. The
+coordinator journal remains the durable source of truth; the public receipt is
+a rebuildable projection and performs no openDesk write or authority
+transition. The reference implementation intentionally has no HTTP listener,
+staff identity adapter, durable atomic root-claim/outbox adapter, replay index,
+or deployment resources yet. Staff control and public read are separate
+interfaces and must become separate identities and network surfaces.
+
 The next accepted administration seam renders one exact Department package as
 an effect-free, idempotent workspace request. A separately authorized
 openDesk, OpenProject, or municipal-workspace connector may return an
@@ -43,15 +53,20 @@ the two Röbel GET routes. It does not crawl or deploy a public endpoint.
 
 Next implementation slices are:
 
-1. expose the prepared request and handoff state in the Röbel administration
+1. compose the Case Steward protocol handler with a staff identity adapter,
+   durable coordinator factory and replayable public binding index, then deploy
+   the staff and GET-only public routes behind separate ingress policies;
+2. let Röbel discover the Case binding receipt by its signed discussion root
+   and advance the public journey without receiving an admission credential;
+3. expose the prepared request and handoff state in the Röbel administration
    journey without creating a second Case timeline;
-2. implement one exact, idempotent openDesk connector behind the public
+4. implement one exact, idempotent openDesk connector behind the public
    contract, with credentials and endpoint policy kept in private operations;
-3. expose the resulting current Citizen Brief through the same Röbel journey
+5. expose the resulting current Citizen Brief through the same Röbel journey
    and public knowledge checksum consumed by Mecky and Mitmachen; and
-4. deploy one synthetic reviewed-source projection behind the reviewed public
+6. deploy one synthetic reviewed-source projection behind the reviewed public
    Adapter and prove correction withdrawal through the Röbel consumer; and
-5. add correction and withdrawal UX before any formal governance or treasury
+7. add correction and withdrawal UX before any formal governance or treasury
    integration.
 
 For the first accepted staging journey, deployment and browser proof now take

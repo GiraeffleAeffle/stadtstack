@@ -142,8 +142,10 @@ brief into the Case journal.
 
 A **Citizen-signed suggestion candidate** becomes an **Admitted citizen
 suggestion** only through an accountable human Case event. Its reviewed public
-line is represented once as the **Public knowledge projection**. Public Mecky
-and the **Mitmachen view** consume that same version and checksum. A
+line first advances through a read-only **Case binding receipt** and is then
+represented once as the **Public knowledge projection**. The **Case Steward**
+credential remains outside every public client. Public Mecky and the
+**Mitmachen view** consume that same version and checksum. A
 **Reviewed public outcome** can close the public information loop back to the
 signed Discussion, while any formal governance vote remains a separate
 Authority transition.
@@ -194,6 +196,22 @@ Topic discussion, cited Mecky answer, and citizen signature before atomically
 creating one Civic Case and admitting the candidate. It starts coordination,
 not a formal municipal procedure.
 _Avoid_: AI admission, proposal approval, automatic administration request
+
+**Case Steward**:
+A separately authenticated human role that may admit one exact, independently
+verified Topic suggestion candidate through the Case coordinator. The role and
+its credential never belong to the public Röbel client, public Mecky, or a
+resident session, and admission grants no publication, administration,
+governance, or treasury authority.
+_Avoid_: public admin button, chatbot operator, municipal approver
+
+**Case binding receipt**:
+A public-safe, checksum-bound read-model projection showing that one exact
+signed discussion and Topic suggestion candidate were admitted to one Civic
+Case version. It is rebuilt from the private Case journal, carries no command
+capability, and neither mutates the signed Nostr root nor becomes a second Case
+source of truth.
+_Avoid_: admission command, public Case journal, authority token
 
 **Admitted citizen suggestion**:
 A citizen-signed suggestion candidate whose exact signature, discussion,
