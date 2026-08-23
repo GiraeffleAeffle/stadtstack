@@ -65,7 +65,6 @@ import type { CaseShutdownSealV2 } from "../case-shutdown-seal.ts";
 export { CASE_SHUTDOWN_SEAL_FILENAME, verifyCaseShutdownSeal } from "../case-shutdown-seal.ts";
 export type { CaseShutdownSealV2 } from "../case-shutdown-seal.ts";
 import {
-  CASE_DURABLE_DEPLOYMENT_CLAIM_FILENAME,
   consumeCaseDurableDeploymentClaimToken,
   readCanonicalCaseDurableDeploymentClaim,
   replaceCanonicalCaseDurableDeploymentClaim,

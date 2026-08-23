@@ -6,7 +6,6 @@ import { types as utilTypes } from "node:util";
 import {
   assertStagingCaseControlDeploymentProof,
   consumeStagingCaseControlDeploymentProofForRuntime,
-  type StagingCaseControlDeploymentProof,
 } from "./staging-case-control-preflight.ts";
 
 export const CASE_DURABLE_DEPLOYMENT_CLAIM_FILENAME = "case-durable-deployment-claim-v1.json";
