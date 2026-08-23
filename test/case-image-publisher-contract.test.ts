@@ -150,7 +150,9 @@ test("the ORAS state machine pushes only an absent immutable source tag", () => 
   const result = publishCaseImageFromOci(input, (command, argumentsList) => {
     calls.push(`${command} ${argumentsList.join(" ")}`);
     if (argumentsList[0] === "resolve" && argumentsList.includes("--oci-layout")) return success();
-    if (argumentsList[0] === "resolve" && calls.filter((value) => value.includes("resolve") && !value.includes("--oci-layout")).length === 1) return failure("404 MANIFEST_UNKNOWN");
+    if (argumentsList[0] === "resolve" && calls.filter((value) => value.includes("resolve") && !value.includes("--oci-layout")).length === 1) {
+      return failure(`Error response from registry: failed to resolve digest: ${input.image}:${input.tag}: not found`);
+    }
     if (argumentsList[0] === "cp") return success("");
     return success();
   });
@@ -347,6 +349,10 @@ test("authentication markers override misleading absence markers and never publi
 
 test("argument validation and remote failure classification are fail closed", () => {
   assert.equal(classifyRemoteResolveFailure(failure("404 NAME_UNKNOWN")), "absent");
+  assert.equal(classifyRemoteResolveFailure(failure(`Error response from registry: failed to resolve digest: ${input.image}:${input.tag}: not found`)), "absent");
+  assert.equal(classifyRemoteResolveFailure(failure("failed to open local archive: not found")), "error");
+  assert.equal(classifyRemoteResolveFailure(failure(`Error response from registry: failed to resolve digest: /tmp/case.oci.tar:${input.tag}: not found`)), "error");
+  assert.equal(classifyRemoteResolveFailure(failure(`Error response from registry: failed to resolve digest: ${input.image}:${input.tag}: not found\n401 UNAUTHORIZED`)), "error");
   assert.equal(classifyRemoteResolveFailure(failure("429 TOOMANYREQUESTS")), "retryable");
   assert.equal(classifyRemoteResolveFailure(failure("401 UNAUTHORIZED")), "error");
   assert.throws(() => parseArguments(["--archive", "/tmp/a", "--local-reference", "local/x:tag", "--component", "case-steward-control", "--image", "ghcr.io/x/y", "--tag", "latest"]), /publisher_tag_invalid/u);
