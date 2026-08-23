@@ -1,6 +1,6 @@
 # ADR 0018: Isolate Case Steward control and expose public Case binding receipts
 
-- **Status:** accepted boundary; local durability reference implemented; network and deployment pending
+- **Status:** accepted boundary; local durability and sealed transport references implemented; identity and deployment pending
 - **Date:** 2026-08-23
 
 ## Context
@@ -90,12 +90,16 @@ Steward identity, while the same private coordinator/journal composition seam
 continues later Case commands. Startup and public replay fail closed unless
 the journal, claim, receipt, and outbox form one checksum-bound unit.
 
-The reference still provides no network listener, staff OIDC/WebAuthn adapter,
-secret lookup, operator console, Kubernetes resource, ingress rule, or live
-Röbel wiring. It does not make SQLite-on-a-shared-volume a production storage
-decision. Multi-pod contention against the selected shared storage,
-post-commit crash recovery, public readiness replay, backup/restore, and the
-selected deployment database remain mandatory integration work for the
-deployment slice.
+The reference now provides separate, unbound staff and public Node HTTP
+servers plus a bounded credential-free outbox projector. The staff transport
+accepts one exact POST route and the public transport accepts only the two
+GET/HEAD discovery routes; neither factory chooses a listener address or owns
+deployment lifecycle. The repository still provides no staff OIDC/WebAuthn
+adapter, secret lookup, operator console, Kubernetes resource, ingress rule,
+read-only cross-workload outbox delivery, or live Röbel wiring. It does not
+make SQLite-on-a-shared-volume a production storage decision. Multi-pod
+contention against the selected shared storage, post-commit crash recovery,
+public readiness replay, backup/restore, and the selected deployment database
+remain mandatory integration work for the deployment slice.
 openDesk delivery, Citizen Brief publication, formal governance and treasury
 execution remain separately authenticated commands under their own decisions.

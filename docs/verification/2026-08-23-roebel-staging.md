@@ -11,7 +11,7 @@ municipal readiness, production authority, or a completed browser journey.
 | Current reviewed Röbel release | Source `5ec17b126c585238c4a94ffd916d14f3f6f876dd` produced Release Set `sha256:98ac937840a4ee0d79d8c2a3524f962616552738d5bb97ebca0a23d0458939c9` and handoff `sha256:08ecd200883375c062b6883c8437d809f68b0e3049c218cc17de92cfeb001f6f`. | A later source may be promoted only from its own verified immutable Release Set; never copy a component tag across source commits. |
 | Faster publisher | Röbel PR #47 is green at exact head `b71ff2c8e01cab6d117720c7b349f6e6bdc57176`. It skips the complete Web build when Web-owned inputs are unchanged and reuses only the previously verified immutable component. Operations PR #4 at `e937d11a7ab09dfb536c9a02386c25e91178ebaf` adds the required mixed-source Release Set verifier. | Merge operations #4 before Röbel #47. Structural public/operator extraction follows the live tracer; the cohesive Coordinator console is the first safe candidate. |
 | Public candidate journey | Röbel PR #48 is green at exact head `5f4ec51cfd3226a256b32c2659ee12bbdfcb8d0f`. It lets the resident sign a candidate but gives the public client no Case admission, completion, or view capability. | Merge and deploy only with the separate Case Steward/read-service plan; do not describe the candidate as submitted or admitted. |
-| Stadtstack control and durability | Stadtstack PR #35 is green at exact head `a2cdb71015da14b4707e0d0fe42f14d0455ea0a5`. Stacked PR #36 is green at exact head `784879782a0a69bd4f8cacd32393e518ca3bfaa5`. Together they define the role-isolated staff/public protocols and a local-only SQLite WAL/FULL atomic admission, binding receipt, and outbox reference. The next stacked branch composes all post-admission transitions through one Case-scoped role authenticator and the same reopened journal. | Merge #35, restack and merge #36, then review the continuation branch at its final exact head. Select and deploy staff identity, production storage/replay, backup/restore, listener, and separate network surfaces before live admission. |
+| Stadtstack control and durability | Stadtstack PR #35 is green at exact head `a2cdb71015da14b4707e0d0fe42f14d0455ea0a5`. Stacked PR #36 is green at exact head `784879782a0a69bd4f8cacd32393e518ca3bfaa5`. Stacked PR #37 is green at exact head `baa9fca38549ee123fb16a42f8679c57400043f7` and composes every post-admission transition through one Case-scoped role authenticator and the same reopened journal. The current stacked transport slice adds separate bounded staff/public server factories and an atomically rebuilt credential-free public index. | Merge #35, #36 and #37 in dependency order, then review the sealed transport slice at its final exact head. Select and deploy staff identity, production storage/read-only delivery, backup/restore, lifecycle composition, and separate network surfaces before live admission. |
 | Identity | The staging Web receives the Thirdweb public client ID only. Passkey/Safe/Pimlico remains a no-effect coexistence scaffold. | Complete the Thirdweb-backed tracer first. Do not deploy a Thirdweb server secret merely to support client login; implement real WebAuthn/Safe creation, recovery, sponsorship, and member binding as a later opt-in slice. |
 
 ## One canonical product line
@@ -27,9 +27,10 @@ proposal, Case, brief, vote, treasury, or execution state.
 
 ## Ordered gates
 
-1. Merge operations #4, Röbel #47/#48, and Stadtstack #35/#36 only at their
-   reviewed exact heads and in dependency order. Protected-main exceptions
-   must be bounded and branch protection restored even on failure.
+1. Merge operations #4, Röbel #47/#48, and Stadtstack #35/#36/#37 plus the
+   sealed transport slice only at their reviewed exact heads and in dependency
+   order. Protected-main exceptions must be bounded and branch protection
+   restored even on failure.
 2. Emit and verify the new immutable Röbel Release Set, then let Flux reconcile
    only the reviewed Web and Public Mecky resources.
 3. Deploy a sealed staging Case service: staff admission and credential-free
@@ -49,12 +50,14 @@ proposal, Case, brief, vote, treasury, or execution state.
 ## Current blockers are explicit
 
 - The signed-candidate UI and faster publisher are reviewed but not merged.
-- The durable Case service is implemented only as local contracts and storage;
-  no live listener, staff authenticator, or cluster workload exists yet.
+- The durable Case service has local storage, unbound sealed transports and a
+  credential-free replay projector; no lifecycle composition root, live bind,
+  staff authenticator, read-only cross-workload delivery, or cluster workload
+  exists yet.
 - Administration, Citizen Brief, Mitmachen, and outcome contracts are composed
   behind one Case-scoped authenticated local facade and durable journal. The
-  sealed listener, production staff identity, cluster workload, and browser
-  journey are not implemented yet.
+  production staff identity, storage/delivery topology, lifecycle composition,
+  cluster workloads, and browser journey are not implemented yet.
 - A live openDesk connector, public source corpus, formal ballot, and treasury
   effect are intentionally absent.
 

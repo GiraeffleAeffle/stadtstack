@@ -53,6 +53,9 @@ publication, runtime operations, public relay writes, or civic effects.
   administration feedback, Citizen Brief, advisory Mitmachen, and reviewed
   outcome over the same admitted Case and durable journal rather than Mini App
   timelines.
+- [ADR 0020](./0020-sealed-case-control-and-public-discovery-transports.md) —
+  put staff-only Case control, credential-free Case discovery, and outbox
+  hydration behind disjoint, bounded transport capabilities.
 
 ## Historical
 

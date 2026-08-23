@@ -31,10 +31,13 @@ coordinator journal remains the durable source of truth; the public receipt is
 a rebuildable projection and performs no openDesk write or authority
 transition. The reference implementation now includes a local-only SQLite
 WAL/FULL atomic root claim, Case journal, binding receipt, and append-only
-outbox Adapter. It still has no HTTP listener, staff identity adapter,
-production storage decision, replay service, backup/restore proof, or
-deployment resources. Staff control and public read are separate interfaces
-and must become separate identities and network surfaces.
+outbox Adapter. Separate unbound reference servers now enforce a bounded
+staff-only POST surface and credential-free public GET/HEAD surface, while a
+bounded projector atomically rebuilds the public index from the outbox. It
+still has no staff identity adapter, production storage or read-only outbox
+delivery decision, backup/restore proof, bound listener, or deployment
+resources. Staff control and public read must become separate identities and
+network surfaces.
 
 The next accepted administration seam renders one exact Department package as
 an effect-free, idempotent workspace request. A separately authorized
@@ -55,12 +58,13 @@ the two Röbel GET routes. It does not crawl or deploy a public endpoint.
 
 Next implementation slices are:
 
-1. review and merge the authenticated durable continuation reference that
-   composes administration, Citizen Brief, Mitmachen, and outcome over the
-   same reopened Case and proves close/reopen checksum continuity;
-2. compose the Case Steward and continuation handlers with a staff identity adapter,
-   durable coordinator factory and replayable public binding index, then deploy
-   the staff and GET-only public routes behind separate ingress policies;
+1. review and merge the authenticated durable continuation and sealed
+   transport references that preserve one reopened Case and separate staff
+   control from public discovery;
+2. compose the Case Steward and continuation handlers with a staff identity
+   adapter, durable coordinator factory and Operations-selected read-only
+   outbox delivery, then deploy staff and public routes behind separate
+   workload and ingress policies;
 3. let Röbel discover the Case binding receipt by its signed discussion root
    and advance the public journey without receiving an admission credential;
 4. expose the prepared request and handoff state in the Röbel administration

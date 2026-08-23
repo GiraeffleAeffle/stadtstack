@@ -54,6 +54,10 @@ test("public case binding is a validated, authority-free post-hoc receipt", () =
     () => verifyPublicCaseBindingReceipt({ ...value, admissionEventChecksum: digest("different") }),
     /case_binding_receipt_invalid/,
   );
+  assert.throws(
+    () => verifyPublicCaseBindingReceipt({ ...value, topicId: `urn:stadtstack:topic:municipality:roebel-mueritz:${"x".repeat(300)}` }),
+    /case_binding_receipt_invalid/,
+  );
 });
 
 test("binding projection exposes exact GET-only case and discussion-root lookups", () => {

@@ -92,8 +92,8 @@ function checksum(value: unknown): string {
   return `sha256:${createHash("sha256").update(canonical(value), "utf8").digest("hex")}`;
 }
 
-function text(value: unknown, code: string, expression: RegExp): string {
-  if (typeof value !== "string" || !expression.test(value)) fail(code);
+function text(value: unknown, code: string, expression: RegExp, maxBytes: number): string {
+  if (typeof value !== "string" || Buffer.byteLength(value, "utf8") > maxBytes || !expression.test(value)) fail(code);
   return value;
 }
 
@@ -109,12 +109,12 @@ export function verifyPublicCaseBindingReceipt(value: unknown): PublicCaseBindin
     parsed.authorityBinding !== "none" || parsed.openDeskWrite !== false) {
     fail("case_binding_receipt_invalid");
   }
-  const rootEventId = text(parsed.rootEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u);
-  const topicId = text(parsed.topicId, "case_binding_receipt_invalid", /^urn:stadtstack:topic:municipality:[a-z0-9-]+:[a-z0-9-]+$/u);
-  const candidateId = text(parsed.candidateId, "case_binding_receipt_invalid", /^urn:stadtstack:signed-topic-suggestion:[0-9a-f]{64}$/u);
-  const candidateEventId = text(parsed.candidateEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u);
-  const sourceAnswerEventId = text(parsed.sourceAnswerEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u);
-  const caseId = text(parsed.caseId, "case_binding_receipt_invalid", CASE_ID);
+  const rootEventId = text(parsed.rootEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u, 64);
+  const topicId = text(parsed.topicId, "case_binding_receipt_invalid", /^urn:stadtstack:topic:municipality:[a-z0-9-]+:[a-z0-9-]+$/u, 256);
+  const candidateId = text(parsed.candidateId, "case_binding_receipt_invalid", /^urn:stadtstack:signed-topic-suggestion:[0-9a-f]{64}$/u, 128);
+  const candidateEventId = text(parsed.candidateEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u, 64);
+  const sourceAnswerEventId = text(parsed.sourceAnswerEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u, 64);
+  const caseId = text(parsed.caseId, "case_binding_receipt_invalid", CASE_ID, 256);
   const caseIdMatch = CASE_ID.exec(caseId);
   if (!caseIdMatch || !UUID_V7.test(caseIdMatch[2]!)) fail("case_binding_receipt_invalid");
   if (parsed.caseVersion !== 3) fail("case_binding_receipt_invalid");
@@ -122,9 +122,9 @@ export function verifyPublicCaseBindingReceipt(value: unknown): PublicCaseBindin
   const caseEventIds = strictStringArray(parsed.caseEventIds, "case_binding_receipt_invalid");
   if (caseEventIds.length !== 3 || caseEventIds.some((id, index) =>
     id !== `urn:stadtstack:case-event:${caseId}:${index + 1}`)) fail("case_binding_receipt_invalid");
-  const journalHeadChecksum = text(parsed.journalHeadChecksum, "case_binding_receipt_invalid", SHA256);
-  const admissionEventChecksum = text(parsed.admissionEventChecksum, "case_binding_receipt_invalid", SHA256);
-  const receiptChecksum = text(parsed.receiptChecksum, "case_binding_receipt_invalid", SHA256);
+  const journalHeadChecksum = text(parsed.journalHeadChecksum, "case_binding_receipt_invalid", SHA256, 71);
+  const admissionEventChecksum = text(parsed.admissionEventChecksum, "case_binding_receipt_invalid", SHA256, 71);
+  const receiptChecksum = text(parsed.receiptChecksum, "case_binding_receipt_invalid", SHA256, 71);
   if (candidateId !== `urn:stadtstack:signed-topic-suggestion:${candidateEventId}` ||
     admissionEventChecksum !== journalHeadChecksum) fail("case_binding_receipt_invalid");
   const exactCaseEventIds = [caseEventIds[0]!, caseEventIds[1]!, caseEventIds[2]!] as const;
