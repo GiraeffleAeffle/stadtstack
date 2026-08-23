@@ -1,0 +1,9 @@
+# The remote publisher materializes these three reviewed files with
+# `git archive $GITHUB_SHA` before Buildx receives the context.  Keep this
+# defensive allowlist as a second boundary if the workflow is ever edited.
+**
+!.dockerignore
+!containers/
+!containers/case-runtime/
+!containers/case-runtime/Containerfile
+!containers/case-runtime/activation-blocked.mjs

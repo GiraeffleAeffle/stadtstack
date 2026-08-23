@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+#
+# This image is intentionally an inert publication receipt.  It contains the
+# pinned Node runtime solely to execute the stable activation blocker; it does
+# not contain the Stadtstack application, package manifests, dependencies, or
+# any runtime configuration.  Changing the entrypoint cannot recover Case
+# code from this image.
+FROM node:22.18.0-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e
+
+ARG COMPONENT
+ARG SOURCE_REPOSITORY
+ARG SOURCE_REVISION
+
+RUN test "$COMPONENT" = "case-steward-control" || \
+    test "$COMPONENT" = "case-public-binding" || \
+    test "$COMPONENT" = "case-restore-verifier"
+
+LABEL org.opencontainers.image.title="Stadtstack Case ${COMPONENT}" \
+      org.opencontainers.image.source="${SOURCE_REPOSITORY}" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.licenses="MIT" \
+      org.stadtstack.case.component="${COMPONENT}" \
+      org.stadtstack.case.activation="blocked_pending_reviewed_recovery_evidence"
+
+WORKDIR /activation
+COPY containers/case-runtime/activation-blocked.mjs ./activation-blocked.mjs
+
+USER node
+ENTRYPOINT ["node", "/activation/activation-blocked.mjs"]
