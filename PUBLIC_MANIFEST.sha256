@@ -99,7 +99,7 @@ f48cbaf0acf646333abc95d8d99943da972b6411ebdd8a1bed6696b1a253e9ad  test/adapters/
 d72d02b686e3247897ef2a813aae292c14234708c4cbe0bfacbb38ed314aefd4  test/adapters/discussion-adapter.test.ts
 4820719b2e9b3e6762c5aff2fdea6bcf1be30cfb050624a0f2dc107cd7d2a5bc  test/adapters/nostr-relay-transport.test.ts
 7a8a7d963143dc1830c2f47a2c446c32fa58c22e226cfb9f3936ae9a7c299435  test/adapters/sqlite-atomic-topic-case-admission-durable-state.test.ts
-b18b8d93759929d7bc6bd7280aa719d9aba378786226f5bf9040b628ee6b5f52  test/adapters/sqlite-atomic-topic-case-admission-recovery-activation.test.ts
+f3ec03f84c33b9cea9be8603a6e59683ab615308bbc53bdc215e50a1b86ddedf  test/adapters/sqlite-atomic-topic-case-admission-recovery-activation.test.ts
 102e79b0203b61ec233ff298e618a574ff06158a5b6ba33ef232c675746f6490  test/adapters/sqlite-atomic-topic-case-admission.test.ts
 d285bd1dc5b8a8833118b7b9312bb2db7da406e0f02dfde1fdf6c86c02238af3  test/adapters/sqlite-journal-adapter.test.ts
 5db4d323cc820a5f6d2a1013b2dc6db330be2d05997a77810eae6741b4fabef0  test/case-binding-outbox-projector.test.ts

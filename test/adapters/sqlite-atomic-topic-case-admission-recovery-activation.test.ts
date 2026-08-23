@@ -13,6 +13,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
 
@@ -75,7 +76,7 @@ const RECEIPT_ID = `urn:stadtstack:mecky-answer:${"a".repeat(64)}`;
 after(() => { for (const root of ROOTS) rmSync(root, { recursive: true, force: true }); });
 
 function root(prefix = ".stadtstack-recovery-"): string {
-  const value = mkdtempSync(`/private/tmp/${prefix}`);
+  const value = mkdtempSync(join(homedir(), prefix));
   ROOTS.add(value);
   return value;
 }
