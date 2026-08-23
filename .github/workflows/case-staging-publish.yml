@@ -89,7 +89,7 @@ jobs:
             COMPONENT=${{ matrix.component }}
             SOURCE_REPOSITORY=https://github.com/GiraeffleAeffle/stadtstack
             SOURCE_REVISION=${{ github.sha }}
-          outputs: type=oci,dest=${{ runner.temp }}/${{ matrix.component }}.oci.tar,name=source-${{ github.sha }}
+          outputs: type=oci,dest=${{ runner.temp }}/${{ matrix.component }}.oci.tar,name=stadtstack.local/stadtstack-case/${{ matrix.component }}:source-${{ github.sha }},annotation.io.containerd.image.name=stadtstack.local/stadtstack-case/${{ matrix.component }}:source-${{ github.sha }},rewrite-timestamp=true
           cache-from: type=gha,scope=stadtstack-case-runtime
           cache-to: type=gha,mode=max,scope=stadtstack-case-runtime
           provenance: false
