@@ -391,8 +391,8 @@ test("preflight fails closed on every observed mount, filesystem, ownership, mar
   }
   assert.throws(() => preflight(value, { ...exact, markerText: "{}\n" }), /staging_case_control_preflight_marker_mismatch/u);
   assert.throws(() => preflight(value, observation(value, BigInt(value.storage.minAvailableBytes) - 1n)), /staging_case_control_preflight_observation_mismatch/u);
-  assert.throws(() => preflight(value, { ...exact, availableBytes: 1 }), /staging_case_control_preflight_observation_invalid/u);
-  assert.throws(() => preflight(value, { ...exact, extra: true }), /staging_case_control_preflight_observation_invalid/u);
+  assert.throws(() => preflight(value, { ...exact, availableBytes: 1 } as unknown as StagingCaseControlStorageObservation), /staging_case_control_preflight_observation_invalid/u);
+  assert.throws(() => preflight(value, { ...exact, extra: true } as unknown as StagingCaseControlStorageObservation), /staging_case_control_preflight_observation_invalid/u);
 });
 
 test("the proof cannot be supplied by a type assertion or structured clone", () => {
@@ -421,5 +421,5 @@ test("observation adapter failures, proxies, accessors, and surplus fields fail 
   Object.defineProperty(accessor, "rootDir", { enumerable: true, get() { throw new Error("must_not_run"); } });
   assert.throws(() => preflight(value, accessor as unknown as StagingCaseControlStorageObservation), /staging_case_control_preflight_observation_invalid/u);
   assert.throws(() => preflight(value, new Proxy(observed, {})), /staging_case_control_preflight_observation_invalid/u);
-  assert.throws(() => preflight(value, { ...observed, extra: true }), /staging_case_control_preflight_observation_invalid/u);
+  assert.throws(() => preflight(value, { ...observed, extra: true } as unknown as StagingCaseControlStorageObservation), /staging_case_control_preflight_observation_invalid/u);
 });

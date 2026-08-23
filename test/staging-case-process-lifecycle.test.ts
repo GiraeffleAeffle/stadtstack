@@ -197,7 +197,7 @@ test("configuration is closed over exact plain data and no capability leaks", as
   assert.throws(() => createStagingCaseProcessLifecycle(new Proxy(valid, {})), /staging_case_process_config_invalid/u);
   assert.throws(() => createStagingCaseProcessLifecycle({ ...valid, listeners: new Proxy(valid.listeners, {}) }), /staging_case_process_config_invalid/u);
   assert.throws(() => createStagingCaseProcessLifecycle({ ...valid, listeners: [valid.listeners[0]!, valid.listeners[0]!] }), /staging_case_process_config_invalid/u);
-  assert.throws(() => createStagingCaseProcessLifecycle({ ...valid, listeners: [{ ...valid.listeners[0]!, id: "Control" }] }), /staging_case_process_config_invalid/u);
+  assert.throws(() => createStagingCaseProcessLifecycle({ ...valid, listeners: [{ ...valid.listeners[0]!, id: "Control" }] as never }), /staging_case_process_config_invalid/u);
   assert.throws(() => createStagingCaseProcessLifecycle({ ...valid, listeners: [{ ...valid.listeners[0]!, host: "0.0.0.0" }] as never }), /staging_case_process_config_invalid/u);
   const accessor = { ...valid } as Record<string, unknown>;
   Object.defineProperty(accessor, "release", { enumerable: true, get: () => valid.release });
