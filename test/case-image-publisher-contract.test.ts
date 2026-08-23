@@ -104,7 +104,9 @@ test("the remote publisher is main-only, digest-attested, and has no deployment 
   assert.match(workflow, /case-build-context/u);
   assert.ok(workflow.includes("printf '%s\\n' .dockerignore"));
   assert.ok(!workflow.includes("printf '%s\\\\n' .dockerignore"));
-  assert.match(workflow, /outputs: type=oci,dest=/u);
+  assert.ok(workflow.includes("outputs: type=oci,dest=${{ runner.temp }}/${{ matrix.component }}.oci.tar,name=stadtstack.local/stadtstack-case/${{ matrix.component }}:source-${{ github.sha }},annotation.io.containerd.image.name=stadtstack.local/stadtstack-case/${{ matrix.component }}:source-${{ github.sha }},rewrite-timestamp=true"));
+  assert.ok(!workflow.includes(".oci.tar,name=source-${{ github.sha }}"));
+  assert.equal(workflow.match(/LOCAL_REFERENCE: source-\$\{\{ github\.sha \}\}/gu)?.length, 2);
   assert.match(workflow, /scripts\/publish-case-image-from-oci\.mjs/u);
   assert.match(workflow, /oras-project\/setup-oras@[a-f0-9]{40}/u);
   assert.match(workflow, /platforms: linux\/amd64/u);
