@@ -122,11 +122,17 @@ function expectedResponseLength(statusCode: number | undefined, rawHeaders: read
  * Creates a single-origin, fail-closed HTTP client for the control workload's
  * private outbox listener. It never follows redirects, sends no credentials,
  * and returns entries only after the canonical page and every receipt verify.
+ * A composition root may provide a private AbortSignal so its lifecycle can
+ * terminate an in-flight pull without adding cancellation to the replay port.
  */
 export function createCredentialFreeCaseBindingOutboxHttpClient(
   config: CredentialFreeCaseBindingOutboxHttpClientConfig,
+  signal?: AbortSignal,
 ): CredentialFreeCaseBindingOutboxHttpClient {
   const origin = captureOrigin(config);
+  if (signal !== undefined && (utilTypes.isProxy(signal) || !(signal instanceof AbortSignal))) {
+    fail("case_binding_outbox_http_client_config_invalid");
+  }
 
   const replay = async (input?: CaseBindingOutboxReplayInput): Promise<readonly CaseBindingOutboxEntryV1[]> => {
     const request = captureReplayInput(input);
@@ -158,6 +164,7 @@ export function createCredentialFreeCaseBindingOutboxHttpClient(
           // core http client and no caller-controllable request option.
           agent: false,
           maxHeaderSize: MAX_RESPONSE_HEADER_BYTES,
+          ...(signal === undefined ? {} : { signal }),
           headers: {
             accept: "application/json",
             connection: "close",

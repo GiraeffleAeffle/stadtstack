@@ -59,6 +59,10 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0021](./0021-staging-case-steward-identity-and-credential-free-binding-delivery.md) —
   use per-steward staging tokens and a private credential-free outbox
   pull to connect separate control and public binding workloads.
+- [ADR 0022](./0022-compose-isolated-staging-case-runtimes-before-network-exposure.md) —
+  compose the separate control and public processes on loopback, prove the
+  complete HTTP tracer, and require verified Operations policy before network
+  exposure.
 
 ## Historical
 

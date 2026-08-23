@@ -102,6 +102,34 @@ test("the client rejects malformed configuration and caller-supplied request cap
   await assert.rejects(client.replay({ afterSequence: -1, limit: 1 }), /request_invalid/u);
   await assert.rejects(client.replay({ afterSequence: 0, limit: 257 }), /request_invalid/u);
   await assert.rejects(client.replay({ afterSequence: 0, limit: 1, authorization: "Bearer secret" } as unknown as { afterSequence: number; limit: number }), /request_invalid/u);
+  assert.throws(
+    () => createCredentialFreeCaseBindingOutboxHttpClient(
+      { origin: "http://case-control.internal:8080/" },
+      {} as AbortSignal,
+    ),
+    /config_invalid/u,
+  );
+});
+
+test("a composition-owned abort signal terminates an in-flight replay", async (t) => {
+  let requestStarted!: () => void;
+  const started = new Promise<void>((resolve) => { requestStarted = resolve; });
+  const server = createServer((_request, _response) => { requestStarted(); });
+  const port = await listen(server);
+  t.after(() => close(server));
+  const controller = new AbortController();
+  const client = createCredentialFreeCaseBindingOutboxHttpClient(
+    { origin: `http://127.0.0.1:${port}/` },
+    controller.signal,
+  );
+  const replay = client.replay({ afterSequence: 0, limit: 1 });
+  await started;
+  controller.abort();
+  await assert.rejects(replay, (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.message, "case_binding_outbox_transport_unavailable");
+    return true;
+  });
 });
 
 type ResponseMode = "status" | "type" | "encoding" | "transfer" | "duplicate-length" | "oversized" | "truncated" | "wrong-cursor" | "invalid-page";

@@ -397,7 +397,7 @@ export function createCredentialFreeCaseBindingOutboxServer(
     }
   });
 
-  server.maxHeadersCount = 0;
+  server.maxHeadersCount = 32;
   server.headersTimeout = REQUEST_TIMEOUT_MS;
   server.requestTimeout = REQUEST_TIMEOUT_MS;
   server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;

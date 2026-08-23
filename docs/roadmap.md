@@ -64,10 +64,9 @@ Next implementation slices are:
 1. review and merge the authenticated durable continuation and sealed
    transport references that preserve one reopened Case and separate staff
    control from public discovery;
-2. finish the staging steward authenticator, private outbox server/client and
-   two-process lifecycle composition over the durable coordinator factory,
-   then deploy staff and public routes behind separate workload and ingress
-   policies;
+2. compose the implemented staging steward and private outbox Adapters as one
+   two-listener control process plus one replay-before-ready public process,
+   prove the real HTTP tracer, then add the reviewed Operations exposure gate;
 3. let Röbel discover the Case binding receipt by its signed discussion root
    and advance the public journey without receiving an admission credential;
 4. expose the prepared request and handoff state in the Röbel administration

@@ -113,6 +113,24 @@ public projection workload. It has no ACK, cursor write, database access,
 admission command, credential, or civic effect.
 _Avoid_: public database connection, shared Case store, workflow queue
 
+**Staging Case control runtime**:
+The single process that alone owns SQLite, staging Case Steward credentials,
+staff admission and private outbox replay. Its different listeners are
+different capabilities even though they share one durable owner.
+_Avoid_: Case backend, combined civic API, public workflow server
+
+**Public Case-binding runtime**:
+The separate, credential-free process that replays verified public binding
+receipts and serves only public discovery. It has no Case writer, database,
+staff credential or admission capability.
+_Avoid_: Case replica, public Case database, workflow runtime
+
+**Runtime probe**:
+A capability-free liveness/readiness surface returning only stable operational
+bytes. It is not a civic Service and never reveals phase details or dependency
+configuration.
+_Avoid_: health API, diagnostics endpoint, admin status
+
 **Review attestation**:
 An accountable statement that a named reviewer accepted or rejected a bounded
 artifact under a stated policy and version.
