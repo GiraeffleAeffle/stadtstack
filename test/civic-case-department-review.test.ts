@@ -152,7 +152,7 @@ test("the assigned department agent records one checksum-bound draft while publi
         schemaVersion: "department_draft_v1",
         id: "draft-planning-1",
         publicSummary: "A raised crossing and clearer markings could reduce risk.",
-        publicCitations: ["synthetic://planning/evidence-1"],
+        publicCitations: ["https://www.roebel-mueritz.de/rathaus/reviewed/planning-evidence-1"],
         privateEvidenceRefs: ["synthetic://planning/private-evidence-1"],
         authorityBinding: "none",
       },
@@ -359,6 +359,17 @@ test("draft and review checks bind current checksums, versions, roles, and deter
       },
     }),
     /department_reference_invalid/,
+  );
+  assert.throws(
+    () => coordinator.handle({
+      ...draftCommand,
+      idempotencyKey: "synthetic:idem:draft-public-citation-query",
+      payload: {
+        ...draftCommand.payload,
+        draft: { ...draftCommand.payload.draft, publicCitations: ["https://www.roebel-mueritz.de/evidence?token=secret"] },
+      },
+    }),
+    /secret_material_forbidden:department_draft_invalid/,
   );
   assert.throws(
     () => coordinator.handle({

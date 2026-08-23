@@ -226,6 +226,14 @@ capability, and neither mutates the signed Nostr root nor becomes a second Case
 source of truth.
 _Avoid_: admission command, public Case journal, authority token
 
+**Durable Case continuation**:
+The deployment-neutral composition seam that reopens one already admitted
+Civic Case and carries administration feedback, independent review, Citizen
+Brief, advisory participation, and reviewed outcome through that same Case
+journal. Mini Apps may render its role-scoped projections but cannot own a
+parallel stage, Case, brief, participation result, or execution timeline.
+_Avoid_: Mini App workflow state, copied stage, second proposal database
+
 **Admitted citizen suggestion**:
 A citizen-signed suggestion candidate whose exact signature, discussion,
 municipality, Topic or Case provenance, and Mecky receipt bindings were

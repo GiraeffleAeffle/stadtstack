@@ -1,7 +1,7 @@
 # Public implementation roadmap
 
 The current cross-repository Röbel execution truth is the dated
-[2026-08-22 staging snapshot](verification/2026-08-22-roebel-staging.md). It
+[2026-08-23 staging snapshot](verification/2026-08-23-roebel-staging.md). It
 maps these neutral contracts to the Röbel product and reviewed GitOps source
 without moving product UX, credentials, or deployment authority into
 Stadtstack. The sole open public tracker item is
@@ -29,10 +29,12 @@ authenticated Case Steward interface. The public application may only read a
 checksum-bound Case binding receipt by Case or source-discussion identity. The
 coordinator journal remains the durable source of truth; the public receipt is
 a rebuildable projection and performs no openDesk write or authority
-transition. The reference implementation intentionally has no HTTP listener,
-staff identity adapter, durable atomic root-claim/outbox adapter, replay index,
-or deployment resources yet. Staff control and public read are separate
-interfaces and must become separate identities and network surfaces.
+transition. The reference implementation now includes a local-only SQLite
+WAL/FULL atomic root claim, Case journal, binding receipt, and append-only
+outbox Adapter. It still has no HTTP listener, staff identity adapter,
+production storage decision, replay service, backup/restore proof, or
+deployment resources. Staff control and public read are separate interfaces
+and must become separate identities and network surfaces.
 
 The next accepted administration seam renders one exact Department package as
 an effect-free, idempotent workspace request. A separately authorized
@@ -53,20 +55,23 @@ the two Röbel GET routes. It does not crawl or deploy a public endpoint.
 
 Next implementation slices are:
 
-1. compose the Case Steward protocol handler with a staff identity adapter,
+1. review and merge the authenticated durable continuation reference that
+   composes administration, Citizen Brief, Mitmachen, and outcome over the
+   same reopened Case and proves close/reopen checksum continuity;
+2. compose the Case Steward and continuation handlers with a staff identity adapter,
    durable coordinator factory and replayable public binding index, then deploy
    the staff and GET-only public routes behind separate ingress policies;
-2. let Röbel discover the Case binding receipt by its signed discussion root
+3. let Röbel discover the Case binding receipt by its signed discussion root
    and advance the public journey without receiving an admission credential;
-3. expose the prepared request and handoff state in the Röbel administration
+4. expose the prepared request and handoff state in the Röbel administration
    journey without creating a second Case timeline;
-4. implement one exact, idempotent openDesk connector behind the public
+5. implement one exact, idempotent openDesk connector behind the public
    contract, with credentials and endpoint policy kept in private operations;
-5. expose the resulting current Citizen Brief through the same Röbel journey
+6. expose the resulting current Citizen Brief through the same Röbel journey
    and public knowledge checksum consumed by Mecky and Mitmachen; and
-6. deploy one synthetic reviewed-source projection behind the reviewed public
+7. deploy one synthetic reviewed-source projection behind the reviewed public
    Adapter and prove correction withdrawal through the Röbel consumer; and
-7. add correction and withdrawal UX before any formal governance or treasury
+8. add correction and withdrawal UX before any formal governance or treasury
    integration.
 
 For the first accepted staging journey, deployment and browser proof now take

@@ -49,6 +49,10 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0018](./0018-role-isolated-case-steward-control-and-public-binding-receipts.md) —
   isolate human Case admission behind a staff-authenticated control seam and
   expose only a checksum-bound, GET-only public Case binding receipt.
+- [ADR 0019](./0019-one-durable-case-continuation-line.md) — compose
+  administration feedback, Citizen Brief, advisory Mitmachen, and reviewed
+  outcome over the same admitted Case and durable journal rather than Mini App
+  timelines.
 
 ## Historical
 

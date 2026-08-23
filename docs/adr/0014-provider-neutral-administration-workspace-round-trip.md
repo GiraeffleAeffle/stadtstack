@@ -56,6 +56,13 @@ operations decision that binds the exact endpoint, credential owner,
 idempotent create/read operations, retention policy, rollback or reconciliation
 behavior, and non-secret receipts.
 
+The coordinator accepts returned public citations as exact, stored HTTPS
+references only when they are public-shaped and contain no user information,
+port, fragment, local/test hostname, or credential marker. This reconciles the
+workspace return contract with the Case journal without adding an HTTP fetch,
+DNS lookup, or any other network capability. Private evidence references stay
+synthetic in the local reference.
+
 ## Consequences
 
 The user journey can remain one line—Discussion, Topic, human Case admission,
