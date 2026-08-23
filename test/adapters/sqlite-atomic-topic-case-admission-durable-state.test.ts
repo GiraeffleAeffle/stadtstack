@@ -145,7 +145,8 @@ test("durable single writer seals canonical recovery evidence and releases its l
     municipalityId: "other-town",
     databaseBasename: "stadtstack-other-town-atomic-admission.sqlite",
   };
-  const { sealChecksum: _wrongMunicipalityChecksum, ...wrongMunicipalityFields } = wrongMunicipalityUnsigned;
+  const wrongMunicipalityFields = structuredClone(wrongMunicipalityUnsigned) as Record<string, unknown>;
+  delete wrongMunicipalityFields.sealChecksum;
   assert.throws(() => verifyCaseShutdownSeal({
     ...wrongMunicipalityFields,
     sealChecksum: digest(wrongMunicipalityFields),
