@@ -36,11 +36,17 @@ staff-only POST surface and credential-free public GET/HEAD surface, while a
 bounded projector atomically rebuilds the public index from the outbox. It
 now selects a staging-only, per-steward Case Steward token Adapter and a private
 credential-free HTTP outbox pull between separate control and public
-workloads. It still has no production municipal identity Adapter, production
-storage decision, backup/restore proof, lifecycle composition, bound live
-listener, or deployment resources. Staff control and public read must become
-separate identities and network surfaces; Röbel Web and Mecky receive neither
-the staff credential nor SQLite access.
+workloads. The control and public processes now have separate bounded lifecycle
+composition roots, and durable control state has a root-global live owner lock,
+quiesced shutdown seal and canonical recovery evidence. The current slice adds
+a reviewed Operations preflight Module: a local filesystem Adapter must match
+the checksum-pinned PVC/PV/StorageClass contract before SQLite or one of the
+three exact control Pod-network listeners can exist. Raw hosts, ports and paths
+are not application inputs, while the reference factories remain loopback-only.
+No live claim, backup/restore proof, recovery attestation, workload or Flux
+binding exists yet. Staff control and public read remain separate identities
+and network surfaces; Röbel Web and Mecky receive neither the staff credential
+nor SQLite access.
 
 The next accepted administration seam renders one exact Department package as
 an effect-free, idempotent workspace request. A separately authorized
@@ -61,26 +67,27 @@ the two Röbel GET routes. It does not crawl or deploy a public endpoint.
 
 Next implementation slices are:
 
-1. review and merge the authenticated durable continuation and sealed
-   transport references that preserve one reopened Case and separate staff
-   control from public discovery;
-2. compose the implemented staging steward and private outbox Adapters as one
-   two-civic-listener control process plus one replay-before-ready public process,
-   prove the real HTTP tracer, then add the reviewed Operations exposure gate;
-   before activation, bind the control process to one reviewed single-writer
-   claim and prove a quiesced encrypted backup can restore byte-identically to
-   a fresh claim under ADR 0023;
-3. let Röbel discover the Case binding receipt by its signed discussion root
+1. merge the green stacked Case boundary, continuation, transport, runtime,
+   recovery-gate and durable-seal slices in dependency order;
+2. review the control deployment preflight and its matching still-inert
+   Operations evidence inventory; then bind the control process to one exact
+   reviewed single-writer claim only after every live storage fact exists;
+3. verify a separately signed recovery attestation and prove a quiesced,
+   encrypted backup can restore byte-identically to a fresh claim under ADR
+   0023 before any control activation;
+4. admit immutable control/public images and the protected policy migration,
+   then let Flux reconcile only the reviewed resources;
+5. let Röbel discover the Case binding receipt by its signed discussion root
    and advance the public journey without receiving an admission credential;
-4. expose the prepared request and handoff state in the Röbel administration
+6. expose the prepared request and handoff state in the Röbel administration
    journey without creating a second Case timeline;
-5. implement one exact, idempotent openDesk connector behind the public
+7. implement one exact, idempotent openDesk connector behind the public
    contract, with credentials and endpoint policy kept in private operations;
-6. expose the resulting current Citizen Brief through the same Röbel journey
+8. expose the resulting current Citizen Brief through the same Röbel journey
    and public knowledge checksum consumed by Mecky and Mitmachen; and
-7. deploy one synthetic reviewed-source projection behind the reviewed public
+9. deploy one synthetic reviewed-source projection behind the reviewed public
    Adapter and prove correction withdrawal through the Röbel consumer; and
-8. add correction and withdrawal UX before any formal governance or treasury
+10. add correction and withdrawal UX before any formal governance or treasury
    integration.
 
 For the first accepted staging journey, deployment and browser proof now take

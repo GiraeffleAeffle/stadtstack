@@ -131,6 +131,17 @@ bytes. It is not a civic Service and never reveals phase details or dependency
 configuration.
 _Avoid_: health API, diagnostics endpoint, admin status
 
+**Reviewed control deployment binding**:
+A canonical, checksum-pinned Operations record that authorizes one exact
+staging Case control process to use one already-provisioned storage identity
+and its fixed Pod-network listeners. The application verifies locally
+observable filesystem facts before it creates SQLite or a socket; Operations
+remains responsible for PVC, PV, StorageClass, workload and review facts. The
+binding is operational authority only and grants no Case, publication,
+governance or treasury authority.
+_Avoid_: Kubernetes discovery, environment-variable path, deployment token,
+civic authorization
+
 **Case recovery evidence**:
 The authenticated backup receipt, encrypted recovery material and isolated
 fresh-volume restore attestation for one staging Case store. It is operational

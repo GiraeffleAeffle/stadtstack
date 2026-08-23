@@ -240,6 +240,14 @@ test("configuration captures release and rejects proxies, accessors, and extras"
     /staging_case_runtime_config_invalid/u,
   );
   assert.throws(
+    () => createStagingCaseRuntimeLifecycle({ ...valid, listener: { host: "0.0.0.0", port: 18085 } } as never),
+    /staging_case_runtime_config_invalid/u,
+  );
+  assert.throws(
+    () => createStagingCaseRuntimeLifecycle({ ...valid, listener: { listenerId: "admission" } } as never),
+    /staging_case_runtime_config_invalid/u,
+  );
+  assert.throws(
     () => createStagingCaseRuntimeLifecycle(new Proxy(valid, {})),
     /staging_case_runtime_config_invalid/u,
   );

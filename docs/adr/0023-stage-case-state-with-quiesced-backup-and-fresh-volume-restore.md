@@ -1,6 +1,6 @@
 # ADR 0023: Stage Case state with quiesced backup and fresh-volume restore
 
-- **Status:** accepted as an activation gate; implementation pending
+- **Status:** accepted as an activation gate; implementation in progress
 - **Date:** 2026-08-23
 
 ## Context
@@ -46,6 +46,66 @@ claim. Before any non-loopback civic listener binds, Operations must also prove
 the expected uid/gid and permissions, filesystem type and free-space floor,
 StorageClass/PVC identity and the reviewed bind composition. A mismatch must
 fail before the listener becomes ready.
+
+### Reviewed control deployment preflight
+
+The live control composition uses one deep application Module rather than
+passing raw storage paths, hosts or ports through process configuration. Its
+input has one source port for the canonical **Reviewed control deployment
+binding**, a separate source port for its immutable checksum pin, and a narrow
+local filesystem-observation Adapter. The protected Operations verifier is the
+remote-but-owned source of truth for Kubernetes facts; the filesystem Adapter
+is local-substitutable and observes only the mounted filesystem. The
+application receives no Kubernetes API client, ServiceAccount token, Downward
+API identity claim or permission to discover or select a claim.
+
+The reviewed binding closes over the exact staging environment, municipality,
+namespace, control workload and release; PVC name and immutable UID; PV and
+StorageClass identity; access and volume modes; requested bytes; exact mount
+root and immutable marker; expected uid, gid, permission bits, filesystem
+magic and minimum available bytes; and the three fixed control listener
+identities and ports. The bind scope is the closed semantic value
+`pod_network`: admission is `18085`, private outbox is `18087`, and the
+capability-free control probe is `18088`. No caller can supply a host string or
+change those ports. The existing reference factory remains loopback-only.
+
+Preflight is ordered before the credential authenticator, durable SQLite owner,
+HTTP server construction and every bind. It validates the canonical binding
+and independently pinned digest, then requires one exact existing non-symlink
+mount root, an exact read-only marker, matching real path, uid/gid/mode and
+filesystem type, and `availableBlocks * blockSize >= minimumAvailableBytes`
+using integer arithmetic that cannot overflow. It returns only an opaque,
+runtime-verified authorization from which the control composition can derive
+the exact durable root, source release and listener plans. A structural cast or
+plain-object forgery does not authorize a Pod-network bind.
+
+Any mismatch fails closed with stable operational errors before the database,
+owner lock, shutdown seal or socket exists. Health never reveals a path,
+claim/PV/StorageClass identity, filesystem fact or bind address. The public
+Case-binding runtime cannot receive the binding, filesystem Adapter, control
+credential, volume or write capability. These checks authorize deployment
+composition only; they are not Human Case admission, Review attestation,
+publication, governance or treasury authority.
+
+Binding-source reads, the immutable pin read, local observation and the SQLite
+open occur synchronously with no application-controlled asynchronous gap;
+listener construction and binding happen only afterwards. This Interface
+checks the facts presented by an honest mount namespace. It does not claim to
+defend against a compromised node, kernel, CSI implementation or root process
+that can replace mounts or files during system calls; those remain protected
+Operations and cluster-security authorities. Reviewed in-process source code
+is likewise trusted at this seam: the opaque proof prevents accidental or
+unreviewed composition, but is not a sandbox against malicious code already
+running inside the control process.
+
+Operations may publish the schema and an explicit `blocked` evidence inventory
+before the live claim exists, but it must not substitute guessed values for a
+PVC UID, PV, StorageClass, filesystem, ownership, capacity, release digest or
+binding digest. A deployable binding is admitted only after every exact fact is
+reviewed and protected. Two different in-memory wrapper objects are not proof
+of independent authority: the live Operations composition must implement the
+binding source from the protected reviewed artifact and the pin source from a
+separately protected immutable deployment value.
 
 The live storage contract must capture the claim's access and volume modes,
 StorageClass, requested capacity and minimum free-space threshold, filesystem,

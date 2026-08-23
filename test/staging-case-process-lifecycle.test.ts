@@ -190,6 +190,10 @@ test("configuration is closed over exact plain data and no capability leaks", as
   assert.equal(capturedReleases, 1);
 
   assert.throws(() => createStagingCaseProcessLifecycle({ ...valid, extra: true } as never), /staging_case_process_config_invalid/u);
+  assert.throws(() => createStagingCaseProcessLifecycle({
+    ...valid,
+    listeners: [{ id: "admission", server: createServer(), bindPlan: { listenerId: "admission" } }],
+  } as never), /staging_case_process_config_invalid/u);
   assert.throws(() => createStagingCaseProcessLifecycle(new Proxy(valid, {})), /staging_case_process_config_invalid/u);
   assert.throws(() => createStagingCaseProcessLifecycle({ ...valid, listeners: new Proxy(valid.listeners, {}) }), /staging_case_process_config_invalid/u);
   assert.throws(() => createStagingCaseProcessLifecycle({ ...valid, listeners: [valid.listeners[0]!, valid.listeners[0]!] }), /staging_case_process_config_invalid/u);

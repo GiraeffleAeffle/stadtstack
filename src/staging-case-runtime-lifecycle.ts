@@ -6,10 +6,16 @@ import {
 import type { Socket } from "node:net";
 import { types as utilTypes } from "node:util";
 
+import {
+  assertStagingCaseControlListenerBindPlan,
+  type StagingCaseControlListenerBindPlan,
+} from "./staging-case-control-preflight.ts";
+
 /**
  * The lifecycle is deliberately a composition seam, not a server factory.
  * The caller creates the HTTP server (and therefore owns its request
- * handler), then gives this module only the server and a loopback bind plan.
+ * handler), then gives this module only the server and either a loopback plan
+ * or an opaque listener plan minted by the reviewed control preflight Module.
  */
 export const STAGING_CASE_RUNTIME_PHASES = [
   "new",
@@ -34,16 +40,18 @@ export type StagingCaseRuntimeHealth = Readonly<{
     | "draining"
     | "stopped"
     | "bind_failed";
-  /** The actual loopback port while ready; unavailable in every other phase. */
+  /** The actual port while ready; unavailable in every other phase. */
   port: number | null;
+}>;
+
+export type StagingCaseRuntimeLoopbackListener = Readonly<{
+  host: "127.0.0.1";
+  port: number;
 }>;
 
 export type StagingCaseRuntimeLifecycleConfig = {
   server: Server;
-  listener: {
-    host: "127.0.0.1";
-    port: number;
-  };
+  listener: StagingCaseRuntimeLoopbackListener | StagingCaseControlListenerBindPlan;
   release: () => void | Promise<void>;
   drainTimeoutMs: number;
 };
@@ -110,9 +118,32 @@ function exactObject(
   return value as Record<string, unknown>;
 }
 
+function captureListener(value: unknown): Readonly<{
+  host: "127.0.0.1" | "0.0.0.0";
+  port: number;
+}> {
+  if (value && typeof value === "object" && !Array.isArray(value) && !utilTypes.isProxy(value) &&
+    Object.getPrototypeOf(value) === Object.prototype && Reflect.ownKeys(value).length === 2 &&
+    Reflect.ownKeys(value).every((key) => key === "host" || key === "port")) {
+    const listener = exactObject(value, ["host", "port"], "staging_case_runtime_config_invalid");
+    if (listener.host !== "127.0.0.1" || typeof listener.port !== "number" ||
+      !Number.isSafeInteger(listener.port) || listener.port < 0 || listener.port > 65_535) {
+      invalid("staging_case_runtime_config_invalid");
+    }
+    return Object.freeze({ host: "127.0.0.1", port: listener.port });
+  }
+
+  try {
+    const listener = assertStagingCaseControlListenerBindPlan(value);
+    return Object.freeze({ host: listener.host, port: listener.port });
+  } catch {
+    invalid("staging_case_runtime_config_invalid");
+  }
+}
+
 function captureConfig(config: StagingCaseRuntimeLifecycleConfig): {
   server: Server;
-  host: "127.0.0.1";
+  host: "127.0.0.1" | "0.0.0.0";
   port: number;
   release: () => void | Promise<void>;
   drainTimeoutMs: number;
@@ -132,24 +163,7 @@ function captureConfig(config: StagingCaseRuntimeLifecycleConfig): {
     invalid("staging_case_runtime_config_invalid");
   }
 
-  const listener = exactObject(
-    parsed.listener,
-    ["host", "port"],
-    "staging_case_runtime_config_invalid",
-  );
-  if (listener.host !== "127.0.0.1") {
-    invalid("staging_case_runtime_config_invalid");
-  }
-
-  const port = listener.port;
-  if (
-    typeof port !== "number" ||
-    !Number.isSafeInteger(port) ||
-    port < 0 ||
-    port > 65_535
-  ) {
-    invalid("staging_case_runtime_config_invalid");
-  }
+  const listener = captureListener(parsed.listener);
 
   const release = parsed.release;
   if (typeof release !== "function") {
@@ -168,8 +182,8 @@ function captureConfig(config: StagingCaseRuntimeLifecycleConfig): {
 
   return {
     server,
-    host: "127.0.0.1",
-    port,
+    host: listener.host,
+    port: listener.port,
     release: release as () => void | Promise<void>,
     drainTimeoutMs,
   };
@@ -597,8 +611,8 @@ export function createStagingCaseRuntimeLifecycle(
           address.port < 0 ||
           address.port > 65_535
         ) {
-          // The server did bind, but not to the exact loopback address the
-          // configuration promised. Close it before reporting failure.
+          // The server did bind, but not to the exact loopback or verified
+          // Pod-network address promised. Close it before reporting failure.
           failBind();
           return;
         }

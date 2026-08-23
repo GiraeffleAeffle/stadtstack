@@ -175,9 +175,13 @@ test("periodic outbox faults fail readiness without replacing old receipt bytes 
   await eventuallyAsync(async () => assert.equal((await get(initial.ports.public!, `/v1/public/case-bindings/by-discussion/${entries[1]!.receipt.rootEventId}`)).status, 200));
 });
 
-test("rejects storage, credential, control, and non-loopback configuration capabilities", () => {
+test("rejects storage, credential, reviewed control deployment, and non-loopback configuration capabilities", () => {
   const valid = config(80);
-  for (const forbidden of ["db", "rootDir", "token", "credential", "control", "admission", "rbac"] as const) {
+  for (const forbidden of [
+    "db", "rootDir", "token", "credential", "control", "admission", "rbac",
+    "reviewedBinding", "expectedBindingChecksum", "reviewedBindingSource", "bindingPinSource",
+    "storageObserver", "bindPlan",
+  ] as const) {
     assert.throws(() => createStagingPublicCaseBindingRuntime({ ...valid, [forbidden]: "not-accepted" } as never), /staging_public_case_binding_runtime_config_invalid/u);
   }
   assert.throws(() => createStagingPublicCaseBindingRuntime({ ...valid, publicListener: { host: "0.0.0.0", port: 0 } as never }), /staging_public_case_binding_runtime_config_invalid/u);

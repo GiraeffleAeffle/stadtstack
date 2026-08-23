@@ -5,6 +5,10 @@ import {
   createStagingCaseRuntimeLifecycle,
   type StagingCaseRuntimePhase,
 } from "./staging-case-runtime-lifecycle.ts";
+import {
+  assertStagingCaseControlListenerBindPlan,
+  type StagingCaseControlListenerBindPlan,
+} from "./staging-case-control-preflight.ts";
 
 export const STAGING_CASE_PROCESS_PHASES = [
   "new",
@@ -26,7 +30,7 @@ export type StagingCaseProcessHealth = Readonly<{
   ports: Readonly<Record<string, number>>;
 }>;
 
-export type StagingCaseProcessListener = {
+export type StagingCaseProcessLoopbackListener = {
   id: string;
   server: Server;
   /**
@@ -36,6 +40,16 @@ export type StagingCaseProcessListener = {
   host: "127.0.0.1";
   port: number;
 };
+
+export type StagingCaseProcessDeploymentListener = {
+  id: "admission" | "outbox" | "probe";
+  server: Server;
+  bindPlan: StagingCaseControlListenerBindPlan;
+};
+
+export type StagingCaseProcessListener =
+  | StagingCaseProcessLoopbackListener
+  | StagingCaseProcessDeploymentListener;
 
 export type StagingCaseProcessLifecycleConfig = {
   listeners: readonly StagingCaseProcessListener[];
@@ -52,8 +66,7 @@ export type StagingCaseProcessLifecycle = Readonly<{
 type CapturedListener = Readonly<{
   id: string;
   server: Server;
-  host: "127.0.0.1";
-  port: number;
+  listener: Readonly<{ host: "127.0.0.1"; port: number }> | StagingCaseControlListenerBindPlan;
 }>;
 
 const PROCESS_DETAILS: Readonly<Record<StagingCaseProcessPhase, StagingCaseProcessHealth["detail"]>> = Object.freeze({
@@ -107,18 +120,39 @@ function captureConfig(input: StagingCaseProcessLifecycleConfig): Readonly<{
   const servers = new Set<Server>();
   const listeners: CapturedListener[] = [];
   for (const rawListener of rawListeners) {
-    const listener = exactObject(rawListener, ["id", "server", "host", "port"]);
+    if (!rawListener || typeof rawListener !== "object" || Array.isArray(rawListener) || utilTypes.isProxy(rawListener) ||
+      Object.getPrototypeOf(rawListener) !== Object.prototype) invalid();
+    const keys = Reflect.ownKeys(rawListener);
+    if (keys.length === 4 && keys.every((key) => key === "id" || key === "server" || key === "host" || key === "port")) {
+      const listener = exactObject(rawListener, ["id", "server", "host", "port"]);
+      if (typeof listener.id !== "string" || !LISTENER_ID.test(listener.id) || ids.has(listener.id) ||
+        utilTypes.isProxy(listener.server) || !(listener.server instanceof Server) || servers.has(listener.server) ||
+        listener.host !== "127.0.0.1" || !Number.isSafeInteger(listener.port) ||
+        (listener.port as number) < 0 || (listener.port as number) > 65_535) invalid();
+      ids.add(listener.id);
+      servers.add(listener.server);
+      listeners.push(Object.freeze({
+        id: listener.id,
+        server: listener.server,
+        listener: Object.freeze({ host: "127.0.0.1" as const, port: listener.port as number }),
+      }));
+      continue;
+    }
+
+    const listener = exactObject(rawListener, ["id", "server", "bindPlan"]);
     if (typeof listener.id !== "string" || !LISTENER_ID.test(listener.id) || ids.has(listener.id) ||
-      utilTypes.isProxy(listener.server) || !(listener.server instanceof Server) || servers.has(listener.server) ||
-      listener.host !== "127.0.0.1" || !Number.isSafeInteger(listener.port) ||
-      (listener.port as number) < 0 || (listener.port as number) > 65_535) invalid();
+      utilTypes.isProxy(listener.server) || !(listener.server instanceof Server) || servers.has(listener.server)) invalid();
+    let deployment: ReturnType<typeof assertStagingCaseControlListenerBindPlan>;
+    try { deployment = assertStagingCaseControlListenerBindPlan(listener.bindPlan); }
+    catch { invalid(); }
+    const expectedId = deployment.id === "private-outbox" ? "outbox" : deployment.id;
+    if (listener.id !== expectedId) invalid();
     ids.add(listener.id);
     servers.add(listener.server);
     listeners.push(Object.freeze({
       id: listener.id,
       server: listener.server,
-      host: "127.0.0.1",
-      port: listener.port as number,
+      listener: listener.bindPlan as StagingCaseControlListenerBindPlan,
     }));
   }
   if (typeof parsed.release !== "function" || utilTypes.isProxy(parsed.release) ||
@@ -144,7 +178,7 @@ export function createStagingCaseProcessLifecycle(
     id: listener.id,
     lifecycle: createStagingCaseRuntimeLifecycle({
       server: listener.server,
-      listener: { host: listener.host, port: listener.port },
+      listener: listener.listener,
       release: () => undefined,
       drainTimeoutMs: config.drainTimeoutMs,
     }),

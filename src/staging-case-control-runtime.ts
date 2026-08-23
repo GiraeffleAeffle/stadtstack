@@ -19,6 +19,17 @@ import {
   type StagingCaseProcessHealth,
 } from "./staging-case-process-lifecycle.ts";
 import {
+  assertStagingCaseControlListenerBindPlan,
+  consumeStagingCaseControlDeploymentProofForRuntime,
+  createStagingCaseControlDeploymentProofFromReviewedSources,
+  createStagingCaseControlListenerBindPlans,
+  type StagingCaseControlBindingPinSource,
+  type StagingCaseControlDeploymentRuntimeFacts,
+  type StagingCaseControlListenerBindPlan,
+  type StagingCaseControlReviewedBindingSource,
+  type StagingCaseControlStorageObserver,
+} from "./staging-case-control-preflight.ts";
+import {
   createStagingCaseStewardTokenAuthenticator,
   type StagingCaseStewardCredential,
 } from "./staging-case-steward-token-authenticator.ts";
@@ -56,6 +67,29 @@ export type StagingCaseControlRuntimeConfig = Readonly<{
   durableState?: DurableSingleWriterState;
 }>;
 
+/** Civic/application inputs for the reviewed Operations composition. Storage,
+ * release, listener hosts and listener ports are deliberately absent. */
+export type OperationsBoundStagingCaseControlApplicationConfig = Readonly<{
+  municipalityId: string;
+  policyVersion: string;
+  actorRegistry: readonly ActorRegistration[];
+  allowedSignerPubkeys: readonly string[];
+  allowedAgentPubkeys: readonly string[];
+  requiredDepartmentIds?: readonly string[];
+  credentials: readonly StagingCaseStewardCredential[];
+  admissionAllowedHosts: readonly string[];
+  outboxAllowedHosts: readonly string[];
+  probeAllowedHosts: readonly string[];
+  drainTimeoutMs: number;
+}>;
+
+export type OperationsBoundStagingCaseControlRuntimeConfig = Readonly<{
+  reviewedBindingSource: StagingCaseControlReviewedBindingSource;
+  bindingPinSource: StagingCaseControlBindingPinSource;
+  storageObserver: StagingCaseControlStorageObserver;
+  application: OperationsBoundStagingCaseControlApplicationConfig;
+}>;
+
 /** Deliberately capability-free runtime surface. */
 export type StagingCaseControlRuntime = Readonly<{
   start(): Promise<void>;
@@ -82,6 +116,12 @@ type CapturedConfig = Readonly<{
   }>;
   drainTimeoutMs: number;
   durableState: DurableSingleWriterState | undefined;
+}>;
+
+type DeploymentListenerPlans = Readonly<{
+  probe: StagingCaseControlListenerBindPlan;
+  outbox: StagingCaseControlListenerBindPlan;
+  admission: StagingCaseControlListenerBindPlan;
 }>;
 
 const ACTOR_ID = /^[A-Za-z0-9:._-]{1,256}$/u;
@@ -260,16 +300,68 @@ function captureConfig(input: StagingCaseControlRuntimeConfig): CapturedConfig {
   });
 }
 
-/**
- * Compose the private Case owner used by the loopback staging tracer.  It has
- * one SQLite owner, an authenticated staff admission server, a credential-free
- * private outbox server, and a capability-free health probe.  This is not a
- * Kubernetes bind adapter and deliberately cannot expose `0.0.0.0`.
- */
-export function createStagingCaseControlRuntime(
-  input: StagingCaseControlRuntimeConfig,
+function captureOperationsApplication(
+  value: unknown,
+  deployment: StagingCaseControlDeploymentRuntimeFacts,
+): CapturedConfig {
+  const parsed = allowedRecord(value, [
+    "municipalityId", "policyVersion", "actorRegistry", "allowedSignerPubkeys", "allowedAgentPubkeys",
+    "requiredDepartmentIds", "credentials", "admissionAllowedHosts", "outboxAllowedHosts",
+    "probeAllowedHosts", "drainTimeoutMs",
+  ]);
+  for (const field of [
+    "municipalityId", "policyVersion", "actorRegistry", "allowedSignerPubkeys", "allowedAgentPubkeys",
+    "credentials", "admissionAllowedHosts", "outboxAllowedHosts", "probeAllowedHosts", "drainTimeoutMs",
+  ]) if (!(field in parsed)) invalid();
+  if (parsed.municipalityId !== deployment.municipalityId) invalid();
+  return captureConfig({
+    deploymentEnvironment: "staging",
+    rootDir: deployment.durableRootDir,
+    municipalityId: parsed.municipalityId as string,
+    policyVersion: parsed.policyVersion as string,
+    actorRegistry: parsed.actorRegistry as readonly ActorRegistration[],
+    allowedSignerPubkeys: parsed.allowedSignerPubkeys as readonly string[],
+    allowedAgentPubkeys: parsed.allowedAgentPubkeys as readonly string[],
+    ...(parsed.requiredDepartmentIds === undefined ? {} : {
+      requiredDepartmentIds: parsed.requiredDepartmentIds as readonly string[],
+    }),
+    credentials: parsed.credentials as readonly StagingCaseStewardCredential[],
+    admissionAllowedHosts: parsed.admissionAllowedHosts as readonly string[],
+    outboxAllowedHosts: parsed.outboxAllowedHosts as readonly string[],
+    probeAllowedHosts: parsed.probeAllowedHosts as readonly string[],
+    // Validation-only reference plans. The deployment composition below never
+    // receives these hosts or ports and instead consumes opaque bind plans.
+    listeners: {
+      probe: { host: "127.0.0.1", port: 0 },
+      outbox: { host: "127.0.0.1", port: 0 },
+      admission: { host: "127.0.0.1", port: 0 },
+    },
+    drainTimeoutMs: parsed.drainTimeoutMs as number,
+    durableState: Object.freeze({
+      mode: "durable_single_writer" as const,
+      sourceReleaseDigest: deployment.releaseDigest,
+    }),
+  });
+}
+
+function deploymentPlans(proofValue: unknown): DeploymentListenerPlans {
+  const plans = createStagingCaseControlListenerBindPlans(proofValue);
+  const find = (id: "admission" | "private-outbox" | "probe"): StagingCaseControlListenerBindPlan => {
+    const plan = plans.find((candidate) => assertStagingCaseControlListenerBindPlan(candidate).id === id);
+    if (!plan) invalid();
+    return plan;
+  };
+  return Object.freeze({
+    probe: find("probe"),
+    outbox: find("private-outbox"),
+    admission: find("admission"),
+  });
+}
+
+function composeStagingCaseControlRuntime(
+  config: CapturedConfig,
+  deployedListeners?: DeploymentListenerPlans,
 ): StagingCaseControlRuntime {
-  const config = captureConfig(input);
   const sqliteOptions: SqliteAtomicTopicCaseAdmissionOptions = {
     rootDir: config.rootDir,
     municipalityId: config.municipalityId,
@@ -324,7 +416,11 @@ export function createStagingCaseControlRuntime(
         })(),
     });
     lifecycle = createStagingCaseProcessLifecycle({
-      listeners: [
+      listeners: deployedListeners ? [
+        { id: "probe", server: probe.server, bindPlan: deployedListeners.probe },
+        { id: "outbox", server: outbox.server, bindPlan: deployedListeners.outbox },
+        { id: "admission", server: admission.server, bindPlan: deployedListeners.admission },
+      ] : [
         { id: "probe", server: probe.server, host: config.listeners.probe.host, port: config.listeners.probe.port },
         { id: "outbox", server: outbox.server, host: config.listeners.outbox.host, port: config.listeners.outbox.port },
         { id: "admission", server: admission.server, host: config.listeners.admission.host, port: config.listeners.admission.port },
@@ -337,4 +433,36 @@ export function createStagingCaseControlRuntime(
     release();
     throw error;
   }
+}
+
+/**
+ * Compose the private Case owner used by the loopback staging tracer.  It has
+ * one SQLite owner, an authenticated staff admission server, a credential-free
+ * private outbox server, and a capability-free health probe.  This is not a
+ * Kubernetes bind adapter and deliberately cannot expose `0.0.0.0`.
+ */
+export function createStagingCaseControlRuntime(
+  input: StagingCaseControlRuntimeConfig,
+): StagingCaseControlRuntime {
+  const config = captureConfig(input);
+  return composeStagingCaseControlRuntime(config);
+}
+
+/**
+ * Reviewed deployment composition for the single private Case owner. The
+ * preflight completes before credentials, SQLite, servers or sockets exist;
+ * only its opaque listener plans can authorize the fixed Pod-network binds.
+ */
+export function createOperationsBoundStagingCaseControlRuntime(
+  input: OperationsBoundStagingCaseControlRuntimeConfig,
+): StagingCaseControlRuntime {
+  const parsed = exactRecord(input, ["reviewedBindingSource", "bindingPinSource", "storageObserver", "application"]);
+  const proof = createStagingCaseControlDeploymentProofFromReviewedSources({
+    reviewedBindingSource: parsed.reviewedBindingSource as StagingCaseControlReviewedBindingSource,
+    bindingPinSource: parsed.bindingPinSource as StagingCaseControlBindingPinSource,
+    storageObserver: parsed.storageObserver as StagingCaseControlStorageObserver,
+  });
+  const deployment = consumeStagingCaseControlDeploymentProofForRuntime(proof);
+  const config = captureOperationsApplication(parsed.application, deployment);
+  return composeStagingCaseControlRuntime(config, deploymentPlans(proof));
 }
