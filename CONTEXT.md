@@ -131,6 +131,12 @@ bytes. It is not a civic Service and never reveals phase details or dependency
 configuration.
 _Avoid_: health API, diagnostics endpoint, admin status
 
+**Case recovery evidence**:
+The authenticated backup receipt, encrypted recovery material and isolated
+fresh-volume restore attestation for one staging Case store. It is operational
+evidence and never a public Case artifact.
+_Avoid_: database snapshot, Terraform state, public archive
+
 **Review attestation**:
 An accountable statement that a named reviewer accepted or rejected a bounded
 artifact under a stated policy and version.

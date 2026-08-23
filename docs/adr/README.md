@@ -63,6 +63,10 @@ publication, runtime operations, public relay writes, or civic effects.
   compose the separate control and public processes on loopback, prove the
   complete HTTP tracer, and require verified Operations policy before network
   exposure.
+- [ADR 0023](./0023-stage-case-state-with-quiesced-backup-and-fresh-volume-restore.md) —
+  give the staging control process one reviewed single-writer claim and block
+  activation until a quiesced encrypted backup has been restored and verified
+  on a fresh claim.
 
 ## Historical
 

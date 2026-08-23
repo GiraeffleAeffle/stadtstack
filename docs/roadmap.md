@@ -65,8 +65,11 @@ Next implementation slices are:
    transport references that preserve one reopened Case and separate staff
    control from public discovery;
 2. compose the implemented staging steward and private outbox Adapters as one
-   two-listener control process plus one replay-before-ready public process,
+   two-civic-listener control process plus one replay-before-ready public process,
    prove the real HTTP tracer, then add the reviewed Operations exposure gate;
+   before activation, bind the control process to one reviewed single-writer
+   claim and prove a quiesced encrypted backup can restore byte-identically to
+   a fresh claim under ADR 0023;
 3. let Röbel discover the Case binding receipt by its signed discussion root
    and advance the public journey without receiving an admission credential;
 4. expose the prepared request and handoff state in the Röbel administration
