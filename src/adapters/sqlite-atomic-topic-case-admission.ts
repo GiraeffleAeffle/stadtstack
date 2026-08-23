@@ -358,11 +358,15 @@ export function verifyCaseShutdownSeal(value: unknown): CaseShutdownSealV1 {
     typeof parsed.databaseByteLength !== "number" || !Number.isSafeInteger(parsed.databaseByteLength) || parsed.databaseByteLength < 1 ||
     typeof parsed.databaseSha256 !== "string" || !SHA256.test(parsed.databaseSha256) ||
     typeof parsed.sealChecksum !== "string" || !SHA256.test(parsed.sealChecksum)) fail("atomic_admission_seal_invalid");
-  requireUtcTimestamp(parsed.closedAtUtc, "atomic_admission_seal_invalid");
+  const closedAtUtc = requireUtcTimestamp(parsed.closedAtUtc, "atomic_admission_seal_invalid");
   const walCheckpoint = ownKeys(parsed.walCheckpoint, ["busy", "checkpointed", "log", "mode"], "atomic_admission_seal_invalid");
-  if (walCheckpoint.mode !== "TRUNCATE" || !Number.isSafeInteger(walCheckpoint.busy) || !Number.isSafeInteger(walCheckpoint.log) ||
-    !Number.isSafeInteger(walCheckpoint.checkpointed) || walCheckpoint.busy !== 0 || walCheckpoint.log < 0 ||
-    walCheckpoint.checkpointed < 0 || walCheckpoint.log !== walCheckpoint.checkpointed) {
+  const checkpointBusy = walCheckpoint.busy;
+  const checkpointLog = walCheckpoint.log;
+  const checkpointed = walCheckpoint.checkpointed;
+  if (walCheckpoint.mode !== "TRUNCATE" || typeof checkpointBusy !== "number" || typeof checkpointLog !== "number" ||
+    typeof checkpointed !== "number" || !Number.isSafeInteger(checkpointBusy) || !Number.isSafeInteger(checkpointLog) ||
+    !Number.isSafeInteger(checkpointed) || checkpointBusy !== 0 || checkpointLog < 0 || checkpointed < 0 ||
+    checkpointLog !== checkpointed) {
     fail("atomic_admission_seal_invalid");
   }
   const recoveryEvidence = verifyCaseStateRecoveryEvidence(parsed.recoveryEvidence);
@@ -381,12 +385,12 @@ export function verifyCaseShutdownSeal(value: unknown): CaseShutdownSealV1 {
     databaseBasename: parsed.databaseBasename,
     databaseByteLength: parsed.databaseByteLength,
     databaseSha256: parsed.databaseSha256,
-    closedAtUtc: parsed.closedAtUtc,
+    closedAtUtc,
     walCheckpoint: Object.freeze({
       mode: "TRUNCATE" as const,
-      busy: walCheckpoint.busy as number,
-      log: walCheckpoint.log as number,
-      checkpointed: walCheckpoint.checkpointed as number,
+      busy: checkpointBusy,
+      log: checkpointLog,
+      checkpointed,
     }),
     recoveryEvidence,
     sealChecksum,
@@ -1150,16 +1154,19 @@ export function createSqliteAtomicTopicCaseAdmission(
       recoveryEvidence = verifyCaseStateRecoveryEvidence(createCaseStateRecoveryEvidence({ caseJournalHeads, outboxEntries }));
 
       const checkpoint = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy?: number; log?: number; checkpointed?: number } | undefined;
-      if (!checkpoint || !Number.isSafeInteger(checkpoint.busy) || !Number.isSafeInteger(checkpoint.log) ||
-        !Number.isSafeInteger(checkpoint.checkpointed) || checkpoint.busy !== 0 || checkpoint.log < 0 ||
-        checkpoint.checkpointed < 0 || checkpoint.log !== checkpoint.checkpointed) {
+      const checkpointBusy = checkpoint?.busy;
+      const checkpointLog = checkpoint?.log;
+      const checkpointed = checkpoint?.checkpointed;
+      if (typeof checkpointBusy !== "number" || typeof checkpointLog !== "number" || typeof checkpointed !== "number" ||
+        !Number.isSafeInteger(checkpointBusy) || !Number.isSafeInteger(checkpointLog) || !Number.isSafeInteger(checkpointed) ||
+        checkpointBusy !== 0 || checkpointLog < 0 || checkpointed < 0 || checkpointLog !== checkpointed) {
         fail("atomic_admission_seal_checkpoint_invalid");
       }
       walCheckpoint = Object.freeze({
         mode: "TRUNCATE" as const,
-        busy: checkpoint.busy as number,
-        log: checkpoint.log as number,
-        checkpointed: checkpoint.checkpointed as number,
+        busy: checkpointBusy,
+        log: checkpointLog,
+        checkpointed,
       });
     } catch (error) {
       // The municipal DB and the durable owner transaction intentionally stay
