@@ -102,6 +102,8 @@ test("the remote publisher is main-only, digest-attested, and has no deployment 
   assert.match(workflow, /git diff --exit-code/u);
   assert.match(workflow, /git archive --format=tar "\$GITHUB_SHA"/u);
   assert.match(workflow, /case-build-context/u);
+  assert.ok(workflow.includes("printf '%s\\n' .dockerignore"));
+  assert.ok(!workflow.includes("printf '%s\\\\n' .dockerignore"));
   assert.match(workflow, /outputs: type=oci,dest=/u);
   assert.match(workflow, /scripts\/publish-case-image-from-oci\.mjs/u);
   assert.match(workflow, /oras-project\/setup-oras@[a-f0-9]{40}/u);
