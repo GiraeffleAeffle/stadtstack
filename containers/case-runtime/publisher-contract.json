@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "stadtstack_case_remote_publisher_v1",
+  "sourceRepository": "GiraeffleAeffle/stadtstack",
+  "sourceRef": "refs/heads/main",
+  "workflowPath": ".github/workflows/case-staging-publish.yml",
+  "publication": {
+    "remoteOnly": true,
+    "immutableSourceTagFormat": "source-<exact-40-lowercase-hex>",
+    "duplicateSourcePublication": "reuse_only_when_exact_digest_matches_fail_closed_otherwise",
+    "provenancePredicateType": "https://slsa.dev/provenance/v1",
+    "sbomFormat": "SPDX-2.3",
+    "sbomPredicateType": "https://spdx.dev/Document/v2.3",
+    "publicPackageVisibilityRequired": true,
+    "anonymousDigestPullRequired": true,
+    "anonymousReceiptOutput": "stdout_for_later_independent_review",
+    "automaticOperationsHandoff": false,
+    "registryRetry": {
+      "maxAttempts": 4,
+      "delayMilliseconds": [
+        1000,
+        2000,
+        4000
+      ],
+      "retryable": "transport_429_or_5xx_only",
+      "initialExplicitAbsenceRetry": false,
+      "postPublishAbsenceRetry": true,
+      "authenticationRetry": false,
+      "immutableMismatchRetry": false
+    },
+    "anonymousDigestPullReceipt": {
+      "schemaVersion": "stadtstack_case_anonymous_digest_pull_receipt_v1",
+      "canonicalEncoding": "canonical-json",
+      "authContext": "clean-empty-auth-config",
+      "authConfigCanonicalJson": "{\"auths\":{}}",
+      "authConfigCanonicalSha256": "sha256:ec21c035eccb78eb5ca20ec95628eb351633621e09a130ac8d7e663714d40c7a",
+      "resolverIdentity": "oras-resolve-anonymous",
+      "imageReferenceFormat": "<imageRepository>@<manifestDigest>",
+      "bindings": [
+        "component",
+        "imageRepository",
+        "manifestDigest",
+        "sourceRevision"
+      ],
+      "resolvedManifestDigestMustEqualManifestDigest": true,
+      "receiptDigest": {
+        "algorithm": "sha256",
+        "encoding": "canonical-json",
+        "covers": [
+          "schemaVersion",
+          "canonicalEncoding",
+          "component",
+          "imageRepository",
+          "manifestDigest",
+          "sourceRevision",
+          "authContext",
+          "authConfigCanonicalSha256",
+          "resolverIdentity",
+          "resolvedManifestDigest"
+        ]
+      }
+    },
+    "activation": "blocked_pending_reviewed_recovery_evidence"
+  },
+  "components": [
+    {
+      "component": "case-steward-control",
+      "imageRepository": "ghcr.io/giraeffleaeffle/stadtstack-case-steward-control"
+    },
+    {
+      "component": "case-public-binding",
+      "imageRepository": "ghcr.io/giraeffleaeffle/stadtstack-case-public-binding"
+    },
+    {
+      "component": "case-restore-verifier",
+      "imageRepository": "ghcr.io/giraeffleaeffle/stadtstack-case-restore-verifier"
+    }
+  ],
+  "effects": {
+    "localContainerBuild": false,
+    "clusterMutation": false,
+    "fluxReconciliation": false,
+    "secretRead": false,
+    "civicMutation": false,
+    "treasuryMutation": false
+  }
+}

@@ -69,6 +69,14 @@ paths/imports, secret-shaped text, license attribution, Markdown links, and
 Git object integrity. A check that is not configured is reported as a gap; it
 is never described as passed by implication.
 
+The three future Case component images have a separate, remote-only publisher
+with a closed `git archive` build context, retry-safe immutable source tags,
+GitHub-OIDC provenance, SPDX SBOM evidence, and anonymous digest-pull
+verification. The images contain only an activation blocker, not Case source
+or dependencies. They are intentionally activation-blocked until the reviewed
+ADR 0023 recovery gate and runtime composition exist; see
+[Case image publishing](docs/CASE_IMAGE_PUBLISHING.md).
+
 ## Architecture
 
 Read [`CONTEXT.md`](CONTEXT.md) for the domain language and
