@@ -66,7 +66,7 @@ jobs:
             .dockerignore \
             containers/case-runtime/Containerfile \
             containers/case-runtime/activation-blocked.mjs | tar -xf - -C "$context"
-          test "$(find "$context" -type f | sed "s#^$context/##" | LC_ALL=C sort)" = "$(printf '%s\\n' .dockerignore containers/case-runtime/Containerfile containers/case-runtime/activation-blocked.mjs)"
+          test "$(find "$context" -type f | sed "s#^$context/##" | LC_ALL=C sort)" = "$(printf '%s\n' .dockerignore containers/case-runtime/Containerfile containers/case-runtime/activation-blocked.mjs)"
           for path in .dockerignore containers/case-runtime/Containerfile containers/case-runtime/activation-blocked.mjs; do
             test "$(git show "$GITHUB_SHA:$path" | sha256sum | cut -d' ' -f1)" = "$(sha256sum "$context/$path" | cut -d' ' -f1)"
           done
