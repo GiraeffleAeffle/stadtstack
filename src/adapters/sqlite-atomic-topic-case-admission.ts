@@ -2,15 +2,18 @@ import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   closeSync,
+  copyFileSync,
   existsSync,
   fsyncSync,
   lstatSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   readdirSync,
   readSync,
   realpathSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeSync,
@@ -498,16 +501,21 @@ function invalidatePriorSeal(rootDir: string, municipalityId: string): void {
   try { fsyncSync(directoryDescriptor); } finally { closeSync(directoryDescriptor); }
 }
 
-function closedDatabaseIdentity(rootDir: string, seal: CaseShutdownSealV2): Readonly<{ basename: string; byteLength: number; sha256: string }> {
-  if (seal.municipalityId === "") fail("atomic_admission_recovery_seal_invalid");
-  const databasePath = join(rootDir, seal.databaseBasename);
+function assertRecoverySidecarsAreEmpty(databasePath: string): void {
   for (const suffix of ["", "-wal", "-shm"] as const) {
     const candidate = `${databasePath}${suffix}`;
     ensureNotSymlink(candidate);
-    if (suffix !== "" && existsSync(candidate) && statSync(candidate).size !== 0) {
-      fail("atomic_admission_recovery_sidecar_nonempty");
+    if (suffix !== "" && existsSync(candidate)) {
+      const sidecar = statSync(candidate);
+      if (!sidecar.isFile() || sidecar.size !== 0) fail("atomic_admission_recovery_sidecar_nonempty");
     }
   }
+}
+
+function closedDatabaseIdentity(rootDir: string, seal: CaseShutdownSealV2): Readonly<{ basename: string; byteLength: number; sha256: string }> {
+  if (seal.municipalityId === "") fail("atomic_admission_recovery_seal_invalid");
+  const databasePath = join(rootDir, seal.databaseBasename);
+  assertRecoverySidecarsAreEmpty(databasePath);
   if (!existsSync(databasePath)) fail("atomic_admission_recovery_seal_invalid");
   const databaseStat = statSync(databasePath);
   if (!databaseStat.isFile() || databaseStat.size !== seal.databaseByteLength || sha256File(databasePath) !== seal.databaseSha256) {
@@ -520,7 +528,7 @@ function requireExistingRecoveryDatabase(databasePath: string): Readonly<{ dev: 
   ensureNotSymlink(databasePath);
   if (!existsSync(databasePath)) fail("atomic_admission_recovery_database_required");
   const databaseStat = statSync(databasePath);
-  if (!databaseStat.isFile() || databaseStat.size < 1) fail("atomic_admission_recovery_database_required");
+  if (!databaseStat.isFile() || !hasSqliteHeader(databasePath)) fail("atomic_admission_recovery_database_required");
   return Object.freeze({ dev: databaseStat.dev, ino: databaseStat.ino });
 }
 
@@ -1046,17 +1054,77 @@ function rejectLegacyDurableCaseRecords(db: DatabaseSync): void {
 
 /** Read-only preflight for a durable volume. It runs before recovery metadata
  * can be rotated or a prior shutdown seal can be invalidated. */
-function preflightRejectLegacyDurableCaseRecords(databasePath: string): void {
+function hasSqliteHeader(databasePath: string): boolean {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(databasePath, "r");
+    const header = Buffer.alloc(16);
+    return readSync(descriptor, header, 0, header.length, 0) === header.length &&
+      header.equals(Buffer.from("SQLite format 3\0", "utf8"));
+  } catch {
+    return false;
+  } finally {
+    if (descriptor !== undefined) try { closeSync(descriptor); } catch { /* best effort */ }
+  }
+}
+
+function scanLegacyDurableCaseRecords(database: DatabaseSync): void {
+  // Validate the complete read-only schema first. A partial schema must not
+  // bypass a table scan and continue far enough to consume a seal or epoch.
+  ensureSchema(database, false);
+  rejectLegacyDurableCaseRecords(database);
+}
+
+/** Read-only preflight for a durable volume. It runs before recovery metadata
+ * can be rotated or a prior shutdown seal can be invalidated. Sealed/marked
+ * recovery rejects any non-empty sidecar; an unsealed process-death recovery
+ * instead scans a private DB+WAL snapshot so its live crash evidence remains
+ * visible without mutating the durable volume. */
+function preflightRejectLegacyDurableCaseRecords(databasePath: string, sealedOrMarkedRecovery: boolean): void {
+  // Do this before the missing/corrupt-database fallback. A marker or clean
+  // seal is a closed recovery boundary, so an unexpected non-empty sidecar
+  // must fail before durable recovery reconciliation or epoch/seal mutation,
+  // even if the main DB was removed or truncated.
+  if (sealedOrMarkedRecovery) assertRecoverySidecarsAreEmpty(databasePath);
   if (!existsSync(databasePath)) return;
-  const database = new DatabaseSync(databasePath, {
+  ensureNotSymlink(databasePath);
+  if (!hasSqliteHeader(databasePath)) return;
+  if (!sealedOrMarkedRecovery) {
+    const snapshotRoot = mkdtempSync(join(tmpdir(), "stadtstack-legacy-preflight-"));
+    const snapshotPath = join(snapshotRoot, "database.sqlite");
+    try {
+      copyFileSync(databasePath, snapshotPath);
+      for (const suffix of ["-wal", "-shm"] as const) {
+        const source = `${databasePath}${suffix}`;
+        ensureNotSymlink(source);
+        if (!existsSync(source)) continue;
+        const sidecar = statSync(source);
+        if (!sidecar.isFile()) fail("atomic_admission_recovery_sidecar_nonempty");
+        copyFileSync(source, `${snapshotPath}${suffix}`);
+      }
+      const database = new DatabaseSync(snapshotPath, { readOnly: true, enableForeignKeyConstraints: true });
+      try { scanLegacyDurableCaseRecords(database); } finally { database.close(); }
+    } finally {
+      rmSync(snapshotRoot, { recursive: true, force: true });
+    }
+    return;
+  }
+  // `immutable=1` intentionally ignores WAL content. Refuse every non-empty
+  // sidecar before that immutable scan so a legacy row cannot be hidden in an
+  // uncheckpointed WAL while startup rotates recovery metadata.
+  // A normal read-only SQLite connection may still materialize a non-empty
+  // WAL shared-memory sidecar. Recovery intentionally rejects such sidecars
+  // as unsealed state, so this preflight must be immutable rather than merely
+  // read-only: it may inspect a sealed database but must not alter its durable
+  // recovery surface before receipt, claim, or seal mutation.
+  const databaseLocation = pathToFileURL(databasePath);
+  databaseLocation.searchParams.set("immutable", "1");
+  const database = new DatabaseSync(databaseLocation, {
     readOnly: true,
     enableForeignKeyConstraints: true,
   });
   try {
-    // Validate the complete read-only schema first. A partial schema must not
-    // bypass a table scan and continue far enough to consume a seal or epoch.
-    ensureSchema(database, false);
-    rejectLegacyDurableCaseRecords(database);
+    scanLegacyDurableCaseRecords(database);
   } finally {
     database.close();
   }
@@ -1176,7 +1244,12 @@ export function createSqliteAtomicTopicCaseAdmission(
   let bootstrapReceiptForTransition: CaseStoreBootstrapV1 | undefined;
   try {
     if (durableOwner) {
-      preflightRejectLegacyDurableCaseRecords(databasePath);
+      // These canonical reads are intentionally before durable recovery
+      // reconciliation or epoch/seal mutation: they select the preflight's
+      // sidecar policy only.
+      const preflightMarker = readCanonicalRecoveryActivationMarker(config.rootDir);
+      const preflightSeal = readCanonicalPriorSeal(config.rootDir);
+      preflightRejectLegacyDurableCaseRecords(databasePath, preflightMarker !== undefined || preflightSeal !== undefined);
       const expectedTargetClaim = config.deploymentClaimToken
         ? consumeCaseDurableDeploymentClaimToken(config.deploymentClaimToken)
         : undefined;
