@@ -60,6 +60,9 @@ The pure router is GET-only, value-free, correction-aware and
 byte/checksum-preserving. It rejects snapshots above the Röbel consumer's
 512,000-byte default. Its bundled Node listener is loopback-only and
 rejects query strings, writes, unknown routes and non-loopback Host headers.
-A production Adapter may mount that router behind a reviewed ingress without
-widening the two paths. Deployment and city-specific review data belong in the
+A source-only staging tracer now bundles exactly one synthetic `roebel-mueritz`
+projection for each source kind through that same Interface. It stays
+loopback-only and un-deployed; its closed remote publication evidence is
+documented in [reviewed runtime publishing](REVIEWED_KNOWLEDGE_RUNTIME_PUBLISHING.md).
+Production deployment and city-specific review data still belong in the
 appropriate private operations repository.

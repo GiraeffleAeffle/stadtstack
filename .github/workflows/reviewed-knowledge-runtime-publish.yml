@@ -1,0 +1,151 @@
+name: reviewed-knowledge-runtime-publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/reviewed-knowledge-runtime-publish.yml
+      - .dockerignore
+      - containers/reviewed-knowledge-runtime/**
+      - scripts/publish-reviewed-knowledge-image-from-oci.mjs
+      - src/reviewed-public-knowledge.ts
+      - src/reviewed-public-knowledge-server.ts
+      - src/staging-reviewed-public-knowledge-runtime.ts
+      - src/reviewed-knowledge-runtime-entrypoint.mjs
+  workflow_dispatch:
+
+# Source publication only. This workflow has no Kubernetes, Flux, civic-data,
+# admission, administration, or treasury credential.
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: reviewed-knowledge-runtime-publish-${{ github.repository }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'GiraeffleAeffle/stadtstack'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the reviewed publisher ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "${#GITHUB_SHA}" -eq 40
+          case "$GITHUB_SHA" in *[!0-9a-f]*) exit 1;; esac
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Materialize closed reviewed-runtime context
+        id: context
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code
+          context="$RUNNER_TEMP/reviewed-knowledge-runtime-context"
+          rm -rf "$context"
+          mkdir -p "$context"
+          git archive --format=tar "$GITHUB_SHA" -- \
+            .dockerignore \
+            containers/reviewed-knowledge-runtime/Containerfile \
+            src/reviewed-public-knowledge.ts \
+            src/reviewed-public-knowledge-server.ts \
+            src/staging-reviewed-public-knowledge-runtime.ts \
+            src/reviewed-knowledge-runtime-entrypoint.mjs | tar -xf - -C "$context"
+          test "$(find "$context" -type f | sed "s#^$context/##" | LC_ALL=C sort)" = "$(printf '%s\n' .dockerignore containers/reviewed-knowledge-runtime/Containerfile src/reviewed-knowledge-runtime-entrypoint.mjs src/reviewed-public-knowledge.ts src/reviewed-public-knowledge-server.ts src/staging-reviewed-public-knowledge-runtime.ts)"
+          for path in .dockerignore containers/reviewed-knowledge-runtime/Containerfile src/reviewed-knowledge-runtime-entrypoint.mjs src/reviewed-public-knowledge.ts src/reviewed-public-knowledge-server.ts src/staging-reviewed-public-knowledge-runtime.ts; do
+            test "$(git show "$GITHUB_SHA:$path" | sha256sum | cut -d' ' -f1)" = "$(sha256sum "$context/$path" | cut -d' ' -f1)"
+          done
+          echo "path=$context" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build one closed local OCI archive
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: ${{ steps.context.outputs.path }}
+          file: containers/reviewed-knowledge-runtime/Containerfile
+          push: false
+          platforms: linux/amd64
+          build-args: |
+            SOURCE_REPOSITORY=https://github.com/GiraeffleAeffle/stadtstack
+            SOURCE_REVISION=${{ github.sha }}
+          outputs: type=oci,dest=${{ runner.temp }}/reviewed-public-knowledge-runtime.oci.tar,name=stadtstack.local/stadtstack-reviewed-public-knowledge-runtime:source-${{ github.sha }},annotation.io.containerd.image.name=stadtstack.local/stadtstack-reviewed-public-knowledge-runtime:source-${{ github.sha }},rewrite-timestamp=true
+          cache-from: type=gha,scope=stadtstack-reviewed-knowledge-runtime
+          cache-to: type=gha,mode=max,scope=stadtstack-reviewed-knowledge-runtime
+          provenance: false
+          sbom: false
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1.3.0
+      - name: Publish or reuse exact immutable source tag
+        id: publish
+        env:
+          ARCHIVE: ${{ runner.temp }}/reviewed-public-knowledge-runtime.oci.tar
+          IMAGE: ghcr.io/giraeffleaeffle/stadtstack-reviewed-public-knowledge-runtime
+          SOURCE_TAG: source-${{ github.sha }}
+          LOCAL_REFERENCE: source-${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(node scripts/publish-reviewed-knowledge-image-from-oci.mjs --archive "$ARCHIVE" --local-reference "$LOCAL_REFERENCE" --image "$IMAGE" --tag "$SOURCE_TAG")"
+          digest="$(node --input-type=module -e 'const value = JSON.parse(process.argv[1]); if (!/^sha256:[a-f0-9]{64}$/.test(value.digest)) process.exit(1); process.stdout.write(value.digest)' "$result")"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Produce SPDX 2.3 SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.20.8
+        with:
+          image: ghcr.io/giraeffleaeffle/stadtstack-reviewed-public-knowledge-runtime@${{ steps.publish.outputs.digest }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/reviewed-public-knowledge-runtime.spdx.json
+      - name: Attest GitHub OIDC SLSA provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.1.0
+        with:
+          subject-name: ghcr.io/giraeffleaeffle/stadtstack-reviewed-public-knowledge-runtime
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Attest SPDX 2.3 SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v2.0.0
+        with:
+          subject-name: ghcr.io/giraeffleaeffle/stadtstack-reviewed-public-knowledge-runtime
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          predicate-type: https://spdx.dev/Document/v2.3
+          predicate-path: ${{ runner.temp }}/reviewed-public-knowledge-runtime.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+      - name: Verify provenance and SPDX evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/giraeffleaeffle/stadtstack-reviewed-public-knowledge-runtime
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          WORKFLOW_IDENTITY: https://github.com/GiraeffleAeffle/stadtstack/.github/workflows/reviewed-knowledge-runtime-publish.yml@refs/heads/main
+        shell: bash
+        run: |
+          set -euo pipefail
+          for predicate in https://slsa.dev/provenance/v1 https://spdx.dev/Document/v2.3; do
+            gh attestation verify "oci://$IMAGE@$DIGEST" --repo GiraeffleAeffle/stadtstack --cert-identity "$WORKFLOW_IDENTITY" --source-digest "$GITHUB_SHA" --source-ref refs/heads/main --predicate-type "$predicate" --bundle-from-oci
+          done
+      - name: Verify anonymous immutable tag and digest pulls
+        env:
+          ARCHIVE: ${{ runner.temp }}/reviewed-public-knowledge-runtime.oci.tar
+          IMAGE: ghcr.io/giraeffleaeffle/stadtstack-reviewed-public-knowledge-runtime
+          SOURCE_TAG: source-${{ github.sha }}
+          LOCAL_REFERENCE: source-${{ github.sha }}
+          ANONYMOUS_REGISTRY_CONFIG: ${{ runner.temp }}/oras-anonymous-registry.json
+          ANONYMOUS_PULL_DIR: ${{ runner.temp }}/oras-anonymous-pull
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' '{"auths":{}}' > "$ANONYMOUS_REGISTRY_CONFIG"
+          mkdir -p "$RUNNER_TEMP/oras-anonymous" "$ANONYMOUS_PULL_DIR"
+          test -z "$(find "$ANONYMOUS_PULL_DIR" -mindepth 1 -print -quit)"
+          DOCKER_CONFIG="$RUNNER_TEMP/oras-anonymous" node scripts/publish-reviewed-knowledge-image-from-oci.mjs --archive "$ARCHIVE" --local-reference "$LOCAL_REFERENCE" --image "$IMAGE" --tag "$SOURCE_TAG" --anonymous-registry-config "$ANONYMOUS_REGISTRY_CONFIG" --anonymous-pull-dir "$ANONYMOUS_PULL_DIR"
