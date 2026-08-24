@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, statfsSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   assertStagingCaseControlDeploymentProof,
@@ -17,6 +19,11 @@ import {
   type StagingCaseControlReviewedBindingV1,
   type StagingCaseControlStorageObservation,
 } from "../src/staging-case-control-preflight.ts";
+import {
+  captureStagingCaseRuntimeDeploymentListener,
+  type StagingCaseRuntimeDeploymentListenerCapability,
+} from "../src/staging-case-runtime-listener-capability.ts";
+import { createStagingCaseRuntimeLifecycle } from "../src/staging-case-runtime-lifecycle.ts";
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -154,43 +161,98 @@ function preflight(value = binding(), observed = observation(value), expectedBin
   });
 }
 
-function sourceFiles(root: string): readonly string[] {
-  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(root, entry.name);
-    if (entry.isDirectory()) return sourceFiles(path);
-    return entry.isFile() && entry.name.endsWith(".ts") ? [path] : [];
+const repositoryRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+
+function implementationFiles(directory: string): readonly string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return implementationFiles(path);
+    return entry.isFile() && /\.(?:[cm]?js|ts)$/u.test(entry.name) ? [path] : [];
   });
+}
+
+function repositoryPath(path: string): string {
+  return relative(repositoryRoot, path).replaceAll("\\", "/");
+}
+
+function publishedCaseRuntimeImplementationPaths(): readonly string[] {
+  const contract = JSON.parse(readFileSync(
+    join(repositoryRoot, "containers/case-runtime/publisher-contract.json"),
+    "utf8",
+  )) as Readonly<{
+    componentSourceClosures: Readonly<Record<string, string | null>>;
+    componentBuildContexts: Readonly<Record<string, readonly string[]>>;
+  }>;
+  const paths = new Set<string>();
+  for (const closurePath of Object.values(contract.componentSourceClosures)) {
+    if (closurePath === null) continue;
+    for (const path of readFileSync(join(repositoryRoot, closurePath), "utf8").trim().split("\n")) {
+      paths.add(path);
+    }
+  }
+  for (const context of Object.values(contract.componentBuildContexts)) {
+    for (const path of context) if (/\.(?:[cm]?js|ts)$/u.test(path)) paths.add(path);
+  }
+  return Object.freeze([...paths].sort());
 }
 
 test("the supported Interface boundary restricts internal proof imports to control composition", () => {
   const boundaries = new Map<string, Readonly<{ definition: string; consumers: ReadonlySet<string> }>>([
-    ["consumeStagingCaseControlDeploymentProofForRuntime", { definition: "staging-case-control-preflight.ts", consumers: new Set(["staging-case-control-runtime.ts", "case-durable-deployment-claim.ts"]) }],
-    ["createStagingCaseControlDeploymentProofFromReviewedSources", { definition: "staging-case-control-preflight.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
-    ["createStagingCaseControlListenerBindPlans", { definition: "staging-case-control-preflight.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
-    ["assertStagingCaseControlListenerBindPlan", { definition: "staging-case-control-preflight.ts", consumers: new Set([
-      "staging-case-control-runtime.ts", "staging-case-process-lifecycle.ts", "staging-case-runtime-lifecycle.ts",
+    ["consumeStagingCaseControlDeploymentProofForRuntime", { definition: "src/staging-case-control-preflight.ts", consumers: new Set(["src/staging-case-control-runtime.ts", "src/case-durable-deployment-claim.ts"]) }],
+    ["createStagingCaseControlDeploymentProofFromReviewedSources", { definition: "src/staging-case-control-preflight.ts", consumers: new Set(["src/staging-case-control-runtime.ts"]) }],
+    ["createStagingCaseControlListenerBindPlans", { definition: "src/staging-case-control-preflight.ts", consumers: new Set(["src/staging-case-control-runtime.ts"]) }],
+    ["assertStagingCaseControlListenerBindPlan", { definition: "src/staging-case-control-preflight.ts", consumers: new Set([
+      "src/staging-case-control-runtime.ts", "src/staging-case-process-lifecycle.ts",
     ]) }],
-    ["createCaseDurableDeploymentClaimToken", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
-    ["consumeCaseDurableDeploymentClaimToken", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts", "staging-case-recovery-activation-authority.ts"]) }],
-    ["readCanonicalCaseDurableDeploymentClaim", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
-    ["writeCanonicalCaseDurableDeploymentClaim", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
-    ["replaceCanonicalCaseDurableDeploymentClaim", { definition: "case-durable-deployment-claim.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
-    ["createStagingCaseRecoveryActivationAuthorization", { definition: "staging-case-recovery-activation-authority.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
-    ["consumeStagingCaseRecoveryActivationAuthorization", { definition: "staging-case-recovery-activation-authority.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
-    ["consumeStagingCaseRecoveryActivationLease", { definition: "staging-case-recovery-activation-authority.ts", consumers: new Set(["sqlite-atomic-topic-case-admission.ts"]) }],
-    ["assertStagingCaseRecoveryActivationAuthorizationFresh", { definition: "staging-case-recovery-activation-authority.ts", consumers: new Set(["staging-case-control-runtime.ts"]) }],
-    ["createStagingCaseRecoveryGateFromReviewedSources", { definition: "staging-case-recovery-attestation.ts", consumers: new Set(["staging-case-recovery-activation-authority.ts"]) }],
-    ["consumeStagingCaseRecoveryGateForRuntime", { definition: "staging-case-recovery-attestation.ts", consumers: new Set(["staging-case-recovery-activation-authority.ts"]) }],
+    ["registerStagingCaseRuntimeDeploymentListenerCapability", { definition: "src/staging-case-runtime-listener-capability.ts", consumers: new Set([
+      "src/staging-case-control-preflight.ts",
+    ]) }],
+    ["createCaseDurableDeploymentClaimToken", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/staging-case-control-runtime.ts"]) }],
+    ["consumeCaseDurableDeploymentClaimToken", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts", "src/staging-case-recovery-activation-authority.ts"]) }],
+    ["readCanonicalCaseDurableDeploymentClaim", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
+    ["writeCanonicalCaseDurableDeploymentClaim", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
+    ["replaceCanonicalCaseDurableDeploymentClaim", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
+    ["createStagingCaseRecoveryActivationAuthorization", { definition: "src/staging-case-recovery-activation-authority.ts", consumers: new Set(["src/staging-case-control-runtime.ts"]) }],
+    ["consumeStagingCaseRecoveryActivationAuthorization", { definition: "src/staging-case-recovery-activation-authority.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
+    ["consumeStagingCaseRecoveryActivationLease", { definition: "src/staging-case-recovery-activation-authority.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
+    ["assertStagingCaseRecoveryActivationAuthorizationFresh", { definition: "src/staging-case-recovery-activation-authority.ts", consumers: new Set(["src/staging-case-control-runtime.ts"]) }],
+    ["createStagingCaseRecoveryGateFromReviewedSources", { definition: "src/staging-case-recovery-attestation.ts", consumers: new Set(["src/staging-case-recovery-activation-authority.ts"]) }],
+    ["consumeStagingCaseRecoveryGateForRuntime", { definition: "src/staging-case-recovery-attestation.ts", consumers: new Set(["src/staging-case-recovery-activation-authority.ts"]) }],
   ]);
-  for (const path of sourceFiles(resolve("src"))) {
-    const source = readFileSync(path, "utf8");
-    const name = path.slice(path.lastIndexOf("/") + 1);
+  const guardedFiles = [
+    ...implementationFiles(join(repositoryRoot, "src")),
+    ...implementationFiles(join(repositoryRoot, "containers/case-runtime")),
+  ].map(repositoryPath).sort();
+  const guardedPaths = new Set(guardedFiles);
+  for (const path of publishedCaseRuntimeImplementationPaths()) {
+    assert.equal(guardedPaths.has(path), true, `${path} must be covered by the Interface guard`);
+  }
+
+  const assertSource = (path: string, source: string): void => {
     for (const [symbol, boundary] of boundaries) {
-      if (name !== boundary.definition && source.includes(symbol)) {
-        assert.equal(boundary.consumers.has(name), true, `${name} must not import ${symbol}`);
+      if (path !== boundary.definition && source.includes(symbol)) {
+        assert.equal(boundary.consumers.has(path), true, `${path} must not import ${symbol}`);
       }
     }
+  };
+  for (const path of guardedFiles) {
+    const absolutePath = join(repositoryRoot, path);
+    assertSource(path, readFileSync(absolutePath, "utf8"));
   }
+  assert.throws(
+    () => assertSource(
+      "src/forged/staging-case-control-preflight.ts",
+      "registerStagingCaseRuntimeDeploymentListenerCapability();",
+    ),
+    /must not import registerStagingCaseRuntimeDeploymentListenerCapability/u,
+  );
+  assert.throws(
+    () => assertSource(
+      "containers/case-runtime/runtime-entrypoint-common.mjs",
+      "registerStagingCaseRuntimeDeploymentListenerCapability();",
+    ),
+    /must not import registerStagingCaseRuntimeDeploymentListenerCapability/u,
+  );
 });
 
 test("a canonical reviewed binding plus exact local observation yields an opaque pod-network proof", () => {
@@ -223,7 +285,42 @@ test("a canonical reviewed binding plus exact local observation yields an opaque
     { id: "private-outbox", host: "0.0.0.0", port: 18087 },
     { id: "probe", host: "0.0.0.0", port: 18088 },
   ]);
+  assert.deepEqual(plans.map(captureStagingCaseRuntimeDeploymentListener), [
+    { host: "0.0.0.0", port: 18_085 },
+    { host: "0.0.0.0", port: 18_087 },
+    { host: "0.0.0.0", port: 18_088 },
+  ]);
+  assert.equal(captureStagingCaseRuntimeDeploymentListener(structuredClone(plans[0]!)), undefined);
   assert.throws(() => assertStagingCaseControlListenerBindPlan(structuredClone(plans[0]!)), /staging_case_control_preflight_bind_plan_invalid/u);
+});
+
+test("only an exact proof-derived bind plan crosses the runtime listener seam", async () => {
+  const proof = preflight();
+  const plan = createStagingCaseControlListenerBindPlans(proof)[0]!;
+  const lifecycle = createStagingCaseRuntimeLifecycle({
+    server: createServer(),
+    // The runtime brand is intentionally module-private and represented only
+    // by the WeakMap registration performed during preflight. Cross that
+    // compile-time seam explicitly; the executable assertion below proves a
+    // structural clone or forged object still cannot cross it.
+    listener: plan as unknown as StagingCaseRuntimeDeploymentListenerCapability,
+    release: () => undefined,
+    drainTimeoutMs: 100,
+  });
+  await lifecycle.close();
+
+  for (const listener of [
+    { id: "admission", host: "0.0.0.0", port: 18_085 },
+    { host: "0.0.0.0", port: 18_085 },
+    structuredClone(plan),
+  ]) {
+    assert.throws(() => createStagingCaseRuntimeLifecycle({
+      server: createServer(),
+      listener: listener as never,
+      release: () => undefined,
+      drainTimeoutMs: 100,
+    }), /staging_case_runtime_config_invalid/u);
+  }
 });
 
 test("reviewed binding rejects checksum drift, unknown structure, accessors, proxies, and changed listener identity", () => {

@@ -1,24 +1,35 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { types as utilTypes } from "node:util";
 
-import {
-  verifyPublicCaseBindingReceipt,
-} from "./case-binding-projection.ts";
 import type {
   CaseBindingOutboxEntryV1,
   CredentialFreeCaseBindingOutboxReader,
 } from "./case-binding-outbox.ts";
-
-/** The exact wire schema for a bounded, credential-free outbox replay page. */
-export type CredentialFreeCaseBindingOutboxPageV1 = Readonly<{
-  schemaVersion: "public_case_binding_outbox_page_v1";
-  afterSequence: number;
-  nextSequence: number | null;
-  entries: readonly CaseBindingOutboxEntryV1[];
-}>;
+import {
+  CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_LIMIT,
+  CREDENTIAL_FREE_CASE_BINDING_OUTBOX_PATH,
+  serializeCredentialFreeCaseBindingOutboxPage,
+  verifyCredentialFreeCaseBindingOutboxEntries,
+  verifyCredentialFreeCaseBindingOutboxPage,
+} from "./case-binding-outbox-wire.ts";
+export {
+  CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_LIMIT,
+  CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_PAGE_BYTES,
+  CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_PAGE_NODES,
+  CREDENTIAL_FREE_CASE_BINDING_OUTBOX_PATH,
+  parseAndVerifyCredentialFreeCaseBindingOutboxPage,
+  parseCredentialFreeCaseBindingOutboxPage,
+  serializeCredentialFreeCaseBindingOutboxPage,
+  verifyCredentialFreeCaseBindingOutboxEntries,
+  verifyCredentialFreeCaseBindingOutboxPage,
+} from "./case-binding-outbox-wire.ts";
+export type {
+  CredentialFreeCaseBindingOutboxPageV1,
+  CredentialFreeCaseBindingOutboxPageVerificationOptions,
+} from "./case-binding-outbox-wire.ts";
 
 /** A shorter alias for callers that only need the public page contract. */
-export type PublicCaseBindingOutboxPageV1 = CredentialFreeCaseBindingOutboxPageV1;
+export type PublicCaseBindingOutboxPageV1 = import("./case-binding-outbox-wire.ts").CredentialFreeCaseBindingOutboxPageV1;
 
 export type CredentialFreeCaseBindingOutboxServerConfig = {
   allowedHosts: readonly string[];
@@ -29,19 +40,12 @@ export type CredentialFreeCaseBindingOutboxServer = {
   readonly server: Server;
 };
 
-export const CREDENTIAL_FREE_CASE_BINDING_OUTBOX_PATH =
-  "/v1/internal/public-case-bindings/outbox" as const;
-export const CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_LIMIT = 256 as const;
-export const CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_PAGE_BYTES = 1_048_576 as const;
-export const CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_PAGE_NODES = 4_096 as const;
-
 const MAX_TARGET_BYTES = 512;
 const MAX_HOST_BYTES = 253;
 const MAX_ALLOWED_HOSTS = 16;
 const MAX_HEADER_BYTES = 8_192;
 const REQUEST_TIMEOUT_MS = 5_000;
 const KEEP_ALIVE_TIMEOUT_MS = 1_000;
-const PAGE_SCHEMA_VERSION = "public_case_binding_outbox_page_v1" as const;
 const DECIMAL = /^(?:0|[1-9][0-9]*)$/u;
 const HOST_NAME = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/u;
 const STATIC_BAD_REQUEST = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\nCache-Control: no-store\r\nCross-Origin-Resource-Policy: same-origin\r\nContent-Length: 12\r\nContent-Type: text/plain; charset=utf-8\r\nX-Content-Type-Options: nosniff\r\n\r\nbad_request\n";
@@ -49,11 +53,6 @@ const STATIC_BAD_REQUEST = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\nCac
 type Replay = (
   input: { afterSequence: number; limit: number },
 ) => readonly CaseBindingOutboxEntryV1[] | Promise<readonly CaseBindingOutboxEntryV1[]>;
-export type CredentialFreeCaseBindingOutboxPageVerificationOptions = Readonly<{
-  expectedAfterSequence?: number;
-  requestedLimit?: number;
-}>;
-
 function fail(code: string): never { throw new Error(code); }
 
 function exactRecord(value: unknown, fields: readonly string[], code: string): Record<string, unknown> {
@@ -68,37 +67,6 @@ function exactRecord(value: unknown, fields: readonly string[], code: string): R
     if (!descriptor || descriptor.get || descriptor.set || !descriptor.enumerable) fail(code);
   }
   return value as Record<string, unknown>;
-}
-
-function strictArray(value: unknown, maxLength: number, code: string): readonly unknown[] {
-  if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype) fail(code);
-  // Inspect length before enumerating own keys. This rejects a sparse
-  // multi-billion-element array without iterating its logical length.
-  if (!Number.isSafeInteger(value.length) || value.length > maxLength) fail(code);
-  const keys = Reflect.ownKeys(value);
-  if (keys.length !== value.length + 1 || keys.some((key) => key !== "length" &&
-    (typeof key !== "string" || !/^(?:0|[1-9][0-9]*)$/u.test(key)))) fail(code);
-  for (let index = 0; index < value.length; index += 1) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-    if (!descriptor || descriptor.get || descriptor.set || !descriptor.enumerable) fail(code);
-  }
-  return value;
-}
-
-function strictNonNegativeSafeInteger(value: unknown, code: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) fail(code);
-  return value as number;
-}
-
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`).join(",")}}`;
-  }
-  const serialized = JSON.stringify(value);
-  if (serialized === undefined) fail("case_binding_outbox_page_invalid");
-  return serialized;
 }
 
 function configuredHost(value: string): boolean {
@@ -138,130 +106,6 @@ function captureReplay(value: unknown): Replay {
     utilTypes.isProxy(descriptor.value)) fail("case_binding_outbox_server_outbox_invalid");
   return descriptor.value as Replay;
 }
-
-function strictEntry(value: unknown, previousSequence: number, seenChecksums: Set<string>, seenCases: Set<string>, seenRoots: Set<string>): Readonly<CaseBindingOutboxEntryV1> {
-  const parsed = exactRecord(value, ["sequence", "receipt"], "case_binding_outbox_replay_invalid");
-  const sequence = strictNonNegativeSafeInteger(parsed.sequence, "case_binding_outbox_sequence_invalid");
-  if (sequence <= previousSequence || sequence === 0) fail("case_binding_outbox_sequence_invalid");
-  const receipt = verifyPublicCaseBindingReceipt(parsed.receipt);
-  if (seenChecksums.has(receipt.receiptChecksum)) fail("case_binding_outbox_duplicate_receipt");
-  if (seenCases.has(receipt.caseId)) fail("case_binding_outbox_case_conflict");
-  if (seenRoots.has(receipt.rootEventId)) fail("case_binding_outbox_root_conflict");
-  seenChecksums.add(receipt.receiptChecksum);
-  seenCases.add(receipt.caseId);
-  seenRoots.add(receipt.rootEventId);
-  return Object.freeze({ sequence, receipt });
-}
-
-function verifyEntries(value: unknown, afterSequence: number, requestedLimit: number): readonly CaseBindingOutboxEntryV1[] {
-  const values = strictArray(value, requestedLimit, "case_binding_outbox_replay_invalid");
-  const seenChecksums = new Set<string>();
-  const seenCases = new Set<string>();
-  const seenRoots = new Set<string>();
-  const entries: CaseBindingOutboxEntryV1[] = [];
-  let previous = afterSequence;
-  for (let index = 0; index < values.length; index += 1) {
-    const parsed = strictEntry(values[index], previous, seenChecksums, seenCases, seenRoots);
-    entries.push(parsed);
-    previous = parsed.sequence;
-  }
-  return Object.freeze(entries);
-}
-
-/**
- * Strictly validates a page received by a credential-free outbox client.
- * Receipt checksums, ordering, uniqueness, exact object shape, sparse-array
- * bounds, node count and canonical serialized size are all checked before a
- * frozen page crosses the caller boundary.
- */
-export function verifyCredentialFreeCaseBindingOutboxPage(
-  value: unknown,
-  options: CredentialFreeCaseBindingOutboxPageVerificationOptions = {},
-): CredentialFreeCaseBindingOutboxPageV1 {
-  const parsed = exactRecord(value, ["schemaVersion", "afterSequence", "nextSequence", "entries"], "case_binding_outbox_page_invalid");
-  if (parsed.schemaVersion !== PAGE_SCHEMA_VERSION) fail("case_binding_outbox_page_invalid");
-  const afterSequence = strictNonNegativeSafeInteger(parsed.afterSequence, "case_binding_outbox_page_invalid");
-  if (options.expectedAfterSequence !== undefined && parsed.afterSequence !== options.expectedAfterSequence) {
-    fail("case_binding_outbox_cursor_invalid");
-  }
-  const requestedLimit = options.requestedLimit ?? CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_LIMIT;
-  if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_LIMIT) {
-    fail("case_binding_outbox_page_invalid");
-  }
-  const entries = verifyEntries(parsed.entries, afterSequence, requestedLimit);
-  const nextSequenceValue = parsed.nextSequence;
-  if (nextSequenceValue !== null && (typeof nextSequenceValue !== "number" ||
-    !Number.isSafeInteger(nextSequenceValue) || nextSequenceValue <= afterSequence)) {
-    fail("case_binding_outbox_cursor_invalid");
-  }
-  const nextSequence = nextSequenceValue as number | null;
-  if ((entries.length === 0 && nextSequence !== null) ||
-    (entries.length > 0 && nextSequence !== entries[entries.length - 1]!.sequence)) {
-    fail("case_binding_outbox_cursor_invalid");
-  }
-  let nodes = 2; // page record + entries array
-  for (const entry of entries) {
-    nodes += 3 + entry.receipt.caseEventIds.length; // entry, receipt, event-id array, 3 strings
-    if (nodes > CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_PAGE_NODES) fail("case_binding_outbox_page_nodes_exceeded");
-  }
-  const page = Object.freeze({
-    schemaVersion: PAGE_SCHEMA_VERSION,
-    afterSequence,
-    nextSequence,
-    entries,
-  });
-  if (Buffer.byteLength(canonical(page), "utf8") + 1 > CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_PAGE_BYTES) {
-    fail("case_binding_outbox_page_too_large");
-  }
-  return page;
-}
-
-/** Serializes a previously verified page in the canonical wire form. */
-export function serializeCredentialFreeCaseBindingOutboxPage(
-  value: CredentialFreeCaseBindingOutboxPageV1,
-): string {
-  const page = verifyCredentialFreeCaseBindingOutboxPage(value);
-  return `${canonical(page)}\n`;
-}
-
-/**
- * Parses and verifies the exact UTF-8 representation sent by the private
- * route. This is the client-facing companion to the structured verifier: it
- * rejects non-canonical whitespace, key order, trailing bytes, invalid UTF-8
- * and forged receipt checksums before returning the frozen page.
- */
-export function parseAndVerifyCredentialFreeCaseBindingOutboxPage(
-  body: string | Uint8Array,
-  options: CredentialFreeCaseBindingOutboxPageVerificationOptions = {},
-): CredentialFreeCaseBindingOutboxPageV1 {
-  let text: string;
-  try {
-    if (typeof body === "string") {
-      if (Buffer.byteLength(body, "utf8") > CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_PAGE_BYTES) {
-        fail("case_binding_outbox_page_too_large");
-      }
-      text = body;
-    } else {
-      if (!(body instanceof Uint8Array) || body.byteLength > CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_PAGE_BYTES) {
-        fail("case_binding_outbox_page_too_large");
-      }
-      text = new TextDecoder("utf-8", { fatal: true }).decode(body);
-    }
-    if (!text.endsWith("\n")) fail("case_binding_outbox_page_noncanonical");
-    const parsed = JSON.parse(text) as unknown;
-    const page = verifyCredentialFreeCaseBindingOutboxPage(parsed, options);
-    if (serializeCredentialFreeCaseBindingOutboxPage(page) !== text) {
-      fail("case_binding_outbox_page_noncanonical");
-    }
-    return page;
-  } catch (error) {
-    if (error instanceof Error && /^case_binding_outbox_/u.test(error.message)) throw error;
-    fail("case_binding_outbox_page_invalid");
-  }
-}
-
-/** Compatibility spelling for HTTP clients that prefer an explicit parser name. */
-export const parseCredentialFreeCaseBindingOutboxPage = parseAndVerifyCredentialFreeCaseBindingOutboxPage;
 
 function rawHeaderValues(request: IncomingMessage, name: string): readonly string[] {
   const values: string[] = [];
@@ -381,9 +225,9 @@ export function createCredentialFreeCaseBindingOutboxServer(
     }
     try {
       const replayed = await replay(Object.freeze({ afterSequence: query.afterSequence, limit: query.limit }));
-      const entries = verifyEntries(replayed, query.afterSequence, query.limit);
+      const entries = verifyCredentialFreeCaseBindingOutboxEntries(replayed, query.afterSequence, query.limit);
       const page = verifyCredentialFreeCaseBindingOutboxPage({
-        schemaVersion: PAGE_SCHEMA_VERSION,
+        schemaVersion: "public_case_binding_outbox_page_v1",
         afterSequence: query.afterSequence,
         nextSequence: entries.length === 0 ? null : entries[entries.length - 1]!.sequence,
         entries,

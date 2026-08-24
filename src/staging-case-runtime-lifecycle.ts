@@ -7,15 +7,16 @@ import type { Socket } from "node:net";
 import { types as utilTypes } from "node:util";
 
 import {
-  assertStagingCaseControlListenerBindPlan,
-  type StagingCaseControlListenerBindPlan,
-} from "./staging-case-control-preflight.ts";
+  captureStagingCaseRuntimeDeploymentListener,
+  type StagingCaseRuntimeDeploymentListenerCapability,
+} from "./staging-case-runtime-listener-capability.ts";
 
 /**
- * The lifecycle is deliberately a composition seam, not a server factory.
- * The caller creates the HTTP server (and therefore owns its request
- * handler), then gives this module only the server and either a loopback plan
- * or an opaque listener plan minted by the reviewed control preflight Module.
+ * The lifecycle is a listener-mechanics seam, not a server factory. Control
+ * deployment bind plans stay in the private process lifecycle; this module
+ * receives either a loopback tuple or an opaque capability minted after the
+ * private lifecycle's bind-plan proof. It contains no Operations capability or
+ * deployment proof verifier.
  */
 export const STAGING_CASE_RUNTIME_PHASES = [
   "new",
@@ -49,9 +50,13 @@ export type StagingCaseRuntimeLoopbackListener = Readonly<{
   port: number;
 }>;
 
+export type StagingCaseRuntimeListener =
+  | StagingCaseRuntimeLoopbackListener
+  | StagingCaseRuntimeDeploymentListenerCapability;
+
 export type StagingCaseRuntimeLifecycleConfig = {
   server: Server;
-  listener: StagingCaseRuntimeLoopbackListener | StagingCaseControlListenerBindPlan;
+  listener: StagingCaseRuntimeListener;
   release: () => void | Promise<void>;
   drainTimeoutMs: number;
 };
@@ -130,15 +135,12 @@ function captureListener(value: unknown): Readonly<{
       !Number.isSafeInteger(listener.port) || listener.port < 0 || listener.port > 65_535) {
       invalid("staging_case_runtime_config_invalid");
     }
-    return Object.freeze({ host: "127.0.0.1", port: listener.port });
+    return Object.freeze({ host: "127.0.0.1" as const, port: listener.port });
   }
 
-  try {
-    const listener = assertStagingCaseControlListenerBindPlan(value);
-    return Object.freeze({ host: listener.host, port: listener.port });
-  } catch {
-    invalid("staging_case_runtime_config_invalid");
-  }
+  const deploymentListener = captureStagingCaseRuntimeDeploymentListener(value);
+  if (!deploymentListener) invalid("staging_case_runtime_config_invalid");
+  return deploymentListener;
 }
 
 function captureConfig(config: StagingCaseRuntimeLifecycleConfig): {

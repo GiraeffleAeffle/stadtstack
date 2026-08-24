@@ -59,7 +59,12 @@
         ]
       }
     },
-    "activation": "blocked_pending_reviewed_recovery_evidence"
+    "activation": "loopback_runtime_pending_operations_activation",
+    "componentActivation": {
+      "case-steward-control": "loopback_runtime_pending_operations_activation",
+      "case-public-binding": "loopback_runtime_pending_operations_activation",
+      "case-restore-verifier": "blocked_pending_reviewed_recovery_evidence"
+    }
   },
   "components": [
     {
@@ -75,6 +80,56 @@
       "imageRepository": "ghcr.io/giraeffleaeffle/stadtstack-case-restore-verifier"
     }
   ],
+  "componentSourceClosures": {
+    "case-steward-control": "containers/case-runtime/case-steward-control-source-closure.txt",
+    "case-public-binding": "containers/case-runtime/case-public-binding-source-closure.txt",
+    "case-restore-verifier": null
+  },
+  "componentRuntimeEntrypoints": {
+    "case-steward-control": {
+      "entrypoint": "containers/case-runtime/case-steward-control-entrypoint.mjs",
+      "dynamicTypeScriptTarget": "src/staging-case-control-runtime.ts",
+      "readyComponent": "steward_control",
+      "configurationEnvironment": "STADTSTACK_CASE_CONTROL_CONFIG_PATH"
+    },
+    "case-public-binding": {
+      "entrypoint": "containers/case-runtime/case-public-binding-entrypoint.mjs",
+      "dynamicTypeScriptTarget": "src/staging-public-case-binding-runtime.ts",
+      "readyComponent": "public_binding",
+      "configurationEnvironment": "STADTSTACK_CASE_PUBLIC_CONFIG_PATH"
+    },
+    "case-restore-verifier": {
+      "entrypoint": "containers/case-runtime/activation-blocked.mjs",
+      "dynamicTypeScriptTarget": null,
+      "readyComponent": null,
+      "configurationEnvironment": null
+    }
+  },
+  "componentBuildContexts": {
+    "case-steward-control": [
+      ".dockerignore",
+      "containers/case-runtime/Containerfile",
+      "containers/case-runtime/activation-blocked.mjs",
+      "package.json",
+      "package-lock.json",
+      "containers/case-runtime/runtime-entrypoint-common.mjs",
+      "containers/case-runtime/case-steward-control-entrypoint.mjs"
+    ],
+    "case-public-binding": [
+      ".dockerignore",
+      "containers/case-runtime/Containerfile",
+      "containers/case-runtime/activation-blocked.mjs",
+      "package.json",
+      "package-lock.json",
+      "containers/case-runtime/runtime-entrypoint-common.mjs",
+      "containers/case-runtime/case-public-binding-entrypoint.mjs"
+    ],
+    "case-restore-verifier": [
+      ".dockerignore",
+      "containers/case-runtime/Containerfile",
+      "containers/case-runtime/activation-blocked.mjs"
+    ]
+  },
   "effects": {
     "localContainerBuild": false,
     "clusterMutation": false,
