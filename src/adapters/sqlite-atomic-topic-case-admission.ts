@@ -2,15 +2,18 @@ import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   closeSync,
+  copyFileSync,
   existsSync,
   fsyncSync,
   lstatSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   readdirSync,
   readSync,
   realpathSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeSync,
@@ -90,6 +93,11 @@ import {
   writeCanonicalCaseStoreBootstrap,
   type CaseStoreBootstrapV1,
 } from "../case-store-epoch.ts";
+import {
+  LEGACY_TEST_CASE_ID_PREFIX,
+  isLegacyTestCaseId,
+  parseMunicipalCaseId,
+} from "../case-id.ts";
 
 const SCHEMA_VERSION = "sqlite_atomic_topic_case_admission_v1";
 const MUNICIPALITY_ID = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
@@ -493,16 +501,21 @@ function invalidatePriorSeal(rootDir: string, municipalityId: string): void {
   try { fsyncSync(directoryDescriptor); } finally { closeSync(directoryDescriptor); }
 }
 
-function closedDatabaseIdentity(rootDir: string, seal: CaseShutdownSealV2): Readonly<{ basename: string; byteLength: number; sha256: string }> {
-  if (seal.municipalityId === "") fail("atomic_admission_recovery_seal_invalid");
-  const databasePath = join(rootDir, seal.databaseBasename);
+function assertRecoverySidecarsAreEmpty(databasePath: string): void {
   for (const suffix of ["", "-wal", "-shm"] as const) {
     const candidate = `${databasePath}${suffix}`;
     ensureNotSymlink(candidate);
-    if (suffix !== "" && existsSync(candidate) && statSync(candidate).size !== 0) {
-      fail("atomic_admission_recovery_sidecar_nonempty");
+    if (suffix !== "" && existsSync(candidate)) {
+      const sidecar = statSync(candidate);
+      if (!sidecar.isFile() || sidecar.size !== 0) fail("atomic_admission_recovery_sidecar_nonempty");
     }
   }
+}
+
+function closedDatabaseIdentity(rootDir: string, seal: CaseShutdownSealV2): Readonly<{ basename: string; byteLength: number; sha256: string }> {
+  if (seal.municipalityId === "") fail("atomic_admission_recovery_seal_invalid");
+  const databasePath = join(rootDir, seal.databaseBasename);
+  assertRecoverySidecarsAreEmpty(databasePath);
   if (!existsSync(databasePath)) fail("atomic_admission_recovery_seal_invalid");
   const databaseStat = statSync(databasePath);
   if (!databaseStat.isFile() || databaseStat.size !== seal.databaseByteLength || sha256File(databasePath) !== seal.databaseSha256) {
@@ -515,7 +528,7 @@ function requireExistingRecoveryDatabase(databasePath: string): Readonly<{ dev: 
   ensureNotSymlink(databasePath);
   if (!existsSync(databasePath)) fail("atomic_admission_recovery_database_required");
   const databaseStat = statSync(databasePath);
-  if (!databaseStat.isFile() || databaseStat.size < 1) fail("atomic_admission_recovery_database_required");
+  if (!databaseStat.isFile() || !hasSqliteHeader(databasePath)) fail("atomic_admission_recovery_database_required");
   return Object.freeze({ dev: databaseStat.dev, ino: databaseStat.ino });
 }
 
@@ -1016,6 +1029,107 @@ function ensureSchema(db: DatabaseSync, createIfMissing = true): void {
   }
 }
 
+/**
+ * A durable store is never rewritten from the retired staging identity.  The
+ * caller must create a fresh store or use a separately reviewed migration;
+ * accepting a legacy row here would silently fork its receipt/journal chain.
+ */
+function rejectLegacyDurableCaseRecords(db: DatabaseSync): void {
+  const tables = [
+    "atomic_case_meta",
+    "atomic_case_events",
+    "atomic_case_idempotency",
+    "atomic_root_claims",
+    "atomic_binding_receipts",
+    "atomic_binding_outbox",
+  ] as const;
+  for (const table of tables) {
+    const row = db.prepare(`SELECT case_id FROM ${table} WHERE case_id GLOB ? LIMIT 1`)
+      .get(`${LEGACY_TEST_CASE_ID_PREFIX}*`) as { case_id?: unknown } | undefined;
+    if (row && isLegacyTestCaseId(row.case_id)) {
+      fail("atomic_admission_legacy_case_id_present");
+    }
+  }
+}
+
+/** Read-only preflight for a durable volume. It runs before recovery metadata
+ * can be rotated or a prior shutdown seal can be invalidated. */
+function hasSqliteHeader(databasePath: string): boolean {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(databasePath, "r");
+    const header = Buffer.alloc(16);
+    return readSync(descriptor, header, 0, header.length, 0) === header.length &&
+      header.equals(Buffer.from("SQLite format 3\0", "utf8"));
+  } catch {
+    return false;
+  } finally {
+    if (descriptor !== undefined) try { closeSync(descriptor); } catch { /* best effort */ }
+  }
+}
+
+function scanLegacyDurableCaseRecords(database: DatabaseSync): void {
+  // Validate the complete read-only schema first. A partial schema must not
+  // bypass a table scan and continue far enough to consume a seal or epoch.
+  ensureSchema(database, false);
+  rejectLegacyDurableCaseRecords(database);
+}
+
+/** Read-only preflight for a durable volume. It runs before recovery metadata
+ * can be rotated or a prior shutdown seal can be invalidated. Sealed/marked
+ * recovery rejects any non-empty sidecar; an unsealed process-death recovery
+ * instead scans a private DB+WAL snapshot so its live crash evidence remains
+ * visible without mutating the durable volume. */
+function preflightRejectLegacyDurableCaseRecords(databasePath: string, sealedOrMarkedRecovery: boolean): void {
+  // Do this before the missing/corrupt-database fallback. A marker or clean
+  // seal is a closed recovery boundary, so an unexpected non-empty sidecar
+  // must fail before durable recovery reconciliation or epoch/seal mutation,
+  // even if the main DB was removed or truncated.
+  if (sealedOrMarkedRecovery) assertRecoverySidecarsAreEmpty(databasePath);
+  if (!existsSync(databasePath)) return;
+  ensureNotSymlink(databasePath);
+  if (!hasSqliteHeader(databasePath)) return;
+  if (!sealedOrMarkedRecovery) {
+    const snapshotRoot = mkdtempSync(join(tmpdir(), "stadtstack-legacy-preflight-"));
+    const snapshotPath = join(snapshotRoot, "database.sqlite");
+    try {
+      copyFileSync(databasePath, snapshotPath);
+      for (const suffix of ["-wal", "-shm"] as const) {
+        const source = `${databasePath}${suffix}`;
+        ensureNotSymlink(source);
+        if (!existsSync(source)) continue;
+        const sidecar = statSync(source);
+        if (!sidecar.isFile()) fail("atomic_admission_recovery_sidecar_nonempty");
+        copyFileSync(source, `${snapshotPath}${suffix}`);
+      }
+      const database = new DatabaseSync(snapshotPath, { readOnly: true, enableForeignKeyConstraints: true });
+      try { scanLegacyDurableCaseRecords(database); } finally { database.close(); }
+    } finally {
+      rmSync(snapshotRoot, { recursive: true, force: true });
+    }
+    return;
+  }
+  // `immutable=1` intentionally ignores WAL content. Refuse every non-empty
+  // sidecar before that immutable scan so a legacy row cannot be hidden in an
+  // uncheckpointed WAL while startup rotates recovery metadata.
+  // A normal read-only SQLite connection may still materialize a non-empty
+  // WAL shared-memory sidecar. Recovery intentionally rejects such sidecars
+  // as unsealed state, so this preflight must be immutable rather than merely
+  // read-only: it may inspect a sealed database but must not alter its durable
+  // recovery surface before receipt, claim, or seal mutation.
+  const databaseLocation = pathToFileURL(databasePath);
+  databaseLocation.searchParams.set("immutable", "1");
+  const database = new DatabaseSync(databaseLocation, {
+    readOnly: true,
+    enableForeignKeyConstraints: true,
+  });
+  try {
+    scanLegacyDurableCaseRecords(database);
+  } finally {
+    database.close();
+  }
+}
+
 function captureCaseStateRecoveryEvidence(db: DatabaseSync): CaseStateRecoveryEvidenceV1 {
   const caseJournalHeads = (db.prepare("SELECT case_id,case_version,head_checksum FROM atomic_case_meta ORDER BY case_id").all() as Array<{
     case_id: string; case_version: number; head_checksum: string;
@@ -1130,6 +1244,12 @@ export function createSqliteAtomicTopicCaseAdmission(
   let bootstrapReceiptForTransition: CaseStoreBootstrapV1 | undefined;
   try {
     if (durableOwner) {
+      // These canonical reads are intentionally before durable recovery
+      // reconciliation or epoch/seal mutation: they select the preflight's
+      // sidecar policy only.
+      const preflightMarker = readCanonicalRecoveryActivationMarker(config.rootDir);
+      const preflightSeal = readCanonicalPriorSeal(config.rootDir);
+      preflightRejectLegacyDurableCaseRecords(databasePath, preflightMarker !== undefined || preflightSeal !== undefined);
       const expectedTargetClaim = config.deploymentClaimToken
         ? consumeCaseDurableDeploymentClaimToken(config.deploymentClaimToken)
         : undefined;
@@ -1309,6 +1429,7 @@ export function createSqliteAtomicTopicCaseAdmission(
       };
       if (pragmas.journal.journal_mode.toLowerCase() !== "wal" || pragmas.sync.synchronous !== 2 || pragmas.foreign.foreign_keys !== 1) fail("atomic_admission_pragmas_invalid");
       ensureSchema(openedDatabase, createSchema);
+      rejectLegacyDurableCaseRecords(openedDatabase);
       openedDatabase.exec("BEGIN IMMEDIATE");
       const prior = openedDatabase.prepare("SELECT schema_version,config_fingerprint FROM atomic_municipality_meta WHERE municipality_id=?")
         .get(config.municipalityId) as { schema_version: string; config_fingerprint: string } | undefined;
@@ -1452,8 +1573,8 @@ export function createSqliteAtomicTopicCaseAdmission(
     const outbox = db.prepare("SELECT receipt_json,receipt_checksum FROM atomic_binding_outbox WHERE case_id=?").get(meta.case_id) as { receipt_json: string; receipt_checksum: string } | undefined;
     if (!outbox || outbox.receipt_checksum !== receipt.receiptChecksum ||
       JSON.stringify(responseReceipt({ receipt_json: outbox.receipt_json })) !== JSON.stringify(receipt)) fail("atomic_admission_unit_corrupt");
-    const prefix = `urn:stadtstack:case:test:${config.municipalityId}:`;
-    const uuidV7 = meta.case_id.startsWith(prefix) ? meta.case_id.slice(prefix.length) : "";
+    const parsedCaseId = parseMunicipalCaseId(meta.case_id);
+    const uuidV7 = parsedCaseId?.municipalityId === config.municipalityId ? parsedCaseId.uuidV7 : "";
     if (!UUID_V7.test(uuidV7) || meta.namespace !== caseNamespace(uuidV7)) fail("atomic_admission_unit_corrupt");
     // Constructor recovery replays the entire journal with the exact pinned
     // policy, actor registry, signer registry, and options fingerprint.
@@ -1639,6 +1760,7 @@ export function createSqliteAtomicTopicCaseAdmission(
         initialAdmissionAppend(append, pending.caseId);
         db.exec("BEGIN IMMEDIATE");
         try {
+          rejectLegacyDurableCaseRecords(db);
           const claim = db.prepare("SELECT candidate_event_id,case_id FROM atomic_root_claims WHERE municipality_id=? AND root_event_id=?").get(config.municipalityId, pending.rootEventId) as { candidate_event_id: string; case_id: string } | undefined;
           if (claim && (claim.candidate_event_id !== pending.verified.signedSuggestion.event.id || claim.case_id !== pending.caseId)) fail("case_binding_root_conflict");
           const meta = db.prepare("SELECT case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum FROM atomic_case_meta WHERE case_id=?").get(pending.caseId) as CaseMetaRow | undefined;
@@ -1758,12 +1880,13 @@ export function createSqliteAtomicTopicCaseAdmission(
 
   const openCaseCoordinator = (caseId: string): CivicCaseCoordinator => {
     ensureOpen();
-    if (typeof caseId !== "string" || !caseId.startsWith(`urn:stadtstack:case:test:${config.municipalityId}:`)) fail("atomic_admission_case_not_admitted");
+    const parsedCaseId = parseMunicipalCaseId(caseId);
+    if (!parsedCaseId || parsedCaseId.municipalityId !== config.municipalityId) fail("atomic_admission_case_not_admitted");
     return withReadSnapshot(() => {
       const meta = readCaseMeta(caseId);
       if (!meta) fail("atomic_admission_case_not_admitted");
       validateCaseUnit(meta);
-      const uuidV7 = caseId.slice(`urn:stadtstack:case:test:${config.municipalityId}:`.length);
+      const uuidV7 = parsedCaseId.uuidV7;
       if (!UUID_V7.test(uuidV7) || meta.namespace !== caseNamespace(uuidV7)) fail("atomic_admission_unit_corrupt");
       return pinnedCoordinator(caseId, uuidV7, continuationJournal(caseId, meta.namespace));
     });

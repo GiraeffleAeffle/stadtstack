@@ -934,6 +934,44 @@ test("marker plus target claim with no local seal rejects a truncated database a
   assert.deepEqual(readCanonicalCaseDurableDeploymentClaim(state.targetRoot), state.claim);
 });
 
+test("marker recovery rejects a non-empty sidecar before durable recovery mutation and leaves its capability retryable", async () => {
+  for (const corruption of ["missing", "truncated"] as const) {
+    const state = await interruptedRecovery();
+    const markerPath = join(state.targetRoot, CASE_RECOVERY_ACTIVATION_FILENAME);
+    const sealPath = join(state.targetRoot, CASE_SHUTDOWN_SEAL_FILENAME);
+    const epochPath = join(state.targetRoot, CASE_OPEN_EPOCH_FILENAME);
+    const originalDatabase = readFileSync(state.databasePath);
+    const epochBefore = existsSync(epochPath) ? readFileSync(epochPath, "utf8") : undefined;
+    const deploymentClaimToken = tokenFor(state.targetBinding);
+    // A retry of an existing marker must reuse the authorization that created
+    // it: a freshly signed authorization deliberately has a different
+    // recovery-attestation checksum and must fail marker matching.
+    const recoveryActivationAuthorization = state.authorization;
+    const startup = options(state.targetRoot, state.targetBinding, {
+      deploymentClaimToken,
+      recoveryActivationAuthorization,
+    });
+    if (corruption === "missing") unlinkSync(state.databasePath);
+    else truncateSync(state.databasePath, 0);
+    writeFileSync(`${state.databasePath}-wal`, "unexpected-sidecar", { mode: 0o600, flag: "w" });
+
+    assert.throws(
+      () => createSqliteAtomicTopicCaseAdmission(startup),
+      /atomic_admission_recovery_sidecar_nonempty/u,
+    );
+    assert.equal(readFileSync(markerPath, "utf8"), state.markerText);
+    assert.deepEqual(readCanonicalCaseDurableDeploymentClaim(state.targetRoot), state.claim);
+    assert.equal(existsSync(sealPath), false);
+    assert.equal(existsSync(epochPath) ? readFileSync(epochPath, "utf8") : undefined, epochBefore);
+
+    unlinkSync(`${state.databasePath}-wal`);
+    writeFileSync(state.databasePath, originalDatabase, { mode: 0o600, flag: "w" });
+    // The exact capability remains retryable after remediation; the rejected
+    // attempt left the marker, claim, seal, and epoch receipts untouched.
+    createSqliteAtomicTopicCaseAdmission(startup).close();
+  }
+});
+
 test("a valid current database below a non-empty marker source-seal baseline is rejected and preserves marker plus claim", async () => {
   const state = await interruptedRecovery(true);
   const emptyRoot = root();

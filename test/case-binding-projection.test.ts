@@ -8,7 +8,7 @@ import {
   verifyPublicCaseBindingReceipt,
 } from "../src/case-binding-projection.ts";
 
-const CASE_ID = "urn:stadtstack:case:test:roebel-mueritz:01983a00-0000-7000-8000-000000000001";
+const CASE_ID = "urn:stadtstack:case:municipality:roebel-mueritz:01983a00-0000-7000-8000-000000000001";
 const digest = (value: string) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
 function receipt(
@@ -85,7 +85,7 @@ test("a root event cannot be rebound to a different receipt", () => {
   const projection = createInMemoryCaseBindingProjection();
   const first = receipt();
   const second = receipt(
-    "urn:stadtstack:case:test:roebel-mueritz:01983a00-0000-7000-8000-000000000002",
+    "urn:stadtstack:case:municipality:roebel-mueritz:01983a00-0000-7000-8000-000000000002",
     first.rootEventId,
   );
   projection.writer.record(first);

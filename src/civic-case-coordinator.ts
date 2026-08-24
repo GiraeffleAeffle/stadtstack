@@ -19,6 +19,12 @@ import type {
 import {
   verifyTopicCaseAdmission,
 } from "./topic-case-admission.ts";
+import {
+  MUNICIPAL_CASE_ID,
+  MUNICIPALITY_ID,
+  UUID_V7,
+  canonicalMunicipalCaseId,
+} from "./case-id.ts";
 
 export type {
   CitizenSignedSuggestionV1,
@@ -49,7 +55,7 @@ export type ActorRegistration = ActorBinding & {
 };
 
 export type CaseJurisdiction = {
-  scheme: "test";
+  scheme: "municipality";
   value: string;
 };
 
@@ -448,7 +454,7 @@ export type CivicCaseCoordinatorOptions = {
   sourceCaseId?: string;
   /** Alias for canonicalCaseId; retained for callers that name the Case ID directly. */
   caseId?: string;
-  /** Fixed test jurisdiction value used in the canonical Case ID. */
+  /** Municipal jurisdiction value used in the canonical Case ID. */
   jurisdictionValue?: string;
   jurisdiction?: Partial<CaseJurisdiction> & { value?: string };
   /** A pinned UUID-v7. Random UUID generation is deliberately unavailable. */
@@ -888,8 +894,6 @@ const SIGNED_SUGGESTION_EVENT_KEYS = new Set([
 ]);
 const SIGNED_SUGGESTION_VERIFICATION_KEYS = new Set(["kind", "verified"]);
 
-const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const CASE_ID = /^urn:stadtstack:case:test:([A-Za-z0-9._~-]+):([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const SECRET_MARKER = /(?:nsec1|private[_ -]?key|secret[_ -]?key|password|credential|token|wallet|ballot|participant[_ -]?id|user[_ -]?id)/i;
 const SECRET_VALUE_MARKER = /(?:\bnsec1[a-z0-9-]{8,}\b|private[_ -]?key|secret[_ -]?key|password\s*[:=]|credential\s*[:=]|wallet\s*[:=]|ballot\s*[:=])/i;
@@ -1131,19 +1135,20 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
   if (jurisdictionObject !== undefined) {
     if (!isRecord(jurisdictionObject)) fail("jurisdiction_invalid");
     ownKeys(jurisdictionObject, new Set(["scheme", "value"]), "jurisdiction");
-    if (jurisdictionObject.scheme !== undefined && jurisdictionObject.scheme !== "test") fail("synthetic_case_namespace_forbidden");
+    if (jurisdictionObject.scheme !== undefined && jurisdictionObject.scheme !== "municipality") fail("case_jurisdiction_invalid");
   }
   const jurisdictionValue = nonEmptyString(
     options.jurisdictionValue ?? jurisdictionObject?.value ?? scope?.municipalityId ?? "synthetic",
     "jurisdiction_value_required",
   );
-  if (!/^[A-Za-z0-9._~-]+$/.test(jurisdictionValue)) fail("jurisdiction_value_invalid");
-  const jurisdiction: CaseJurisdiction = { scheme: "test", value: jurisdictionValue };
+  if (!MUNICIPALITY_ID.test(jurisdictionValue)) fail("jurisdiction_value_invalid");
+  const jurisdiction: CaseJurisdiction = { scheme: "municipality", value: jurisdictionValue };
   const configuredUuid = options.uuidV7 ?? options.caseUuidV7 ?? DEFAULT_SYNTHETIC_UUID_V7;
   if (typeof configuredUuid !== "string" || !UUID_V7.test(configuredUuid)) fail("case_id_invalid");
-  const derivedCaseId = `urn:stadtstack:case:test:${jurisdiction.value}:${configuredUuid}`;
+  const derivedCaseId = canonicalMunicipalCaseId(jurisdiction.value, configuredUuid);
+  if (!derivedCaseId) fail("case_id_invalid");
   const configuredCaseId = options.canonicalCaseId ?? options.caseId ?? derivedCaseId;
-  if (typeof configuredCaseId !== "string" || !CASE_ID.test(configuredCaseId) || configuredCaseId !== derivedCaseId) {
+  if (typeof configuredCaseId !== "string" || !MUNICIPAL_CASE_ID.test(configuredCaseId) || configuredCaseId !== derivedCaseId) {
     fail("case_id_invalid");
   }
   const policyVersion = nonEmptyString(options.policyVersion ?? "case-intake-v1", "policy_version_invalid");

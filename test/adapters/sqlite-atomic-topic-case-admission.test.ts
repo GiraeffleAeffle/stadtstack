@@ -431,7 +431,7 @@ test("a cross-process continuation cannot make an in-flight old-snapshot open lo
 test("only an admitted Case can be reopened and later commands append to its same municipal journal", async () => {
   const rootDir = temporaryRoot("stadtstack-atomic-continuation-");
   const adapter = createSqliteAtomicTopicCaseAdmission(options(rootDir));
-  assert.throws(() => adapter.caseCoordinators.open("urn:stadtstack:case:test:roebel-mueritz:018f0000-0000-7000-8000-000000000001"), /atomic_admission_case_not_admitted/);
+  assert.throws(() => adapter.caseCoordinators.open("urn:stadtstack:case:municipality:roebel-mueritz:018f0000-0000-7000-8000-000000000001"), /atomic_admission_case_not_admitted/);
   const candidate = input();
   const admitted = await adapter.admission.admit(candidate);
   const coordinator = adapter.caseCoordinators.open(admitted.caseId);

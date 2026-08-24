@@ -15,9 +15,13 @@ import {
   PUBLIC_EXCHANGE_KIND,
 } from "../src/adapters/public-exchange-adapter.ts";
 
-const caseId = "urn:stadtstack:case:test:sample-municipality:018f0000-0000-7000-8000-000000000001";
+const caseId = "urn:stadtstack:case:municipality:sample-municipality:018f0000-0000-7000-8000-000000000001";
 const municipalityId = "sample-municipality";
 const policyVersion = "case-intake-v1";
+const signer = {
+  seed: "stadtstack-public-exchange-fixture-seed",
+  workerIdentityId: "did:stadtstack:sample:exchange-agent",
+};
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
@@ -129,10 +133,56 @@ test("maps the current public reviewed brief into a closed exchange record", () 
   assert.match(record.recordChecksum, /^sha256:[a-f0-9]{64}$/);
 });
 
-const signer = {
-  seed: "stadtstack-public-exchange-fixture-seed",
-  workerIdentityId: "did:stadtstack:sample:exchange-agent",
-};
+test("rejects legacy and cross-municipality Case IDs even after checksum recomputation", () => {
+  const legacyCaseId = "urn:stadtstack:case:test:sample-municipality:018f0000-0000-7000-8000-000000000001";
+  const otherMunicipalityCaseId = "urn:stadtstack:case:municipality:other-municipality:018f0000-0000-7000-8000-000000000001";
+  const valid = createPublicExchangeRecord(reviewedProjection(), { signer });
+
+  for (const [reboundCaseId, municipality] of [
+    [legacyCaseId, municipalityId],
+    [otherMunicipalityCaseId, municipalityId],
+  ] as const) {
+    const rebound = structuredClone(valid);
+    rebound.canonicalCaseId = reboundCaseId;
+    rebound.municipalityId = municipality;
+    rebound.recordId = `urn:stadtstack:public-exchange:${sha256({ caseId: reboundCaseId, artifactKind: "reviewed_citizen_brief_v1" }).slice("sha256:".length)}`;
+    rebound.recordChecksum = sha256(Object.fromEntries(Object.entries(rebound).filter(([key]) => key !== "recordChecksum")));
+    assert.throws(
+      () => signPublicExchangeRecord(rebound, signer),
+      /public_exchange_case_id_invalid|public_exchange_case_municipality_mismatch/u,
+    );
+  }
+
+  const relay = createLocalPublicExchangeRelay();
+  assert.throws(() => createPublicExchangeAdapter({
+    source: { project: () => reviewedProjection() },
+    caseId: legacyCaseId,
+    policyVersion,
+    publicActor: { actorId: "synthetic:public-1", actorClass: "public" },
+    signer,
+    relay,
+  }), /public_exchange_case_id_invalid/u);
+
+  const crossMunicipality = createPublicExchangeAdapter({
+    source: {
+      project: () => {
+        const envelope = reviewedProjection();
+        envelope.caseId = otherMunicipalityCaseId;
+        envelope.projection.caseId = otherMunicipalityCaseId;
+        return recomputeProjectionChecksum(envelope);
+      },
+    },
+    caseId: otherMunicipalityCaseId,
+    policyVersion,
+    publicActor: { actorId: "synthetic:public-1", actorClass: "public" },
+    signer,
+    relay,
+  });
+  assert.throws(
+    () => crossMunicipality.createCurrentRecord(),
+    /public_exchange_case_municipality_mismatch/u,
+  );
+});
 
 test("signs an exact kind-39999 event and reimports its canonical content", () => {
   const record = createPublicExchangeRecord(reviewedProjection(), { signer });

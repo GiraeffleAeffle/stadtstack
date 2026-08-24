@@ -29,7 +29,7 @@ const coordinator = createCivicCaseCoordinator({
   syntheticFixtureOnly: true,
   allowedSignerPubkeys: [event.pubkey],
 });
-const caseId = "urn:stadtstack:case:test:sample-municipality:018f0000-0000-7000-8000-000000000001";
+const caseId = "urn:stadtstack:case:municipality:sample-municipality:018f0000-0000-7000-8000-000000000001";
 const receipt = coordinator.handle({
   schemaVersion: "command_envelope_v1",
   commandType: "intake_discussion_v1",

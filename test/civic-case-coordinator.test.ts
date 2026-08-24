@@ -40,7 +40,7 @@ function command(discussion: DiscussionArtifact, key = "synthetic:idem:discussio
   return {
     schemaVersion: "command_envelope_v1",
     commandType: "intake_discussion_v1",
-    caseId: "urn:stadtstack:case:test:sample-municipality:018f0000-0000-7000-8000-000000000001",
+    caseId: "urn:stadtstack:case:municipality:sample-municipality:018f0000-0000-7000-8000-000000000001",
     actorBinding: { actorId: "synthetic:citizen-1", actorClass: "citizen" },
     expectedCaseVersion: 0,
     idempotencyKey: key,

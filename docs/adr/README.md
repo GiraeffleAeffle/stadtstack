@@ -67,6 +67,9 @@ publication, runtime operations, public relay writes, or civic effects.
   give the staging control process one reviewed single-writer claim and block
   activation until a quiesced encrypted backup has been restored and verified
   on a fresh claim.
+- [ADR 0024](./0024-canonical-municipal-case-identity-and-fresh-store-activation.md) —
+  use one municipality-scoped durable Case ID and block activation of legacy
+  staging-identity stores rather than rewriting checksum-bound evidence.
 
 ## Historical
 

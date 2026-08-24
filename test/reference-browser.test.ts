@@ -7,7 +7,7 @@ import {
   sha256Reference,
 } from "../src/reference-browser.ts";
 
-const CASE_ID = "urn:stadtstack:case:test:sample:018f0000-0000-7000-8000-000000000001";
+const CASE_ID = "urn:stadtstack:case:municipality:sample:018f0000-0000-7000-8000-000000000001";
 const MUNICIPALITY = "sample";
 const POLICY = "case-intake-v1";
 const ACTORS = {
@@ -78,7 +78,7 @@ function projectionFor(visibility: "public" | "administration" | "council") {
     schemaVersion: "case_projection_v1" as const,
     caseId: CASE_ID,
     municipalityId: MUNICIPALITY,
-    jurisdiction: { scheme: "test" as const, value: MUNICIPALITY },
+    jurisdiction: { scheme: "municipality" as const, value: MUNICIPALITY },
     sourceScope: { municipalityId: MUNICIPALITY, caseId: CASE_ID },
     authorityBinding: "none" as const,
     formalDecision: null,

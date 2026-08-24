@@ -12,7 +12,7 @@ import type {
 } from "../../src/civic-case-coordinator.ts";
 
 const caseId =
-  "urn:stadtstack:case:test:sample-municipality:018f0000-0000-7000-8000-000000000001";
+  "urn:stadtstack:case:municipality:sample-municipality:018f0000-0000-7000-8000-000000000001";
 const departments = [
   "planning",
   "traffic",
@@ -80,7 +80,7 @@ function projection(
       schemaVersion: "case_projection_v1",
       caseId,
       jurisdiction: {
-        scheme: "test",
+        scheme: "municipality",
         value: "sample-municipality",
       },
       municipalityId: "sample-municipality",

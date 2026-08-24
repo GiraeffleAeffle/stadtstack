@@ -5,6 +5,7 @@ import {
   verifyPublicCaseBindingReceipt,
   type PublicCaseBindingReceiptV1,
 } from "./case-binding-projection.ts";
+import { MUNICIPAL_CASE_ID } from "./case-id.ts";
 
 /**
  * The public transport is deliberately narrower than CaseBindingProjectionReader:
@@ -23,7 +24,7 @@ export type PublicCaseBindingServerConfig = {
 
 export type PublicCaseBindingServer = { readonly server: Server };
 
-const CASE_ID = /^urn:stadtstack:case:test:([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?):([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
+const CASE_ID = MUNICIPAL_CASE_ID;
 const MAX_TARGET_BYTES = 512;
 const MAX_HOST_BYTES = 253;
 const MAX_BODY_BYTES = 16 * 1024;
@@ -145,7 +146,7 @@ function requestViolation(request: IncomingMessage, allowedHosts: ReadonlySet<st
 function route(target: string): { readonly kind: "case" | "root"; readonly value: string } | null {
   const byDiscussion = /^\/v1\/public\/case-bindings\/by-discussion\/([0-9a-f]{64})$/u.exec(target);
   if (byDiscussion) return Object.freeze({ kind: "root", value: byDiscussion[1]! });
-  const byCase = /^\/v1\/public\/case-bindings\/(urn:stadtstack:case:test:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u.exec(target);
+  const byCase = /^\/v1\/public\/case-bindings\/(urn:stadtstack:case:municipality:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u.exec(target);
   if (byCase && CASE_ID.test(byCase[1]!)) return Object.freeze({ kind: "case", value: byCase[1]! });
   return null;
 }

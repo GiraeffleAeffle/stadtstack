@@ -16,7 +16,7 @@ import type {
 
 const HOST = "case-steward.staging.roebel.app";
 const PATH = "/v1/nostr/suggestions/admit";
-const CASE_ID = "urn:stadtstack:case:test:roebel-mueritz:01983a00-0000-7000-8000-000000000001";
+const CASE_ID = "urn:stadtstack:case:municipality:roebel-mueritz:01983a00-0000-7000-8000-000000000001";
 const digest = (value: string) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const SUCCESS_RECEIPT = createPublicCaseBindingReceipt({
   rootEventId: "a".repeat(64),

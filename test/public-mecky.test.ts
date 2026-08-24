@@ -12,7 +12,7 @@ import type { DiscussionArtifact } from "../src/adapters/discussion-adapter.ts";
 import { createPublicMecky } from "../src/public-mecky.ts";
 
 const CITATION_REF = "https://roebel.example/reviewed/crossing-safety";
-const CASE_ID = "urn:stadtstack:case:test:roebel-mueritz:018f0000-0000-7000-8000-000000000001";
+const CASE_ID = "urn:stadtstack:case:municipality:roebel-mueritz:018f0000-0000-7000-8000-000000000001";
 const CHECKSUM = `sha256:${"a".repeat(64)}`;
 const DISCUSSION_SECRET = new Uint8Array(32).fill(7);
 const BASE_DISCUSSION_EVENT = finalizeEvent({
@@ -94,7 +94,7 @@ function publicTask(question: string, sourceDiscussion = discussion()): Companio
       policyVersion: "case-intake-v1",
       citations: [sourceDiscussion.sourceRef, CITATION_REF],
       artifactBindings: [],
-      jurisdiction: { scheme: "test", value: "roebel-mueritz" },
+      jurisdiction: { scheme: "municipality", value: "roebel-mueritz" },
       sourceScope: {
         municipalityId: "roebel-mueritz",
         caseId: "marienfelder-strasse",

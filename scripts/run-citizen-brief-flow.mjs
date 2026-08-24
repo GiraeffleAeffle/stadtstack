@@ -4,7 +4,7 @@ import { createCivicCaseCoordinator, DETERMINISTIC_REVIEWED_AT } from "../src/ci
 import { createNostrDiscussionAdapter } from "../src/adapters/discussion-adapter.ts";
 
 const scope = { municipalityId: "sample-municipality", caseId: "sample-case" };
-const caseId = "urn:stadtstack:case:test:sample-municipality:018f0000-0000-7000-8000-000000000001";
+const caseId = "urn:stadtstack:case:municipality:sample-municipality:018f0000-0000-7000-8000-000000000001";
 const fixturePubkey = "7190b3fcc08cd9c4edb5ef541e8a578089cb8727ba93c4cfb0583e2287d57bd2";
 const event = {
   kind: 1,
