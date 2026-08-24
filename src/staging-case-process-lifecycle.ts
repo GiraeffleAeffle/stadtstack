@@ -3,8 +3,10 @@ import { types as utilTypes } from "node:util";
 
 import {
   createStagingCaseRuntimeLifecycle,
+  type StagingCaseRuntimeListener,
   type StagingCaseRuntimePhase,
 } from "./staging-case-runtime-lifecycle.ts";
+import type { StagingCaseRuntimeDeploymentListenerCapability } from "./staging-case-runtime-listener-capability.ts";
 import {
   assertStagingCaseControlListenerBindPlan,
   type StagingCaseControlListenerBindPlan,
@@ -73,7 +75,7 @@ export type StagingCaseProcessLifecycle = Readonly<{
 type CapturedListener = Readonly<{
   id: string;
   server: Server;
-  listener: Readonly<{ host: "127.0.0.1"; port: number }> | StagingCaseControlListenerBindPlan;
+  listener: StagingCaseRuntimeListener;
 }>;
 
 const PROCESS_DETAILS: Readonly<Record<StagingCaseProcessPhase, StagingCaseProcessHealth["detail"]>> = Object.freeze({
@@ -170,10 +172,14 @@ function captureConfig(input: StagingCaseProcessLifecycleConfig): Readonly<{
     if (listener.id !== expectedId) invalid();
     ids.add(listener.id);
     servers.add(listener.server);
+    // The private lifecycle is the only module allowed to resolve this opaque
+    // Operations capability. The exact plan was registered when the verified
+    // preflight proof derived it; the generic listener mechanics never see a
+    // raw deployment host/port tuple.
     listeners.push(Object.freeze({
       id: listener.id,
       server: listener.server,
-      listener: listener.bindPlan as StagingCaseControlListenerBindPlan,
+      listener: listener.bindPlan as StagingCaseRuntimeDeploymentListenerCapability,
     }));
   }
   if (typeof parsed.release !== "function" || utilTypes.isProxy(parsed.release) ||

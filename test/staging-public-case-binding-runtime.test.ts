@@ -190,6 +190,40 @@ test("rejects storage, credential, reviewed control deployment, and non-loopback
   assert.throws(() => createStagingPublicCaseBindingRuntime({ ...valid, extra: true } as never), /staging_public_case_binding_runtime_config_invalid/u);
 });
 
+test("admits only a canonical explicit loopback outbox origin before start", () => {
+  const runtime = createStagingPublicCaseBindingRuntime(config(18_087, {
+    outboxOrigin: "http://127.0.0.1:18087/",
+  }));
+  assert.equal(runtime.health().phase, "new");
+
+  for (const outboxOrigin of [
+    "http://localhost:18087/",
+    "http://[::1]:18087/",
+    "http://0.0.0.0:18087/",
+    "http://case-steward-control.stadtstack.svc:18087/",
+    "http://example.test:18087/",
+    "http://169.254.169.254:18087/",
+    "https://127.0.0.1:18087/",
+    "http://127.0.0.1/",
+    "http://127.0.0.1:80/",
+    "http://127.0.0.1:0/",
+    "http://127.0.0.1:65536/",
+    "http://127.0.0.1:00018087/",
+    "http://user:password@127.0.0.1:18087/",
+    "http://127.0.0.1:18087",
+    "http://127.0.0.1:18087/outbox",
+    "http://127.0.0.1:18087/?after=0",
+    "http://127.0.0.1:18087/#fragment",
+    " http://127.0.0.1:18087/",
+    "HTTP://127.0.0.1:18087/",
+  ]) {
+    assert.throws(
+      () => createStagingPublicCaseBindingRuntime(config(18_087, { outboxOrigin })),
+      /staging_public_case_binding_runtime_config_invalid/u,
+    );
+  }
+});
+
 test("close during hydration never binds the public listener and is memoized", async (t) => {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });

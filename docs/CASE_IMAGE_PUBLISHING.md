@@ -6,11 +6,18 @@ It is intentionally separate from the Röbel Web/Public Mecky application
 publisher: the Case images are published from `GiraeffleAeffle/stadtstack` to
 three distinct repositories.
 
-The publisher first materializes a fresh three-file build context with `git
-archive $GITHUB_SHA`; Buildx never receives the checkout. The image contains
-only the pinned Node runtime and activation blocker, not Stadtstack source,
-dependencies, manifests, configuration, or a runnable Case process. It writes
-one local OCI archive, resolves its manifest digest, then publishes the
+The publisher first materializes a fresh closed context with `git archive
+$GITHUB_SHA`; Buildx never receives the checkout. Each control and public
+target has its own reviewed transitive Case source closure and context: the
+public archive/image excludes steward, admission, private-outbox-server, and
+storage/control source, while the control archive/image excludes the public
+binding server/client source. The shared replay-wire verifier is deliberately
+one of a small explicit shared source set (together with receipt types and
+generic listener mechanics); the publisher contract classifies every runtime
+source as public-only, control-only, or shared. Exact package manifests and
+lockfile, and the production dependency closure produced by `npm ci
+--omit=dev --ignore-scripts`. It writes one local OCI archive, resolves its
+manifest digest, then publishes the
 immutable `source-<40-lowercase-hex>` tag through a fail-closed ORAS state
 machine: an absent tag is pushed, an exact existing tag is reused (including a
 retry after a later attestation failure), and a different digest or any
@@ -40,23 +47,50 @@ registry config and requires its exact bytes and canonical checksum to match
 credential, or credential-helper content fails before any resolve or publish.
 Successful anonymous resolution prints the canonical
 `stadtstack_case_anonymous_digest_pull_receipt_v1` to stdout for later
-independent review. This inert slice does not upload the receipt, create an
-artifact, promote a release, or automatically hand anything to Operations;
+independent review. This runtime-image slice does not upload the receipt,
+create an artifact, promote a release, or automatically hand anything to Operations;
 Operations must independently capture and verify an admitted receipt. It
 binds component, image repository, manifest digest, exact source revision,
 empty-auth checksum, anonymous ORAS resolver identity, and resolved digest; its
 SHA-256 receipt digest covers every field except itself.
 
-These are **not deployable Case runtimes**. The image entrypoint exits with a
-stable activation-blocked status before loading Case code, opening a socket,
-reading configuration, or touching a volume. It exists to ensure that a
-published digest cannot be mistaken for authorization to run the Case control,
-public-binding, or restore-verifier process. The activation-blocked entrypoint
-may be replaced only by a later reviewed runtime-entrypoint slice that carries
-the complete ADR 0023 recovery/claim gate.
+These are **not deployable Case runtimes**. The control and public images have
+separate entrypoints which load exactly one mounted JSON configuration file and
+can run only the ADR 0022 loopback reference composition. They reject every
+other `STADTSTACK_CASE_*` input and never print configuration, exceptions, or
+health details. The publisher contract binds each component entrypoint to its
+one exact dynamic TypeScript runtime target, and CI derives the reviewed source
+closure from that target; a typo or public/control target swap fails closed.
+Configuration paths must resolve directly to one non-symlink
+regular file: the entrypoint verifies identity and a 1 MiB size ceiling before
+allocating, opens with no-follow and non-blocking flags, performs a bounded
+descriptor read, then rechecks that the path still names the same regular inode.
+FIFO/device swaps cannot stall startup; replacement, mutation and growth fail
+closed, and the descriptor closes on every outcome. They provide no Operations binding
+source, immutable binding pin, PVC, Service, NetworkPolicy, Kubernetes token,
+or non-loopback listener. A termination request suppresses the ready marker
+even when it races a delayed startup and close makes that startup settle.
+The restore-verifier target still exits with the stable activation-blocked
+status before loading Case code. A published digest is therefore not
+authorization to expose the Case control, public-binding, or restore-verifier
+process; the later ADR 0023/Operations activation gate must provide the
+reviewed recovery and network evidence.
 
 The image workflow has no cluster, Flux, runtime Secret, civic-data, or
 treasury credential. It is not a deployment workflow and it makes no GitOps
 change. The root [`.dockerignore`](../.dockerignore) is a second defensive
-allowlist for the three archived files. It excludes source, dependencies,
-tests, docs, local state, temporary material, and unrelated repository content.
+allowlist for the union of the exact component closure paths; it contains no
+`src/**` wildcard. The workflow then archives only the selected target closure,
+and each final Containerfile stage `COPY`s only that target's source paths. It
+therefore excludes tests, docs, local state, temporary material, unrelated
+repository content, and foreign component source even if a future publisher
+attempts to widen its context.
+
+The shared listener mechanics can resolve only the exact opaque bind-plan
+objects registered while the reviewed control preflight derives them. There is
+no raw host/port capability constructor; structural objects and cloned plans
+remain inert, and CI restricts the one internal registration seam to the
+control-preflight module. That guard scans repository-relative identities for
+the complete `src` implementation tree and every published Case runtime
+artifact, so a nested same-basename file or JavaScript entrypoint cannot bypass
+the restriction.

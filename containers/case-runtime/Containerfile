@@ -1,29 +1,98 @@
 # syntax=docker/dockerfile:1
 #
-# This image is intentionally an inert publication receipt.  It contains the
-# pinned Node runtime solely to execute the stable activation blocker; it does
-# not contain the Stadtstack application, package manifests, dependencies, or
-# any runtime configuration.  Changing the entrypoint cannot recover Case
-# code from this image.
-FROM node:22.18.0-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e
+# This is a source-only Case runtime image. The control and public targets are
+# intentionally limited to the ADR 0022 loopback composition: publishing an
+# image never supplies the Operations binding, a PVC, a Secret, a Service, a
+# NetworkPolicy, or authority to expose a civic listener. The restore target
+# remains an explicit inert blocker until its recovery evidence is reviewed.
 
-ARG COMPONENT
+FROM node:22.18.0-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e AS dependencies
+WORKDIR /runtime
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts \
+  && test -d node_modules/nostr-tools \
+  && test ! -d node_modules/typescript
+
+FROM dependencies AS case-steward-control
 ARG SOURCE_REPOSITORY
 ARG SOURCE_REVISION
-
-RUN test "$COMPONENT" = "case-steward-control" || \
-    test "$COMPONENT" = "case-public-binding" || \
-    test "$COMPONENT" = "case-restore-verifier"
-
-LABEL org.opencontainers.image.title="Stadtstack Case ${COMPONENT}" \
+WORKDIR /runtime
+COPY --from=dependencies /runtime/node_modules ./node_modules
+COPY package.json package-lock.json ./
+COPY containers/case-runtime/runtime-entrypoint-common.mjs ./containers/case-runtime/runtime-entrypoint-common.mjs
+COPY containers/case-runtime/case-steward-control-entrypoint.mjs ./containers/case-runtime/case-steward-control-entrypoint.mjs
+COPY src/adapters/discussion-adapter.ts ./src/adapters/discussion-adapter.ts
+COPY src/adapters/sqlite-atomic-topic-case-admission.ts ./src/adapters/sqlite-atomic-topic-case-admission.ts
+COPY src/case-binding-outbox-wire.ts ./src/case-binding-outbox-wire.ts
+COPY src/case-binding-outbox.ts ./src/case-binding-outbox.ts
+COPY src/case-binding-projection.ts ./src/case-binding-projection.ts
+COPY src/case-durable-deployment-claim.ts ./src/case-durable-deployment-claim.ts
+COPY src/case-id.ts ./src/case-id.ts
+COPY src/case-shutdown-seal.ts ./src/case-shutdown-seal.ts
+COPY src/case-state-recovery-evidence.ts ./src/case-state-recovery-evidence.ts
+COPY src/case-store-epoch.ts ./src/case-store-epoch.ts
+COPY src/citizen-suggestion.ts ./src/citizen-suggestion.ts
+COPY src/civic-case-coordinator.ts ./src/civic-case-coordinator.ts
+COPY src/credential-free-case-binding-outbox-server.ts ./src/credential-free-case-binding-outbox-server.ts
+COPY src/roebel-case-steward-control-server.ts ./src/roebel-case-steward-control-server.ts
+COPY src/roebel-control-service.ts ./src/roebel-control-service.ts
+COPY src/staging-case-control-preflight.ts ./src/staging-case-control-preflight.ts
+COPY src/staging-case-control-runtime.ts ./src/staging-case-control-runtime.ts
+COPY src/staging-case-process-lifecycle.ts ./src/staging-case-process-lifecycle.ts
+COPY src/staging-case-recovery-activation-authority.ts ./src/staging-case-recovery-activation-authority.ts
+COPY src/staging-case-recovery-attestation.ts ./src/staging-case-recovery-attestation.ts
+COPY src/staging-case-runtime-lifecycle.ts ./src/staging-case-runtime-lifecycle.ts
+COPY src/staging-case-runtime-listener-capability.ts ./src/staging-case-runtime-listener-capability.ts
+COPY src/staging-case-steward-token-authenticator.ts ./src/staging-case-steward-token-authenticator.ts
+COPY src/staging-runtime-probe-server.ts ./src/staging-runtime-probe-server.ts
+COPY src/topic-case-admission.ts ./src/topic-case-admission.ts
+LABEL org.opencontainers.image.title="Stadtstack Case Steward control (loopback reference)" \
       org.opencontainers.image.source="${SOURCE_REPOSITORY}" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.licenses="MIT" \
-      org.stadtstack.case.component="${COMPONENT}" \
-      org.stadtstack.case.activation="blocked_pending_reviewed_recovery_evidence"
+      org.stadtstack.case.component="case-steward-control" \
+      org.stadtstack.case.activation="loopback_runtime_pending_operations_activation"
+USER node
+ENTRYPOINT ["node", "--experimental-strip-types", "/runtime/containers/case-runtime/case-steward-control-entrypoint.mjs"]
 
+FROM dependencies AS case-public-binding
+ARG SOURCE_REPOSITORY
+ARG SOURCE_REVISION
+WORKDIR /runtime
+COPY --from=dependencies /runtime/node_modules ./node_modules
+COPY package.json package-lock.json ./
+COPY containers/case-runtime/runtime-entrypoint-common.mjs ./containers/case-runtime/runtime-entrypoint-common.mjs
+COPY containers/case-runtime/case-public-binding-entrypoint.mjs ./containers/case-runtime/case-public-binding-entrypoint.mjs
+COPY src/case-binding-outbox-projector.ts ./src/case-binding-outbox-projector.ts
+COPY src/case-binding-outbox-wire.ts ./src/case-binding-outbox-wire.ts
+COPY src/case-binding-outbox.ts ./src/case-binding-outbox.ts
+COPY src/case-binding-projection.ts ./src/case-binding-projection.ts
+COPY src/case-id.ts ./src/case-id.ts
+COPY src/credential-free-case-binding-outbox-http-client.ts ./src/credential-free-case-binding-outbox-http-client.ts
+COPY src/public-case-binding-server.ts ./src/public-case-binding-server.ts
+COPY src/staging-case-runtime-lifecycle.ts ./src/staging-case-runtime-lifecycle.ts
+COPY src/staging-case-runtime-listener-capability.ts ./src/staging-case-runtime-listener-capability.ts
+COPY src/staging-public-case-binding-runtime.ts ./src/staging-public-case-binding-runtime.ts
+COPY src/staging-runtime-probe-server.ts ./src/staging-runtime-probe-server.ts
+LABEL org.opencontainers.image.title="Stadtstack public Case binding (loopback reference)" \
+      org.opencontainers.image.source="${SOURCE_REPOSITORY}" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.licenses="MIT" \
+      org.stadtstack.case.component="case-public-binding" \
+      org.stadtstack.case.activation="loopback_runtime_pending_operations_activation"
+USER node
+ENTRYPOINT ["node", "--experimental-strip-types", "/runtime/containers/case-runtime/case-public-binding-entrypoint.mjs"]
+
+FROM node:22.18.0-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e AS case-restore-verifier
+ARG SOURCE_REPOSITORY
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.title="Stadtstack Case restore verifier" \
+      org.opencontainers.image.source="${SOURCE_REPOSITORY}" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.licenses="MIT" \
+      org.stadtstack.case.component="case-restore-verifier" \
+      org.stadtstack.case.activation="blocked_pending_reviewed_recovery_evidence"
 WORKDIR /activation
 COPY containers/case-runtime/activation-blocked.mjs ./activation-blocked.mjs
-
 USER node
 ENTRYPOINT ["node", "/activation/activation-blocked.mjs"]

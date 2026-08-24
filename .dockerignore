@@ -1,15 +1,52 @@
-# The remote publisher materializes these three reviewed files with
-# `git archive $GITHUB_SHA` before Buildx receives the context.  Keep this
-# defensive allowlist as a second boundary if the workflow is ever edited.
+# The remote publishers materialize their reviewed files with `git archive
+# $GITHUB_SHA` before Buildx receives a context. Keep this defensive allowlist
+# as a second boundary if either workflow is ever edited.
 **
 !.dockerignore
+!package.json
+!package-lock.json
 !containers/
 !containers/case-runtime/
 !containers/case-runtime/Containerfile
 !containers/case-runtime/activation-blocked.mjs
+!containers/case-runtime/runtime-entrypoint-common.mjs
+!containers/case-runtime/case-steward-control-entrypoint.mjs
+!containers/case-runtime/case-public-binding-entrypoint.mjs
+!containers/case-runtime/case-steward-control-source-closure.txt
+!containers/case-runtime/case-public-binding-source-closure.txt
 !containers/reviewed-knowledge-runtime/
 !containers/reviewed-knowledge-runtime/Containerfile
 !src/
+!src/adapters/
+!src/adapters/discussion-adapter.ts
+!src/adapters/sqlite-atomic-topic-case-admission.ts
+!src/case-binding-outbox-projector.ts
+!src/case-binding-outbox-wire.ts
+!src/case-binding-outbox.ts
+!src/case-binding-projection.ts
+!src/case-durable-deployment-claim.ts
+!src/case-id.ts
+!src/case-shutdown-seal.ts
+!src/case-state-recovery-evidence.ts
+!src/case-store-epoch.ts
+!src/citizen-suggestion.ts
+!src/civic-case-coordinator.ts
+!src/credential-free-case-binding-outbox-http-client.ts
+!src/credential-free-case-binding-outbox-server.ts
+!src/public-case-binding-server.ts
+!src/roebel-case-steward-control-server.ts
+!src/roebel-control-service.ts
+!src/staging-case-control-preflight.ts
+!src/staging-case-control-runtime.ts
+!src/staging-case-process-lifecycle.ts
+!src/staging-case-recovery-activation-authority.ts
+!src/staging-case-recovery-attestation.ts
+!src/staging-case-runtime-lifecycle.ts
+!src/staging-case-runtime-listener-capability.ts
+!src/staging-case-steward-token-authenticator.ts
+!src/staging-public-case-binding-runtime.ts
+!src/staging-runtime-probe-server.ts
+!src/topic-case-admission.ts
 !src/reviewed-public-knowledge.ts
 !src/reviewed-public-knowledge-server.ts
 !src/staging-reviewed-public-knowledge-runtime.ts

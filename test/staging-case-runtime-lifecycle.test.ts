@@ -167,6 +167,21 @@ test("close before start is safe, memoized, and releases once", async () => {
   assert.equal(releases, 1);
 });
 
+test("rejects raw and structurally forged deployment listener capabilities", () => {
+  assert.throws(
+    () => createStagingCaseRuntimeLifecycle(config(createServer(), () => undefined, {
+      listener: { host: "0.0.0.0", port: 18_085 } as never,
+    })),
+    /staging_case_runtime_config_invalid/u,
+  );
+  assert.throws(
+    () => createStagingCaseRuntimeLifecycle(config(createServer(), () => undefined, {
+      listener: Object.freeze({ schemaVersion: "staging_case_control_listener_bind_plan_v1" }) as never,
+    })),
+    /staging_case_runtime_config_invalid/u,
+  );
+});
+
 test("close during an in-flight bind stops the listener and releases once", async () => {
   const server = createServer((_request, response) => response.end("ok"));
   let releases = 0;

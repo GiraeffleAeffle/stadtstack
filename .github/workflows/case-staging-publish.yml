@@ -8,12 +8,15 @@ on:
       - .github/workflows/case-staging-publish.yml
       - .dockerignore
       - containers/case-runtime/**
+      - package.json
+      - package-lock.json
       - scripts/publish-case-image-from-oci.mjs
+      - src/**
   workflow_dispatch:
 
-# This workflow is the only planned publisher identity accepted by the inert
-# Operations Case-image inventory.  It has no cluster, Flux, runtime Secret,
-# civic-data, or treasury credential.
+# This workflow is the only planned publisher identity for the loopback Case
+# image inventory. It has no cluster, Flux, runtime Secret, civic-data, or
+# treasury credential.
 permissions:
   contents: read
   packages: write
@@ -34,10 +37,13 @@ jobs:
         include:
           - component: case-steward-control
             image: ghcr.io/giraeffleaeffle/stadtstack-case-steward-control
+            sourceClosure: containers/case-runtime/case-steward-control-source-closure.txt
           - component: case-public-binding
             image: ghcr.io/giraeffleaeffle/stadtstack-case-public-binding
+            sourceClosure: containers/case-runtime/case-public-binding-source-closure.txt
           - component: case-restore-verifier
             image: ghcr.io/giraeffleaeffle/stadtstack-case-restore-verifier
+            sourceClosure: ""
     steps:
       - name: Require the reviewed publisher ref
         shell: bash
@@ -62,14 +68,37 @@ jobs:
           context="$RUNNER_TEMP/case-build-context"
           rm -rf "$context"
           mkdir -p "$context"
-          git archive --format=tar "$GITHUB_SHA" -- \
-            .dockerignore \
-            containers/case-runtime/Containerfile \
-            containers/case-runtime/activation-blocked.mjs | tar -xf - -C "$context"
-          test "$(find "$context" -type f | sed "s#^$context/##" | LC_ALL=C sort)" = "$(printf '%s\n' .dockerignore containers/case-runtime/Containerfile containers/case-runtime/activation-blocked.mjs)"
-          for path in .dockerignore containers/case-runtime/Containerfile containers/case-runtime/activation-blocked.mjs; do
+          source_closure='${{ matrix.sourceClosure }}'
+          context_files=(.dockerignore containers/case-runtime/Containerfile containers/case-runtime/activation-blocked.mjs)
+          source_files=()
+          if test "$source_closure" != ""; then
+            test -f "$source_closure"
+            mapfile -t source_files < "$source_closure"
+            source_paths="$(printf '%s\n' "${source_files[@]}")"
+            test "$source_paths" = "$(printf '%s\n' "${source_files[@]}" | LC_ALL=C sort -u)"
+            while IFS= read -r path; do
+              [[ "$path" =~ ^src/[a-z0-9/-]+\.ts$ ]]
+              test -f "$path"
+            done <<< "$source_paths"
+            case "${{ matrix.component }}" in
+              case-steward-control)
+                context_files+=(package.json package-lock.json containers/case-runtime/runtime-entrypoint-common.mjs containers/case-runtime/case-steward-control-entrypoint.mjs "$source_closure")
+                ;;
+              case-public-binding)
+                context_files+=(package.json package-lock.json containers/case-runtime/runtime-entrypoint-common.mjs containers/case-runtime/case-public-binding-entrypoint.mjs "$source_closure")
+                ;;
+              *) exit 1 ;;
+            esac
+          else
+            test "${{ matrix.component }}" = "case-restore-verifier"
+          fi
+          git archive --format=tar "$GITHUB_SHA" -- "${context_files[@]}" "${source_files[@]}" | tar -xf - -C "$context"
+          expected="$(printf '%s\n' "${context_files[@]}" "${source_files[@]}" | LC_ALL=C sort)"
+          actual="$(find "$context" -type f | sed "s#^$context/##" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          while IFS= read -r path; do
             test "$(git show "$GITHUB_SHA:$path" | sha256sum | cut -d' ' -f1)" = "$(sha256sum "$context/$path" | cut -d' ' -f1)"
-          done
+          done <<< "$expected"
           echo "path=$context" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
@@ -86,9 +115,9 @@ jobs:
           push: false
           platforms: linux/amd64
           build-args: |
-            COMPONENT=${{ matrix.component }}
             SOURCE_REPOSITORY=https://github.com/GiraeffleAeffle/stadtstack
             SOURCE_REVISION=${{ github.sha }}
+          target: ${{ matrix.component }}
           outputs: type=oci,dest=${{ runner.temp }}/${{ matrix.component }}.oci.tar,name=stadtstack.local/stadtstack-case/${{ matrix.component }}:source-${{ github.sha }},annotation.io.containerd.image.name=stadtstack.local/stadtstack-case/${{ matrix.component }}:source-${{ github.sha }},rewrite-timestamp=true
           cache-from: type=gha,scope=stadtstack-case-runtime
           cache-to: type=gha,mode=max,scope=stadtstack-case-runtime

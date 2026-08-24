@@ -11,7 +11,7 @@ import {
   CREDENTIAL_FREE_CASE_BINDING_OUTBOX_MAX_PAGE_BYTES,
   CREDENTIAL_FREE_CASE_BINDING_OUTBOX_PATH,
   parseAndVerifyCredentialFreeCaseBindingOutboxPage,
-} from "./credential-free-case-binding-outbox-server.ts";
+} from "./case-binding-outbox-wire.ts";
 
 /** A deployment-pinned private origin; it is never supplied by an HTTP caller. */
 export type CredentialFreeCaseBindingOutboxHttpClientConfig = Readonly<{

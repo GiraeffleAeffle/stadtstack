@@ -111,6 +111,31 @@ function captureListener(value: unknown, code: string): Listener {
   return Object.freeze({ host: "127.0.0.1", port: listener.port as number });
 }
 
+/**
+ * The reference composition reaches the private outbox over a loopback-only
+ * bridge.  Keep this stricter than the generic credential-free HTTP client:
+ * an Operations adapter may deliberately use another private transport, but
+ * this public entrypoint must not acquire a DNS, Service, or external route
+ * merely through configuration.
+ */
+function captureLoopbackOutboxOrigin(value: unknown, code: string): string {
+  if (typeof value !== "string" || Buffer.byteLength(value, "utf8") === 0 ||
+    Buffer.byteLength(value, "utf8") > 512) fail(code);
+  let origin: URL;
+  try {
+    origin = new URL(value);
+  } catch {
+    fail(code);
+  }
+  const port = Number(origin.port);
+  if (origin.toString() !== value || origin.protocol !== "http:" ||
+    origin.hostname !== "127.0.0.1" || origin.port === "" ||
+    !Number.isSafeInteger(port) || port < 1 || port > 65_535 ||
+    origin.username !== "" || origin.password !== "" ||
+    origin.pathname !== "/" || origin.search !== "" || origin.hash !== "") fail(code);
+  return value;
+}
+
 function captureConfig(value: StagingPublicCaseBindingRuntimeConfig): CapturedConfig {
   const config = exactObject(value, [
     "outboxOrigin",
@@ -121,9 +146,7 @@ function captureConfig(value: StagingPublicCaseBindingRuntimeConfig): CapturedCo
     "reconcileIntervalMs",
     "drainTimeoutMs",
   ], "staging_public_case_binding_runtime_config_invalid");
-  if (typeof config.outboxOrigin !== "string" || Buffer.byteLength(config.outboxOrigin, "utf8") === 0 ||
-    Buffer.byteLength(config.outboxOrigin, "utf8") > 512 ||
-    !Number.isSafeInteger(config.reconcileIntervalMs) || (config.reconcileIntervalMs as number) < 100 ||
+  if (!Number.isSafeInteger(config.reconcileIntervalMs) || (config.reconcileIntervalMs as number) < 100 ||
     (config.reconcileIntervalMs as number) > 3_600_000 ||
     !Number.isSafeInteger(config.drainTimeoutMs) || (config.drainTimeoutMs as number) < 100 ||
     (config.drainTimeoutMs as number) > 10_000) fail("staging_public_case_binding_runtime_config_invalid");
@@ -131,7 +154,7 @@ function captureConfig(value: StagingPublicCaseBindingRuntimeConfig): CapturedCo
   const probeListener = captureListener(config.probeListener, "staging_public_case_binding_runtime_config_invalid");
   if (publicListener.port !== 0 && publicListener.port === probeListener.port) fail("staging_public_case_binding_runtime_config_invalid");
   return Object.freeze({
-    outboxOrigin: config.outboxOrigin,
+    outboxOrigin: captureLoopbackOutboxOrigin(config.outboxOrigin, "staging_public_case_binding_runtime_config_invalid"),
     publicAllowedHosts: exactHostArray(config.publicAllowedHosts, "staging_public_case_binding_runtime_config_invalid"),
     probeAllowedHosts: exactHostArray(config.probeAllowedHosts, "staging_public_case_binding_runtime_config_invalid"),
     publicListener,

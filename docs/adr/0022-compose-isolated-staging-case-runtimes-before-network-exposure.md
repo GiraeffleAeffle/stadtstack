@@ -1,6 +1,6 @@
 # ADR 0022: Compose isolated staging Case runtimes before network exposure
 
-- **Status:** accepted; loopback reference implemented; deployment blocked on the Operations gate
+- **Status:** accepted; loopback reference and source-only image entrypoints implemented; deployment blocked on the Operations gate
 - **Date:** 2026-08-23
 
 ## Context
@@ -18,6 +18,26 @@ listener bound only to `127.0.0.1`, while accepting `0.0.0.0` before the exact
 Service and NetworkPolicy contract exists would widen the staff surface ahead
 of its deployment control. This decision therefore separates executable
 process composition from later network exposure.
+
+The source-only Case images now package separate control and public loopback
+entrypoints with target-specific transitive source closures and the exact
+production dependency closure. The public image excludes control, steward,
+admission, private-outbox-server and storage source; the control image excludes
+the public reader/client source. This makes the reference processes
+reproducible without granting a deployment capability: the images contain
+neither Operations evidence nor a Kubernetes resource, and the restore-verifier
+remains activation-blocked.
+
+Each entrypoint reads its one configuration through a descriptor-bounded
+regular-file Adapter. Symlinks and non-regular files fail before open, the
+1 MiB ceiling is checked before allocation, and the descriptor uses no-follow
+plus non-blocking flags so a FIFO/device swap cannot stall startup. A final path
+identity check rejects replacement, shrinkage, mutation or growth during the
+bounded read without disclosing the path. The publisher contract also binds
+each launcher to its exact dynamic TypeScript runtime root; the source closure
+is traversed from that declared target so a typo or public/control swap cannot
+silently create an incomplete image. A termination request suppresses the
+ready marker even if it races an in-flight startup which settles during close.
 
 ## Decision
 
@@ -85,6 +105,15 @@ and a staging-only check that rejects the token Adapter from production
 overlays. Only after that verifier exists may a later change introduce the
 deployment bind Adapter for `0.0.0.0`. Self-asserting a network-policy name or
 digest in application configuration is not sufficient proof.
+
+The generic lifecycle cannot mint a Pod-network listener from a raw tuple. The
+control preflight registers only the exact opaque bind-plan objects derived
+from its module-proven deployment proof; the process lifecycle verifies and
+passes that same object to the shared listener mechanics. Structural values,
+clones and raw `0.0.0.0` host/port objects remain inert. CI restricts the
+internal registration seam to the control-preflight module across the complete
+published Case runtime source/artifact set, using repository-relative paths so
+nested same-basename files cannot inherit an allowed import identity.
 
 The existing Operations topology keeps public binding on port `18086`; the
 least disruptive later extension adds the private outbox Service on `18087`

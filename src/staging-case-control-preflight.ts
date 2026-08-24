@@ -3,6 +3,8 @@ import { lstatSync, readFileSync, realpathSync, statfsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { types as utilTypes } from "node:util";
 
+import { registerStagingCaseRuntimeDeploymentListenerCapability } from "./staging-case-runtime-listener-capability.ts";
+
 /**
  * This module is the deployment-boundary seam for the private Case owner.
  * It deliberately has no Kubernetes client: Operations reviews and pins the
@@ -525,6 +527,11 @@ export function createStagingCaseControlListenerBindPlans(
   const plans = facts.listeners.map((listener) => {
     const plan: StagingCaseControlListenerBindPlan = Object.freeze({ schemaVersion: "staging_case_control_listener_bind_plan_v1" });
     bindPlanFacts.set(plan, listener);
+    registerStagingCaseRuntimeDeploymentListenerCapability(plan, {
+      id: listener.id,
+      host: "0.0.0.0",
+      port: listener.port,
+    });
     return plan;
   });
   return Object.freeze(plans);
