@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "stadtstack_reviewed_knowledge_remote_publisher_v1",
+  "sourceRepository": "GiraeffleAeffle/stadtstack",
+  "sourceRef": "refs/heads/main",
+  "workflowPath": ".github/workflows/reviewed-knowledge-runtime-publish.yml",
+  "component": "reviewed-public-knowledge-runtime",
+  "imageRepository": "ghcr.io/giraeffleaeffle/stadtstack-reviewed-public-knowledge-runtime",
+  "publication": {
+    "remoteOnly": true,
+    "immutableSourceTagFormat": "source-<exact-40-lowercase-hex>",
+    "duplicateSourcePublication": "reuse_only_when_exact_digest_matches_fail_closed_otherwise",
+    "provenancePredicateType": "https://slsa.dev/provenance/v1",
+    "sbomFormat": "SPDX-2.3",
+    "sbomPredicateType": "https://spdx.dev/Document/v2.3",
+    "publicPackageVisibilityRequired": true,
+    "anonymousTagAndDigestBytePullRequired": true,
+    "automaticOperationsHandoff": false,
+    "activation": "not_deployed"
+  },
+  "effects": {
+    "localContainerBuild": false,
+    "clusterMutation": false,
+    "fluxReconciliation": false,
+    "secretRead": false,
+    "civicCaseAuthority": false,
+    "civicMutation": false,
+    "administrationWrite": false,
+    "vote": false,
+    "treasury": false
+  }
+}

@@ -7,3 +7,10 @@
 !containers/case-runtime/
 !containers/case-runtime/Containerfile
 !containers/case-runtime/activation-blocked.mjs
+!containers/reviewed-knowledge-runtime/
+!containers/reviewed-knowledge-runtime/Containerfile
+!src/
+!src/reviewed-public-knowledge.ts
+!src/reviewed-public-knowledge-server.ts
+!src/staging-reviewed-public-knowledge-runtime.ts
+!src/reviewed-knowledge-runtime-entrypoint.mjs

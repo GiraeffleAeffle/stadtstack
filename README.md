@@ -25,6 +25,9 @@ private operations, or personal data.
   news or Ratsinformationssystem projections without crawling or publishing;
 - a credential-free loopback reference transport that serves those immutable
   projections through the two exact GET-only routes consumed by Röbel;
+- a separate source-only runtime image tracer with exactly two bundled
+  synthetic `roebel-mueritz` reviewed-source projections; it is remote-published
+  with provenance and anonymous verification, but intentionally not deployed;
 - a provider-neutral administration-workspace Adapter that prepares an exact
   Department task and binds its returned response only as a private draft for
   independent review;
@@ -76,6 +79,9 @@ verification. The images contain only an activation blocker, not Case source
 or dependencies. They are intentionally activation-blocked until the reviewed
 ADR 0023 recovery gate and runtime composition exist; see
 [Case image publishing](docs/CASE_IMAGE_PUBLISHING.md).
+
+The reviewed-source runtime has the same remote-only immutable-source evidence
+without Case authority; see [reviewed knowledge runtime publishing](docs/REVIEWED_KNOWLEDGE_RUNTIME_PUBLISHING.md).
 
 ## Architecture
 
