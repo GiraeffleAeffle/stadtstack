@@ -73,7 +73,7 @@ export function parseArguments(argv) {
   if (values.anonymousRegistryConfig !== undefined && (typeof values.anonymousRegistryConfig !== "string" || values.anonymousRegistryConfig === "" || typeof values.anonymousPullDir !== "string" || values.anonymousPullDir === "")) throw new Error("publisher_argument_invalid:anonymous-pull");
   return Object.freeze(values);
 }
-export function publishReviewedKnowledgeImageFromOci(input, runCommand = run, waitFor = wait, read = readFileSync, readDirectory = readdirSync) {
+export function publishReviewedKnowledgeImageFromOci(input, runCommand = run, waitFor = wait, read = (path) => readFileSync(path, "utf8"), readDirectory = readdirSync) {
   const { archive, localReference, image, tag, anonymousRegistryConfig, anonymousPullDir } = input;
   if (anonymousRegistryConfig !== undefined) validateEmptyAuth(anonymousRegistryConfig, read);
   const localDigest = digest(runCommand("oras", ["resolve", "--oci-layout", `${archive}:${localReference}`]), "local_oci_archive_resolve");
