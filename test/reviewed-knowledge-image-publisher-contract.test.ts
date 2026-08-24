@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { classifyRemoteResolveFailure, parseArguments, publishReviewedKnowledgeImageFromOci } from "../scripts/publish-reviewed-knowledge-image-from-oci.mjs";
@@ -67,6 +68,24 @@ test("the immutable publisher only creates an absent exact tag and verifies anon
   assert.equal(verified.packageVisibility, "public");
   assert.equal(verified.anonymousDigestPullReceipt?.resolvedManifestDigest, digest);
   assert.ok(anonymousCalls.some((call) => call === `pull --registry-config /tmp/empty-auth.json --output /tmp/empty-pull ${input.image}@${digest}`));
+});
+
+test("the default adapter reads an exact empty-auth file as UTF-8 text", () => {
+  const directory = mkdtempSync(join(tmpdir(), "reviewed-knowledge-empty-auth-"));
+  const auth = join(directory, "auth.json");
+  const pull = join(directory, "pull");
+  mkdirSync(pull);
+  writeFileSync(auth, '{"auths":{}}', "utf8");
+  try {
+    const result = publishReviewedKnowledgeImageFromOci(
+      { ...input, anonymousRegistryConfig: auth, anonymousPullDir: pull },
+      () => ok(),
+    );
+    assert.equal(result.packageVisibility, "public");
+    assert.equal(result.anonymousDigestPullReceipt?.authContext, "clean-empty-auth-config");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("wrong registries, credentials, malformed input, and local absence fail closed", () => {
