@@ -71,6 +71,21 @@ publication, runtime operations, public relay writes, or civic effects.
   use one municipality-scoped durable Case ID and block activation of legacy
   staging-identity stores rather than rewriting checksum-bound evidence.
 
+## Proposed extensions
+
+- [ADR 0025](./0025-consent-scoped-kair-session-bundles.md) — keep Meld/Kair
+  session bundles consent-scoped and review-gated rather than treating a
+  recording-derived artifact as identity, source authority, or a Case.
+- [ADR 0026](./0026-one-civic-change-feed.md) — publish one replayable
+  eligibility-gated change feed and keep MCP and Nostr as bounded Adapters over
+  the same Public knowledge projection.
+- [ADR 0027](./0027-cross-municipality-similarity-is-discovery.md) — use
+  cross-municipality similarity for public-safe discovery without merging
+  identity, consent, Cases, or municipal authority.
+- [ADR 0028](./0028-separate-public-and-control-deployables-around-one-civic-kernel.md) —
+  extract one framework-neutral Civic coordination kernel and split public and
+  staff surfaces into independently built and deployed applications.
+
 ## Historical
 
 - [ADR 0002](./0002-one-city-nostr-control-plane-companion-test.md) — the

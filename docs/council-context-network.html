@@ -1,0 +1,1142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f4f1e9" />
+  <meta name="description" content="Council Context Network, three reviewed inbound seams carried through one Civic Journey." />
+  <title>Council Context Network / one Civic Journey</title>
+  <style>
+    :root {
+      --paper: #f4f1e9;
+      --paper-deep: #e9e5dc;
+      --ink: #20201e;
+      --ink-soft: #6d6b65;
+      --line: #aaa69d;
+      --card: rgba(255, 255, 252, 0.92);
+      --mint: #b9efd9;
+      --mint-deep: #2c8f70;
+      --blue: #cbd5f0;
+      --blue-deep: #566caa;
+      --pink: #f0cce1;
+      --pink-deep: #a55882;
+      --ochre: #e7c982;
+      --ochre-deep: #936b14;
+      --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Baskerville, Georgia, serif;
+      --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --pad: clamp(20px, 4vw, 64px);
+      --max: 1440px;
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 8%, rgba(185, 239, 217, .22), transparent 24rem),
+        radial-gradient(circle at 92% 24%, rgba(203, 213, 240, .22), transparent 27rem),
+        var(--paper);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.5;
+      text-rendering: optimizeLegibility;
+      overflow-x: hidden;
+    }
+
+    a { color: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    ::selection { background: var(--mint); color: var(--ink); }
+
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      left: 16px;
+      top: -80px;
+      padding: 12px 16px;
+      background: var(--ink);
+      color: white;
+      border-radius: 10px;
+      transition: top .2s ease;
+    }
+    .skip-link:focus { top: 16px; }
+
+    .topbar {
+      position: fixed;
+      z-index: 50;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 72px;
+      padding: 12px var(--pad);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+
+    .brand,
+    .menu-button {
+      pointer-events: auto;
+      color: white;
+      background: rgba(31, 31, 29, .95);
+      border: 0;
+      box-shadow: 0 8px 28px rgba(20, 20, 18, .12);
+    }
+
+    .brand {
+      min-height: 48px;
+      padding: 0 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      border-radius: 16px 16px 18px 16px;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .brand span { color: #bdbbb5; font-family: var(--mono); font-weight: 400; }
+
+    .menu-button {
+      width: 52px;
+      height: 48px;
+      border-radius: 16px 16px 16px 18px;
+      cursor: pointer;
+      font-size: 21px;
+      letter-spacing: 3px;
+      line-height: 1;
+    }
+
+    .menu-button:focus-visible,
+    .brand:focus-visible,
+    .argument-node:focus-visible,
+    .button:focus-visible,
+    .chapter-nav a:focus-visible {
+      outline: 3px solid var(--ochre);
+      outline-offset: 3px;
+    }
+
+    .progress-track {
+      position: fixed;
+      z-index: 55;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 3px;
+      background: transparent;
+    }
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      background: var(--mint-deep);
+      transition: width .08s linear;
+    }
+
+    .chapter-nav {
+      position: fixed;
+      z-index: 45;
+      right: var(--pad);
+      top: 68px;
+      width: min(330px, calc(100vw - 40px));
+      padding: 18px;
+      border: 1px solid rgba(32, 32, 30, .12);
+      border-radius: 18px 6px 18px 18px;
+      background: rgba(255, 255, 252, .97);
+      box-shadow: 0 22px 70px rgba(30, 28, 23, .18);
+      opacity: 0;
+      transform: translateY(-12px) scale(.98);
+      visibility: hidden;
+      transition: .22s ease;
+      max-height: calc(100dvh - 90px - env(safe-area-inset-bottom));
+      overflow: auto;
+    }
+
+    .chapter-nav.open { opacity: 1; transform: none; visibility: visible; }
+    .chapter-nav p {
+      margin: 0 0 12px;
+      color: var(--ink-soft);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .chapter-nav a {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 8px;
+      min-height: 44px;
+      padding: 11px 8px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .chapter-nav a span { color: var(--ink-soft); font-family: var(--mono); font-size: 10px; padding-top: 3px; }
+    .chapter-nav a:hover,
+    .chapter-nav a.active { background: var(--paper); }
+
+    main { min-height: 100vh; }
+    .frame { width: min(var(--max), 100%); margin: 0 auto; }
+    .section { position: relative; padding: clamp(88px, 10vw, 160px) var(--pad); }
+
+    .kicker {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .hero {
+      min-height: 100svh;
+      padding-top: clamp(112px, 14vh, 170px);
+      display: flex;
+      align-items: center;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(280px, .7fr);
+      gap: clamp(32px, 7vw, 110px);
+      align-items: center;
+    }
+
+    .hero h1 {
+      margin: 22px 0 20px;
+      max-width: 940px;
+      font-family: var(--serif);
+      font-size: clamp(58px, 9.4vw, 140px);
+      font-weight: 400;
+      line-height: .82;
+      letter-spacing: -.06em;
+    }
+    .hero h1 em { font-weight: 400; color: var(--mint-deep); }
+
+    .hero-dek {
+      max-width: 760px;
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(22px, 2.5vw, 38px);
+      line-height: 1.18;
+      letter-spacing: -.02em;
+    }
+
+    .hero-dek .mark-blue { background: linear-gradient(transparent 62%, var(--blue) 62%); }
+    .hero-dek .mark-pink { background: linear-gradient(transparent 62%, var(--pink) 62%); }
+
+    .hero-aside { position: relative; min-height: 560px; }
+    .mini-card {
+      position: absolute;
+      width: min(100%, 310px);
+      padding: 18px;
+      border: 1px solid rgba(32, 32, 30, .12);
+      border-radius: 18px 18px 6px 18px;
+      background: var(--card);
+      box-shadow: 0 16px 45px rgba(35, 32, 26, .08);
+      backdrop-filter: blur(8px);
+    }
+    .mini-card:nth-of-type(1) { top: 15px; left: 0; transform: rotate(-1.5deg); }
+    .mini-card:nth-of-type(2) { top: 220px; right: 0; transform: rotate(1.2deg); }
+    .mini-card:nth-of-type(3) { bottom: 4px; left: 24px; transform: rotate(-.6deg); }
+    .mini-card .label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .mini-card .label span { font: 10px/1 var(--mono); color: var(--ink-soft); text-transform: uppercase; letter-spacing: .12em; }
+    .mini-card .mini-title { margin: 12px 0 7px; color: var(--ink); font-family: var(--serif); font-weight: 400; font-size: 24px; line-height: 1.05; }
+    .mini-card p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.45; }
+
+    .mini-link {
+      position: absolute;
+      border-left: 1px dashed var(--ink-soft);
+      border-bottom: 1px dashed var(--ink-soft);
+      opacity: .65;
+      pointer-events: none;
+    }
+    .link-a { top: 168px; left: 60px; width: 210px; height: 80px; }
+    .link-b { top: 370px; right: 55px; width: 210px; height: 90px; transform: scaleX(-1); }
+
+    .hero-actions { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 10px; }
+    .button {
+      min-height: 46px;
+      padding: 0 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      border: 1px solid var(--ink);
+      border-radius: 999px;
+      background: transparent;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      cursor: pointer;
+    }
+    .button.primary { background: var(--ink); color: white; }
+    .button .arrow { transition: transform .2s ease; }
+    .button:hover .arrow { transform: translateX(4px); }
+
+    .hero-quote {
+      margin: clamp(70px, 11vw, 150px) auto 0;
+      max-width: 1190px;
+      text-align: center;
+      font-family: var(--serif);
+      font-size: clamp(28px, 4.4vw, 62px);
+      line-height: 1.1;
+      letter-spacing: -.03em;
+    }
+    .hero-quote::before { content: "\201C"; display: block; height: .55em; font-size: 1.45em; line-height: 1; }
+    .hero-quote .gap { background: var(--pink); }
+    .hero-quote .fix { background: var(--mint); }
+    .hero-quote cite { display: block; margin-top: 24px; font: 10px/1.3 var(--mono); color: var(--ink-soft); letter-spacing: .12em; text-transform: uppercase; }
+
+    .map-section {
+      background:
+        radial-gradient(circle, rgba(32, 32, 30, .13) 1px, transparent 1.3px) 0 0 / 22px 22px,
+        rgba(236, 234, 228, .72);
+      border-top: 1px solid rgba(32, 32, 30, .09);
+      border-bottom: 1px solid rgba(32, 32, 30, .09);
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr);
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 56px;
+    }
+    .section-head h2 {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(40px, 6vw, 84px);
+      font-weight: 400;
+      line-height: .95;
+      letter-spacing: -.05em;
+    }
+    .section-head h2 em { font-weight: 400; color: var(--blue-deep); }
+    .section-head .intro { max-width: 580px; margin: 16px 0 0; color: var(--ink-soft); font-size: 15px; }
+
+    .argument-node {
+      position: absolute;
+      width: 270px;
+      min-height: 168px;
+      padding: 17px 18px 18px;
+      border: 1px solid rgba(32, 32, 30, .14);
+      border-radius: 17px 17px 5px 17px;
+      background: rgba(255, 255, 253, .95);
+      box-shadow: 0 18px 55px rgba(43, 39, 30, .08);
+      text-decoration: none;
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+    .argument-node:hover { transform: translateY(-5px); box-shadow: 0 24px 64px rgba(43, 39, 30, .14); }
+    .node-meta { display: flex; justify-content: space-between; gap: 12px; font: 10px/1.2 var(--mono); color: var(--ink-soft); letter-spacing: .1em; text-transform: uppercase; }
+    .argument-node h3 { margin: 18px 0 8px; font-family: var(--serif); font-size: 25px; line-height: 1.02; font-weight: 400; }
+    .argument-node p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.45; }
+    .argument-node .bar { height: 5px; margin-top: 15px; border-radius: 8px; background: var(--node-color, var(--mint)); transform-origin: left; }
+
+    .pipeline-board {
+      position: relative;
+      margin: 0 auto;
+      max-width: 1240px;
+      padding: clamp(24px, 4vw, 52px);
+      border: 1px solid rgba(32,32,30,.13);
+      border-radius: 26px 26px 8px 26px;
+      background:
+        radial-gradient(circle, rgba(32,32,30,.11) 1px, transparent 1.2px) 0 0 / 19px 19px,
+        rgba(239,239,236,.78);
+    }
+    .pipeline-board .board-title { margin: 0 0 30px; font: 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+    .pipeline-grid {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) 70px minmax(0,1fr) 70px minmax(0,1fr);
+      align-items: stretch;
+      gap: 4px;
+    }
+    .pipeline-node.argument-node { position: relative; width: auto; min-height: 236px; }
+    .pipeline-arrow { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--ink-soft); }
+    .pipeline-arrow .glyph { font-family: var(--serif); font-size: 30px; line-height: 1; }
+    .pipeline-arrow .cap { font: 9px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .08em; text-align: center; max-width: 96px; }
+    .pipeline-who { display: block; margin-top: 10px; font: 10px/1.3 var(--mono); color: var(--ink-soft); text-transform: none; letter-spacing: 0; }
+    .pipeline-result {
+      width: min(600px, 96%);
+      margin: 36px auto 0;
+      padding: 20px 26px;
+      border-radius: 999px;
+      color: white;
+      background: var(--ink);
+      text-align: center;
+      font-family: var(--serif);
+      font-size: clamp(17px, 2vw, 23px);
+    }
+    .pipeline-result::before { content: "\2193"; display: block; height: 26px; margin-top: -44px; color: var(--ink-soft); font-family: var(--mono); font-size: 16px; }
+
+    .preview-section { background: var(--paper); }
+    .preview-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(260px, .7fr);
+      gap: clamp(32px, 6vw, 90px);
+      padding: clamp(26px, 5vw, 68px);
+      border: 1px solid rgba(32, 32, 30, .16);
+      border-radius: 30px 30px 8px 30px;
+      background: rgba(255, 255, 252, .82);
+    }
+
+    .chapter {
+      scroll-margin-top: 74px;
+      border-top: 1px solid rgba(32, 32, 30, .1);
+      background: rgba(244, 241, 233, .76);
+    }
+    .chapter.tone-cool {
+      background:
+        linear-gradient(135deg, rgba(203, 213, 240, .19), transparent 34rem),
+        rgba(239, 239, 236, .88);
+    }
+    .chapter.tone-mint {
+      background:
+        linear-gradient(135deg, rgba(185, 239, 217, .19), transparent 34rem),
+        rgba(244, 241, 233, .92);
+    }
+    .chapter.tone-pink {
+      background:
+        linear-gradient(135deg, rgba(240, 204, 225, .18), transparent 34rem),
+        rgba(244, 241, 233, .92);
+    }
+    .chapter.dark {
+      color: #f6f3eb;
+      background: #242421;
+      border-top-color: rgba(255,255,255,.12);
+    }
+    .chapter.dark .kicker,
+    .chapter.dark .chapter-intro,
+    .chapter.dark .chapter-content p,
+    .chapter.dark .chapter-side p { color: #c7c4bb; }
+
+    .chapter-layout {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 760px) minmax(230px, 1fr);
+      column-gap: clamp(26px, 5vw, 78px);
+      align-items: start;
+    }
+    .chapter-index { position: sticky; top: 100px; grid-column: 1; }
+    .chapter-index .number {
+      display: block;
+      margin-bottom: 10px;
+      font-family: var(--serif);
+      font-size: 50px;
+      line-height: .9;
+      color: var(--chapter-color, var(--blue-deep));
+    }
+    .chapter-index .axis {
+      display: block;
+      width: 58px;
+      height: 1px;
+      margin-top: 18px;
+      background: currentColor;
+      opacity: .45;
+    }
+    .chapter-main { grid-column: 2; min-width: 0; }
+    .chapter-side { grid-column: 3; min-width: 0; }
+    .chapter-wide { grid-column: 2 / -1; min-width: 0; }
+    .chapter h2 {
+      margin: 0 0 24px;
+      font-family: var(--serif);
+      font-size: clamp(44px, 6vw, 88px);
+      font-weight: 400;
+      line-height: .93;
+      letter-spacing: -.05em;
+    }
+    .chapter-intro {
+      margin: 0 0 46px;
+      max-width: 780px;
+      color: var(--ink-soft);
+      font-family: var(--serif);
+      font-size: clamp(23px, 2.4vw, 36px);
+      line-height: 1.2;
+      letter-spacing: -.025em;
+    }
+    .chapter-content p {
+      margin: 0 0 1.35em;
+      color: #33322f;
+      font-family: var(--serif);
+      font-size: clamp(18px, 1.46vw, 21px);
+      line-height: 1.62;
+      hanging-punctuation: first last;
+    }
+    .chapter-content p:last-child { margin-bottom: 0; }
+    .chapter-content strong { font-weight: 650; }
+    .chapter-content .opening-line {
+      font-size: clamp(24px, 2.2vw, 33px);
+      line-height: 1.34;
+      letter-spacing: -.018em;
+    }
+    .chapter-content .opening-line::first-letter {
+      float: left;
+      padding: .02em .09em 0 0;
+      color: var(--chapter-color, var(--mint-deep));
+      font-size: 3.35em;
+      line-height: .72;
+    }
+    .chapter-side {
+      position: sticky;
+      top: 102px;
+      display: grid;
+      gap: 14px;
+    }
+    .chapter-side .note,
+    .definition-card {
+      padding: 18px;
+      border: 1px solid rgba(32, 32, 30, .14);
+      border-radius: 16px 16px 5px 16px;
+      background: rgba(255,255,252,.82);
+      box-shadow: 0 12px 38px rgba(35,32,26,.05);
+    }
+    .chapter.dark .chapter-side .note,
+    .chapter.dark .definition-card { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.16); }
+    .chapter-side .note h3,
+    .definition-card h3 { margin: 0 0 8px; font-family: var(--serif); font-size: 22px; font-weight: 400; line-height: 1.05; }
+    .chapter-side .note p,
+    .definition-card p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+    .chapter-side .note .tag,
+    .definition-card .tag { display: block; margin-bottom: 12px; font: 10px/1 var(--mono); letter-spacing: .11em; text-transform: uppercase; color: var(--ink-soft); }
+
+    .pullquote {
+      position: relative;
+      margin: clamp(62px, 8vw, 110px) 0;
+      padding: 22px 0 18px;
+      border-top: 1px dashed var(--line);
+      border-bottom: 1px dashed var(--line);
+      font-family: var(--serif);
+      font-size: clamp(30px, 4vw, 56px);
+      line-height: 1.08;
+      letter-spacing: -.03em;
+      text-align: center;
+    }
+    .pullquote::before { content: "\201C"; display: block; height: .55em; font-size: 1.35em; line-height: .85; }
+    .pullquote cite { display: block; margin-top: 20px; font: 9px/1.3 var(--mono); color: var(--ink-soft); text-transform: uppercase; letter-spacing: .12em; }
+    .highlight-mint { background: linear-gradient(transparent 57%, var(--mint) 57% 92%, transparent 92%); }
+    .highlight-blue { background: linear-gradient(transparent 57%, var(--blue) 57% 92%, transparent 92%); }
+    .highlight-pink { background: linear-gradient(transparent 57%, var(--pink) 57% 92%, transparent 92%); }
+    .highlight-ochre { background: linear-gradient(transparent 57%, var(--ochre) 57% 92%, transparent 92%); }
+
+    .logic-strip {
+      margin: 54px 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .logic-strip .definition-card { min-height: 200px; }
+    .logic-strip .definition-card:nth-child(1) { border-top: 6px solid var(--blue); }
+    .logic-strip .definition-card:nth-child(2) { border-top: 6px solid var(--mint); }
+    .logic-strip .definition-card:nth-child(3) { border-top: 6px solid var(--ochre); }
+    .definition-card .big { display: block; margin: 8px 0 12px; font-family: var(--serif); font-size: 27px; font-weight: 400; line-height: 1.1; }
+
+    .register-grid {
+      margin: 54px 0;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .register-node {
+      position: relative;
+      min-height: 190px;
+      padding: 18px;
+      border: 1px solid rgba(32,32,30,.14);
+      border-radius: 12px 12px 4px 12px;
+      background: rgba(255,255,252,.94);
+    }
+    .register-node .num { display: block; margin-bottom: 30px; font: 10px/1 var(--mono); color: var(--ink-soft); }
+    .register-node strong { display: block; margin-bottom: 8px; font-family: var(--serif); font-size: 21px; font-weight: 400; line-height: 1.08; }
+    .register-node span { display: block; color: var(--ink-soft); font-size: 12px; line-height: 1.45; }
+    .register-node:nth-child(1) { border-top: 6px solid var(--pink); }
+    .register-node:nth-child(2) { border-top: 6px solid var(--mint); }
+    .register-node:nth-child(3) { border-top: 6px solid var(--ochre); }
+    .register-node:nth-child(4) { border-top: 6px solid var(--blue); }
+
+    .constellation {
+      margin: 56px 0;
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 12px;
+    }
+    .constellation article {
+      min-height: 190px;
+      padding: 20px;
+      border: 1px solid rgba(32,32,30,.14);
+      border-radius: 17px 17px 5px 17px;
+      background: rgba(255,255,252,.84);
+    }
+    .constellation article:nth-child(1) { grid-column: 1 / span 5; grid-row: 1; border-top: 7px solid var(--blue); }
+    .constellation article:nth-child(2) { grid-column: 6 / span 4; grid-row: 1; border-top: 7px solid var(--mint); }
+    .constellation article:nth-child(3) { grid-column: 10 / span 3; grid-row: 1; border-top: 7px solid var(--ochre); }
+    .constellation article:nth-child(4) { grid-column: 2 / span 4; grid-row: 2; border-top: 7px solid var(--pink); }
+    .constellation article:nth-child(5) { grid-column: 6 / span 6; grid-row: 2; border-top: 7px solid var(--ink); }
+    .constellation h3 { margin: 0 0 14px; font-family: var(--serif); font-size: 24px; font-weight: 400; line-height: 1.08; }
+    .constellation p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+
+    .threshold-box {
+      margin: 54px 0;
+      padding: clamp(25px, 4vw, 52px);
+      border: 1px solid rgba(32,32,30,.16);
+      border-radius: 24px 24px 7px 24px;
+      background: linear-gradient(100deg, rgba(240,204,225,.6), rgba(185,239,217,.5));
+    }
+    .threshold-box p { margin: 0; font-family: var(--serif); font-size: clamp(26px, 3.4vw, 46px); line-height: 1.1; letter-spacing: -.025em; }
+    .threshold-box small { display: block; margin-top: 24px; font: 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+
+    .closing-manifesto {
+      margin: clamp(70px, 10vw, 140px) auto 0;
+      max-width: 1160px;
+      text-align: center;
+      font-family: var(--serif);
+      font-size: clamp(36px, 5.6vw, 78px);
+      font-weight: 400;
+      line-height: 1.02;
+      letter-spacing: -.04em;
+    }
+    .closing-manifesto .mint { color: var(--mint); }
+    .closing-manifesto .pink { color: var(--pink); }
+
+    .source-band {
+      padding: clamp(64px, 8vw, 112px) var(--pad);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 86% 18%, rgba(185,239,217,.28), transparent 22rem),
+        #eceae4;
+      border-top: 1px solid rgba(32,32,30,.14);
+    }
+    .source-layout {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1.35fr) minmax(260px, .65fr);
+      gap: clamp(26px, 5vw, 78px);
+      align-items: start;
+    }
+    .source-band h2 {
+      margin: 0 0 26px;
+      max-width: 900px;
+      font-family: var(--serif);
+      font-size: clamp(38px, 5vw, 68px);
+      font-weight: 400;
+      line-height: .98;
+      letter-spacing: -.04em;
+    }
+    .source-band h2 em { color: var(--mint-deep); font-weight: 400; }
+    .source-copy p {
+      margin: 0 0 1.25em;
+      max-width: 760px;
+      color: #3a3935;
+      font-family: var(--serif);
+      font-size: clamp(18px, 1.45vw, 21px);
+      line-height: 1.58;
+    }
+    .source-links { display: grid; gap: 12px; }
+    .source-link {
+      min-height: 120px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid rgba(32,32,30,.15);
+      border-radius: 17px 17px 5px 17px;
+      background: rgba(255,255,252,.84);
+      text-decoration: none;
+      transition: transform .2s ease, background .2s ease;
+    }
+    .source-link:hover { transform: translateY(-3px); background: white; }
+    .source-link span { font: 10px/1.2 var(--mono); letter-spacing: .11em; text-transform: uppercase; color: var(--ink-soft); }
+    .source-link strong { font-family: var(--serif); font-size: 21px; font-weight: 400; line-height: 1.1; }
+    .source-link:focus-visible { outline: 3px solid var(--ochre); outline-offset: 3px; }
+
+    .page-footer {
+      padding: 30px var(--pad) 42px;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      border-top: 1px solid rgba(255,255,255,.12);
+      color: #aaa79f;
+      background: #242421;
+      font: 10px/1.4 var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    [data-reveal] { opacity: 1; transition: opacity .35s ease; }
+
+    @media (max-width: 1240px) {
+      .pipeline-grid { grid-template-columns: 1fr; }
+      .pipeline-arrow { flex-direction: row; padding: 6px 0; }
+      .pipeline-arrow .glyph { transform: rotate(90deg); }
+    }
+
+    @media (max-width: 920px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .hero-aside { min-height: 430px; }
+      .mini-card { width: min(78vw, 330px); }
+      .mini-card:nth-of-type(1) { left: 0; }
+      .mini-card:nth-of-type(2) { top: 140px; right: 0; }
+      .mini-card:nth-of-type(3) { top: 285px; bottom: auto; left: 8%; }
+      .mini-link { display: none; }
+      .section-head { grid-template-columns: 1fr; }
+      .preview-card { grid-template-columns: 1fr; }
+      .chapter-layout { grid-template-columns: 80px minmax(0, 1fr); }
+      .chapter-index { grid-column: 1; }
+      .chapter-main, .chapter-wide { grid-column: 2; }
+      .chapter-side { position: static; grid-column: 2; margin-top: 30px; grid-template-columns: repeat(2, 1fr); }
+      .source-layout { grid-template-columns: 80px minmax(0, 1fr); }
+      .source-links { grid-column: 2; grid-template-columns: 1fr 1fr; }
+      .register-grid { grid-template-columns: repeat(2, 1fr); }
+      .constellation article:nth-child(n) { grid-column: span 6; grid-row: auto; }
+    }
+
+    @media (max-width: 620px) {
+      :root { --pad: 18px; }
+      .topbar { height: 62px; }
+      .brand { min-height: 44px; max-width: calc(100vw - 88px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .brand span { display: none; }
+      .menu-button { width: 48px; height: 44px; }
+      .hero { align-items: flex-start; }
+      .hero h1 { font-size: clamp(54px, 20vw, 92px); }
+      .hero-aside { min-height: 0; display: grid; gap: 12px; }
+      .mini-card { position: relative; inset: auto !important; width: 100%; transform: none !important; }
+      .hero-quote { text-align: left; }
+      .hero-quote::before { text-align: center; }
+      .chapter-layout { grid-template-columns: 1fr; }
+      .chapter-index { position: static; grid-column: 1; margin-bottom: 28px; }
+      .chapter-index .number { font-size: 38px; }
+      .chapter-main, .chapter-wide, .chapter-side { grid-column: 1; }
+      .chapter-side { grid-template-columns: 1fr; }
+      .source-layout { grid-template-columns: 1fr; }
+      .source-links { grid-column: 1; grid-template-columns: 1fr; }
+      .chapter h2 { overflow-wrap: anywhere; }
+      .logic-strip, .register-grid { grid-template-columns: 1fr; }
+      .constellation { grid-template-columns: 1fr; }
+      .constellation article:nth-child(n) { grid-column: 1; grid-row: auto; }
+      .page-footer { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      [data-reveal] { opacity: 1; }
+    }
+
+    @media print {
+      .topbar, .progress-track, .chapter-nav, .hero-actions { display: none !important; }
+      body { background: white; color: black; font-size: 11pt; }
+      .section { padding: 36pt 0; break-inside: auto; }
+      .hero { min-height: 0; }
+      [data-reveal] { opacity: 1; }
+      .chapter-layout { display: block; }
+      .chapter-index, .chapter-side { position: static; }
+      .chapter-index { margin-bottom: 18pt; }
+      .chapter-side { margin-top: 18pt; }
+      .chapter.dark { color: black !important; background: white !important; border-color: #777 !important; }
+      .chapter.dark .kicker, .chapter.dark .chapter-intro, .chapter.dark .chapter-content p, .chapter.dark .chapter-side p { color: #333 !important; }
+      .chapter.dark .chapter-side .note, .chapter.dark .definition-card { color: black !important; background: white !important; border-color: #999 !important; }
+      .closing-manifesto .mint, .closing-manifesto .pink { color: black !important; }
+      .source-band { color: black; background: white; }
+      .pullquote, .logic-strip, .register-grid, .constellation, .threshold-box, .pipeline-board { break-inside: avoid; }
+      .page-footer { color: black; background: white; border-top-color: #999; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to brief</a>
+  <div class="progress-track" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+  <header class="topbar">
+    <a class="brand" href="#opening" aria-label="Council Context Network, back to opening">Council Context Network <span>CCN / 01</span></a>
+    <button class="menu-button" id="menuButton" type="button" aria-label="Open chapter navigation" aria-expanded="false" aria-controls="chapterNav">•••</button>
+  </header>
+  <nav class="chapter-nav" id="chapterNav" aria-label="Brief chapters">
+    <p>Brief index</p>
+    <a href="#opening"><span>00</span>Opening</a>
+    <a href="#flow"><span>01</span>Three seams</a>
+    <a href="#contributors"><span>02</span>Roles and boundaries</a>
+    <a href="#standards"><span>03</span>Public sources</a>
+    <a href="#mcp"><span>04</span>Feed and MCP</a>
+    <a href="#prototype"><span>05</span>Consent contract</a>
+    <a href="#phases"><span>06</span>Build slices</a>
+    <a href="#questions"><span>07</span>Open questions</a>
+    <a href="#next"><span>08</span>Next step</a>
+  </nav>
+
+  <main id="content" tabindex="-1">
+    <section class="section hero" id="opening" data-section="opening">
+      <div class="frame">
+        <div class="hero-grid">
+          <div data-reveal>
+            <p class="kicker">A project brief, boundary draft</p>
+            <h1>Council<br><em>Context</em><br>Network</h1>
+            <p class="hero-dek">Council records, ordinary conversation and consent-scoped sessions can inform one Civic Journey without becoming one authority. This brief sets out three independent inbound seams, the eligibility-gated public projection they share, and the human gates that keep discussion, administration, participation, formal voting and treasury execution distinct.</p>
+            <div class="hero-actions">
+              <a class="button primary" href="#flow">Enter the brief <span class="arrow">→</span></a>
+              <button class="button" type="button" onclick="window.print()">Print / save</button>
+            </div>
+          </div>
+
+          <aside class="hero-aside" aria-label="Three inbound seams" data-reveal>
+            <article class="mini-card">
+              <div class="label"><span>Inbound seam</span><span>01</span></div>
+              <p class="mini-title">Röbel keeps the conversation.</p>
+              <p>Signed posts, Topics and discussions remain public provenance until a human Case Steward admits one exact suggestion candidate.</p>
+            </article>
+            <div class="mini-link link-a" aria-hidden="true"></div>
+            <article class="mini-card">
+              <div class="label"><span>Inbound seam</span><span>02</span></div>
+              <p class="mini-title">Reviewed sources preserve authority.</p>
+              <p>OParl/RIS official records and local reporting remain distinct source kinds and enter a public projection only after named human review.</p>
+            </article>
+            <div class="mini-link link-b" aria-hidden="true"></div>
+            <article class="mini-card">
+              <div class="label"><span>Inbound seam</span><span>03</span></div>
+              <p class="mini-title">Meld/Kair keeps consent in scope.</p>
+              <p>A collaborator-provided session-bundle concept enters through its own consent, redaction, retention and review gate; details still require confirmation.</p>
+            </article>
+          </aside>
+        </div>
+
+        <blockquote class="hero-quote" data-reveal>
+          No inbound seam should silently become a Case. No agent should become a reviewer. No transport should become an authority transition.
+          <cite>The boundary this project makes visible</cite>
+        </blockquote>
+      </div>
+    </section>
+
+    <section class="section map-section" id="flow" data-section="flow">
+      <div class="frame">
+        <header class="section-head" data-reveal>
+          <p class="kicker">01 / Three independent seams</p>
+          <div>
+            <h2>Three seams, <em>one Civic Journey</em></h2>
+            <p class="intro">These inputs do not form a serial authority pipeline. Each passes its own gate, then eligible public artifacts may be referenced by one Topic or Civic case. Formal voting and treasury execution remain separate Authority transitions.</p>
+          </div>
+        </header>
+
+        <div class="pipeline-board" data-reveal>
+          <p class="board-title">Council Context Network / three reviewed inbound seams</p>
+          <div class="pipeline-grid" role="group" aria-label="How three independent inbound seams feed one Civic Journey">
+            <a class="argument-node pipeline-node" href="#contributors" style="--node-color:var(--blue-deep)">
+              <div class="node-meta"><span>Conversation seam</span><span>01</span></div>
+              <h3>Röbel conversations</h3>
+              <p>Ordinary posts, signed Discussions and Topics remain provenance. A citizen-signed suggestion still needs Human Case admission.</p>
+              <span class="pipeline-who">Owner: Röbel App</span>
+              <div class="bar" style="width:100%"></div>
+            </a>
+            <div class="pipeline-arrow" aria-hidden="true"><span class="glyph">+</span><span class="cap">reviewed reference</span></div>
+            <a class="argument-node pipeline-node" href="#contributors" style="--node-color:var(--mint-deep)">
+              <div class="node-meta"><span>Source seam</span><span>02</span></div>
+              <h3>Reviewed public sources</h3>
+              <p>Exact OParl/RIS and local-news captures preserve official-record versus editorial-report authority and need accountable human admission.</p>
+              <span class="pipeline-who">Owner: city Adapter</span>
+              <div class="bar" style="width:100%"></div>
+            </a>
+            <div class="pipeline-arrow" aria-hidden="true"><span class="glyph">+</span><span class="cap">consent + review</span></div>
+            <a class="argument-node pipeline-node" href="#contributors" style="--node-color:var(--pink-deep)">
+              <div class="node-meta"><span>Session seam</span><span>03</span></div>
+              <h3>Meld/Kair</h3>
+              <p>A consent-scoped session bundle may contribute attributed claims after its own redaction, retention and human review gate.</p>
+              <span class="pipeline-who">Owner: collaborator Adapter</span>
+              <div class="bar" style="width:100%"></div>
+            </a>
+          </div>
+          <div class="pipeline-result" data-reveal>One versioned Public knowledge projection: REST/cursor first, bounded MCP for agents, and only permanently public records eligible for a signed Nostr mirror.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section chapter tone-cool" id="contributors" data-section="contributors" style="--chapter-color:var(--blue-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">02</span>
+          <p class="kicker">Roles and boundaries</p>
+          <span class="axis"></span>
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>What each project owns</h2>
+          <p class="chapter-intro">Three contributors, three seams, one shared contract. The boundaries matter more than a shared database.</p>
+          <div class="chapter-content">
+            <p class="opening-line">Röbel App owns the public community experience: ordinary posts, signed Discussions, Topics, the one Civic Journey view, Public Mecky, and the Mitmachen rendering.</p>
+            <p>Stadtstack owns municipality-neutral Civic case contracts, Human Case admission, review-gated projections, Department packages, and the durable continuation line. It does not own a city's source records, legal authority, formal vote, or treasury.</p>
+            <p>Reviewed public sources remain one seam with explicit child kinds. City-specific Adapters capture exact OParl/RIS official records and local reporting without conflating them; a human Reviewed source admission is required before a record is available to the shared public projection.</p>
+            <p>Meld/Kair is a proposed consent-scoped session seam. The collaborator's current technical description is an assumption to confirm, not a live capability claim. A dedicated Adapter must preserve consent, pseudonymisation, retention, provenance and review before any public-safe contribution.</p>
+            <p><strong>No single project does this alone.</strong> Their contracts meet at an eligibility-gated Public knowledge projection and a stable Topic/Case reference, not by merging identities, databases, or authority.</p>
+          </div>
+        </div>
+        <aside class="chapter-side" data-reveal>
+          <article class="note">
+            <span class="tag">Roebel-App</span>
+            <h3>Journey and provenance</h3>
+            <p>Social feed, signed Discussion, Topic, Public Mecky, Mitmachen, and references to the shared projection.</p>
+          </article>
+          <article class="note">
+            <span class="tag">Meld/Kair</span>
+            <h3>Consent-scoped session</h3>
+            <p>Proposed bundle boundary; implementation, licensing, hosting and timeline still require collaborator confirmation.</p>
+          </article>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section chapter" id="standards" data-section="standards" style="--chapter-color:var(--ochre-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">03</span>
+          <p class="kicker">Standards</p>
+          <span class="axis"></span>
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Where OParl, RIS and local news fit</h2>
+          <p class="chapter-intro">OParl is an official-source interchange, while local reporting is editorial. Source-specific Adapters preserve that distinction and prepare reviewed records for the shared projection.</p>
+          <div class="chapter-content">
+            <p class="opening-line">Reviewed public sources are one of three independent inbound seams into the Civic Journey.</p>
+            <p>The Adapter must preserve the exact source kind, identity, municipality, publication state, correction history and source owner. It may normalise an OParl payload or RIS export as an <code>official_record</code>, and separately capture permitted local reporting as an <code>editorial_report</code>; normalisation does not make either a new official system of record.</p>
+            <p>A human <strong>Reviewed source admission</strong> then decides whether that exact capture can enter a source-specific Reviewed source projection. Public Mecky can cite that projection without asking the administration to approve every generated sentence; source correction and withdrawal happen at the projection boundary.</p>
+            <p>Cross-municipality matching is a separate discovery projection. Similarity can suggest related Topics, but it cannot merge Cases, infer consent, or make one city's record authoritative for another.</p>
+          </div>
+        </div>
+        <aside class="chapter-side" data-reveal>
+          <article class="note">
+            <span class="tag">Current state</span>
+            <h3>OParl 1.1</h3>
+            <p>Current scope and source coverage require a checked, municipality-specific inventory.</p>
+          </article>
+          <article class="note">
+            <span class="tag">Required inventory</span>
+            <h3>One Adapter per source</h3>
+            <p>Confirm coverage, terms, correction semantics and source ownership for each municipality before capture.</p>
+          </article>
+        </aside>
+        <blockquote class="pullquote chapter-wide" data-reveal>
+          Public sources become a <span class="highlight-ochre">reviewed source seam</span>, not a replacement for the Case journal or a shortcut to authority.
+          <cite>Preserving source ownership while enabling reuse</cite>
+        </blockquote>
+      </div>
+    </section>
+
+    <section class="section chapter tone-mint" id="mcp" data-section="mcp" style="--chapter-color:var(--mint-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">04</span>
+          <p class="kicker">Delivery</p>
+          <span class="axis"></span>
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Why MCP is an Adapter, not the feed</h2>
+          <p class="chapter-intro">The Model Context Protocol is useful for bounded agent reads. The initial interchange remains a replayable REST/cursor change feed, with Nostr as the signed public mirror.</p>
+          <div class="chapter-content">
+            <p class="opening-line">One eligibility-gated Public knowledge projection feeds three bounded surfaces: REST/cursor for replay, MCP for agent reads, and Nostr for permanently public signed exchange.</p>
+            <p>The REST surface answers “what changed since this cursor?” with deterministic, bounded pages and explicit correction records. MCP can expose a Topic, reviewed source, Case projection, citation, or status explanation over the same version and digest.</p>
+            <p>MCP cannot admit a Case, attest a review, send an openDesk request, publish a Citizen Brief, start Mitmachen, cast a formal vote, sign a Safe transaction, or move treasury funds. Notifications may be added later as an optimization, but they must not create a second source of truth.</p>
+          </div>
+        </div>
+        <aside class="chapter-side" data-reveal>
+          <article class="note">
+            <span class="tag">Initial interchange</span>
+            <h3>Replay the cursor</h3>
+            <p>Bounded REST pages make updates, corrections and withdrawals verifiable.</p>
+          </article>
+          <article class="note">
+            <span class="tag">Agent Adapter</span>
+            <h3>Read the projection</h3>
+            <p>MCP is capability-bounded and never becomes identity or authority.</p>
+          </article>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section chapter tone-pink" id="prototype" data-section="prototype" style="--chapter-color:var(--pink-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">05</span>
+          <p class="kicker">Consent contract</p>
+          <span class="axis"></span>
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Prototype plan</h2>
+          <p class="chapter-intro">A staged reference that proves the three inbound seams, review gates, one Civic Journey, and the read-only exchange surfaces before any production authority is considered.</p>
+        </div>
+        <aside class="chapter-side" data-reveal>
+          <article class="note">
+            <span class="tag">Product scope</span>
+            <h3>One line, many views</h3>
+            <p>Röbel remains the resident-facing product. Mini Apps may render a Case, Citizen Brief, budget context or discovery view, but the canonical Journey stays in the shared projection.</p>
+          </article>
+        </aside>
+
+        <div class="register-grid chapter-wide" data-reveal>
+          <article class="register-node"><span class="num">SLICE 01</span><strong>Golden Civic Journey</strong><span>Human Case admission, openDesk round trip, Citizen Brief, advisory Mitmachen, and the reviewed outcome remain one browser-proven Case line.</span></article>
+          <article class="register-node"><span class="num">SLICE 02</span><strong>Consent-scoped source seam</strong><span>A synthetic Meld/Kair bundle proves private consent, classification, human deliberation review, correction, and withdrawal without exposing bundle identity.</span></article>
+          <article class="register-node"><span class="num">SLICE 03</span><strong>Change feed + agents</strong><span>A content-minimal REST/cursor feed and bounded MCP read the same projection; only permanently public artifacts may enter the Nostr mirror.</span></article>
+          <article class="register-node"><span class="num">DEFERRED</span><strong>Formal authority</strong><span>Voting, treasury, council submission, publication and execution need their own institution-owned contracts and approvals.</span></article>
+        </div>
+
+        <div class="chapter-main" data-reveal>
+          <div class="chapter-content">
+            <p>The collaborator's Meld/Kair description may eventually add edge capture and downstream processing, but its technical shape, hosting, consent, licensing and delivery date remain assumptions below. The prototype must make those unknowns visible rather than presenting them as shipped infrastructure.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section chapter" id="phases" data-section="phases" style="--chapter-color:var(--blue-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">06</span>
+          <p class="kicker">Scoping</p>
+          <span class="axis"></span>
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Three build slices</h2>
+          <p class="chapter-intro">Each slice is independently testable. The first closes the already-prioritized human journey; the later slices add Meld/Kair and interchange without delaying that browser proof.</p>
+        </div>
+
+        <div class="logic-strip chapter-wide" data-reveal>
+          <article class="definition-card"><span class="tag">Slice 01</span><span class="big">Civic Journey</span><p>Drive one Topic through Human Case admission, openDesk response, independent review, Citizen Brief, advisory Mitmachen, and reviewed outcome in staging. Formal governance and treasury remain separate institution-owned transitions.</p></article>
+          <article class="definition-card"><span class="tag">Slice 02</span><span class="big">Meld/Kair boundary</span><p>Accept one synthetic consent-scoped bundle privately, derive one Reviewed deliberation artifact under human review, and prove correction and withdrawal without publishing private bundle identifiers.</p></article>
+          <article class="definition-card"><span class="tag">Slice 03</span><span class="big">Change feed + agents</span><p>Serve deterministic content-minimal REST/cursor changes and bounded MCP reads over the same projection. Add Nostr only for artifacts that independently pass the permanent-public gate.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section chapter dark" id="questions" data-section="questions" style="--chapter-color:var(--pink)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">07</span>
+          <p class="kicker">Before committing</p>
+          <span class="axis"></span>
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Open questions</h2>
+          <p class="chapter-intro">Worth resolving before accepting the integration contract or presenting a live capability.</p>
+        </div>
+
+        <div class="constellation chapter-wide" data-reveal>
+          <article><h3>Consent and identity</h3><p>What exactly does a Meld/Kair session consent permit: retrieval, public exchange, Case citation, or only private review? A session pseudonym must not become a Röbel member identity without a separate link receipt.</p></article>
+          <article><h3>Technical and licensing assumptions</h3><p>Confirm the bundle wire format, capture location, models, retention/deletion, software and data licenses, and programme ownership with the collaborator before implementation.</p></article>
+          <article><h3>Source legality and correction</h3><p>For each OParl/RIS or local-news Adapter, confirm terms of use, source owner, capture rights, update cadence, withdrawal, and correction behavior.</p></article>
+          <article><h3>Feed governance</h3><p>Which actor can review, correct, withdraw, or publish a projection entry? The feed can be public and agent-readable without granting authority to a relay, MCP server, or model.</p></article>
+          <article><h3>Cross-municipality discovery</h3><p>Similarity must remain opt-in, public-safe discovery. It cannot merge Cases, copy session content, infer consent, or make another municipality's record authoritative.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section chapter tone-cool" id="next" data-section="next" style="--chapter-color:var(--mint-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">08</span>
+          <p class="kicker">Next step</p>
+          <span class="axis"></span>
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Suggested next step</h2>
+          <div class="chapter-content">
+            <p class="opening-line">First complete and browser-prove the existing staging Topic → Human Case admission → openDesk return → Citizen Brief → advisory Mitmachen → reviewed outcome line.</p>
+            <p>Then add one synthetic consent-scoped Meld/Kair bundle and prove private review, public-safe derivation, correction, and withdrawal. Only after that should REST/cursor and bounded MCP expose the same projection digest; Nostr remains limited to independently permanent-public artifacts.</p>
+          </div>
+        </div>
+
+        <div class="chapter-wide" data-reveal>
+          <p class="closing-manifesto">Three seams can meet. The <span class="mint">conversation</span>, <span class="pink">source record</span> and <span class="mint">consent-scoped session</span> can inform one Civic Journey without becoming one authority.</p>
+        </div>
+      </div>
+    </section>
+
+    <aside class="source-band" aria-labelledby="source-title">
+      <div class="frame source-layout">
+        <div>
+          <p class="kicker">Sources</p>
+        </div>
+        <div class="source-copy">
+          <h2 id="source-title">Working sources and <em>assumptions</em>.</h2>
+          <p>The integration contract and ADRs in Stadtstack are the canonical boundary for this draft. Meld/Kair technical details, licensing, processing location and timeline remain collaborator-provided assumptions until their owners confirm them.</p>
+        </div>
+        <div class="source-links" aria-label="Source links">
+          <a class="source-link" href="https://oparl.org/spezifikation/" target="_blank" rel="noopener noreferrer">
+            <span>Standard</span>
+            <strong>OParl specification ↗</strong>
+          </a>
+          <a class="source-link" href="https://oparl.org" target="_blank" rel="noopener noreferrer">
+            <span>Standard</span>
+            <strong>OParl.org ↗</strong>
+          </a>
+          <a class="source-link" href="https://github.com/Roebel-Labs/Roebel-App" target="_blank" rel="noopener noreferrer">
+            <span>Repository</span>
+            <strong>Roebel-Labs / Roebel-App ↗</strong>
+          </a>
+          <a class="source-link" href="https://modelcontextprotocol.io/specification/draft/server/resources" target="_blank" rel="noopener noreferrer">
+            <span>Protocol</span>
+            <strong>MCP resources ↗</strong>
+          </a>
+          <a class="source-link" href="https://github.com/nostr-protocol/nostr" target="_blank" rel="noopener noreferrer">
+            <span>Protocol</span>
+            <strong>Nostr protocol ↗</strong>
+          </a>
+          <a class="source-link" href="./MELD_KAIR_OPARL_INTEGRATION_CONTRACT.md">
+            <span>Contract</span>
+            <strong>Meld/Kair integration boundary ↗</strong>
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <footer class="page-footer">
+      <span>Council Context Network / Three seams, one Civic Journey</span>
+      <a href="#opening">Return to opening ↑</a>
+    </footer>
+  </main>
+
+  <script>
+    (() => {
+      const menuButton = document.getElementById('menuButton');
+      const chapterNav = document.getElementById('chapterNav');
+      const progressBar = document.getElementById('progressBar');
+      const navLinks = [...chapterNav.querySelectorAll('a')];
+      const sections = document.querySelectorAll('[data-section]');
+
+      const closeMenu = (returnFocus = false) => {
+        const wasOpen = chapterNav.classList.contains('open');
+        chapterNav.classList.remove('open');
+        menuButton.setAttribute('aria-expanded', 'false');
+        menuButton.setAttribute('aria-label', 'Open chapter navigation');
+        if (returnFocus && wasOpen) menuButton.focus();
+      };
+
+      menuButton.addEventListener('click', () => {
+        const open = chapterNav.classList.toggle('open');
+        menuButton.setAttribute('aria-expanded', String(open));
+        menuButton.setAttribute('aria-label', open ? 'Close chapter navigation' : 'Open chapter navigation');
+      });
+      navLinks.forEach(link => link.addEventListener('click', () => closeMenu(true)));
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenu(true); });
+      document.addEventListener('click', event => {
+        if (!chapterNav.contains(event.target) && event.target !== menuButton) closeMenu();
+      });
+
+      const updateProgress = () => {
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        const ratio = max > 0 ? window.scrollY / max : 0;
+        progressBar.style.width = `${Math.min(100, Math.max(0, ratio * 100))}%`;
+      };
+      addEventListener('scroll', updateProgress, { passive: true });
+      updateProgress();
+
+      if ('IntersectionObserver' in window) {
+        const sectionObserver = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            navLinks.forEach(link => {
+              const active = link.getAttribute('href') === `#${entry.target.id}`;
+              link.classList.toggle('active', active);
+              if (active) link.setAttribute('aria-current', 'location');
+              else link.removeAttribute('aria-current');
+            });
+          });
+        }, { rootMargin: '-40% 0px -52% 0px' });
+        sections.forEach(section => sectionObserver.observe(section));
+      }
+    })();
+  </script>
+</body>
+</html>

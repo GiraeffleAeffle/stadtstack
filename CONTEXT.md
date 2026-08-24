@@ -29,6 +29,15 @@ A bounded question or concern that is being coordinated, evidenced, reviewed,
 and projected for a city community.
 _Avoid_: source record, legal proceeding
 
+**Civic coordination kernel**:
+The framework-neutral deepening of the existing two-operation
+`CivicCaseCoordinator` and Durable Case continuation facade. It remains the
+single canonical Case writer, appends the Case journal and derives role-scoped
+projections through explicit ports. Web frameworks, route handlers, databases,
+queues and municipal products remain Adapters around this boundary and do not
+redefine Civic case semantics.
+_Avoid_: Next.js backend, control API collection, workflow microservices
+
 **Department package**:
 A scoped request, response, evidence, and review unit owned by one subject
 area within a civic case.
@@ -202,6 +211,31 @@ A checksum-bound, municipality- and source-specific public snapshot of admitted
 local news or Ratsinformationssystem records prepared without publishing it.
 _Avoid_: raw source archive, mixed-authority index, deployed endpoint
 
+**Council source record**:
+A source-specific OParl or Ratsinformationssystem capture normalized into a
+municipality-scoped record envelope while preserving its origin, version and
+authority ceiling. It is not reviewed public knowledge merely because it is
+machine-readable.
+_Avoid_: civic truth, OParl truth, imported decision
+
+**Kair session bundle**:
+A consent-scoped, checksum-bound Meld/Kair handoff containing permitted session
+derivatives, provenance, sensitivity, retention and correction state. It is a
+source artifact, not a Discussion, Civic case, identity binding or vote.
+_Avoid_: meeting decision, civic case bundle, transcript truth
+
+**Reviewed deliberation artifact**:
+A public-safe extract from one Kair session bundle admitted by an accountable
+human under an exact consent and review policy. Raw audio, transcripts and
+private speaker mappings remain outside the Public knowledge projection.
+_Avoid_: recording, official minutes, automatic summary
+
+**Civic change event**:
+A content-minimal, cursor-addressable notice that an already-reviewed public
+artifact, correction or projection changed. It carries no raw source content,
+identity correlation or authority upgrade.
+_Avoid_: Nostr post, MCP resource, Case event
+
 **Public exchange record**:
 A signed, public-safe representation of a reviewed artifact that another
 community or client may verify and consume without receiving private case data
@@ -339,8 +373,11 @@ _Avoid_: approved proposal, automatic intake, adopted motion
 
 **Public knowledge projection**:
 The single versioned, checksum-bound public read model shared by public Mecky
-and Mitmachen. It contains only the current signed discussion, admitted
-suggestion, reviewed Citizen Brief, advisory aggregate, and reviewed outcome.
+and Mitmachen. It contains only eligible public-safe records such as the
+current signed discussion, admitted suggestion, reviewed source or
+deliberation artifact, reviewed Citizen Brief, advisory aggregate, and
+reviewed outcome. Every record preserves its own source authority and
+correction state.
 _Avoid_: public Case journal, chatbot memory, parallel content store
 
 **Mitmachen view**:

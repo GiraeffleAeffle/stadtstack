@@ -90,6 +90,17 @@ Ratsinformationssystem projections from exact human attestations. A loopback
 reference transport revalidates and serves the exact checksum-bound bytes on
 the two Röbel GET routes. It does not crawl or deploy a public endpoint.
 
+Meld/Kair is a proposed third source Adapter, not a shortcut through the civic
+journey. Its first slice is contract-only: one synthetic, consent-scoped Kair
+session bundle enters a local `pending_review` inbox, one human reviewer derives
+a public-safe deliberation artifact, and correction or withdrawal removes that
+artifact from the next prepared Public knowledge projection. Raw audio,
+transcripts, private speaker mappings and model working state never enter the
+public Module. The initial interchange remains a versioned cursor-based change
+feed; MCP may expose bounded read resources and tools over the same reviewed
+bytes, while Nostr may mirror separately signed public-safe records. Neither
+protocol gains source review, Case, publication, voting or treasury authority.
+
 Next implementation slices are:
 
 1. merge the green stacked Case boundary, continuation, transport, runtime,
@@ -113,7 +124,13 @@ Next implementation slices are:
 9. deploy one synthetic reviewed-source projection behind the reviewed public
    Adapter and prove correction withdrawal through the Röbel consumer; and
 10. add correction and withdrawal UX before any formal governance or treasury
-   integration.
+   integration; then
+11. freeze a synthetic Kair session-bundle fixture and prove consent,
+    public-safe extraction, human review, correction and withdrawal locally
+    before adding a Meld/Kair network Adapter; and
+12. expose one correction-aware Civic change feed over the already-reviewed
+    projection, then add MCP as a read-only agent Adapter rather than a
+    resident-facing fan-out transport.
 
 For the first accepted staging journey, deployment and browser proof now take
 precedence over adding another contract slice. Provider-neutral passkey/Safe
