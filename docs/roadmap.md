@@ -130,12 +130,22 @@ Next implementation slices are:
     before adding a Meld/Kair network Adapter; and
 12. expose one correction-aware Civic change feed over the already-reviewed
     projection, then add MCP as a read-only agent Adapter rather than a
-    resident-facing fan-out transport.
+    resident-facing fan-out transport; then
+13. prove a provider-neutral Citizen credential bridge over the complete
+    Thirdweb-backed signed-Nostr tracer, including passkey-signed commitment
+    enrolment, replay, recovery, rotation, revocation and post-Anchor
+    non-transfer; and
+14. decide explicitly whether the Strausberg-labelled Gnosis pilot may host a
+    Röbel exercise, then prepare one fresh namespaced formal cryptographic
+    ballot with advisory legal effect, frozen eligibility and isolated
+    off-chain stores while keeping treasury execution absent.
 
 For the first accepted staging journey, deployment and browser proof now take
 precedence over adding another contract slice. Provider-neutral passkey/Safe
 coexistence follows the complete Thirdweb-backed tracer; it is not a hidden
-signup prerequisite.
+signup prerequisite. No duplicate eligibility or voting suite is deployed
+before the credential bridge, real deployed-verifier proof, and
+compatibility/ownership decision in ADR 0029.
 
 Formal city authority, live operations, second-city federation, and public
 relay publication require new owners, ADRs, and exact external-effects gates.

@@ -85,6 +85,10 @@ publication, runtime operations, public relay writes, or civic effects.
 - [ADR 0028](./0028-separate-public-and-control-deployables-around-one-civic-kernel.md) —
   extract one framework-neutral Civic coordination kernel and split public and
   staff surfaces into independently built and deployed applications.
+- [ADR 0029](./0029-reuse-advisory-voting-infrastructure-after-citizen-identity-bridge.md) —
+  gate any Röbel cryptographic ballot on a provider-neutral Citizen credential
+  bridge and an explicit cross-municipality compatibility/ownership decision;
+  never reopen the expired pilot or imply treasury authority.
 
 ## Historical
 
