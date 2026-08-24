@@ -244,14 +244,14 @@ test("the candidate deterministically derives the only admissible Case identity"
   assert.deepEqual(second, first);
   assert.match(
     first.caseId,
-    /^urn:stadtstack:case:test:roebel-mueritz:[0-9a-f-]{36}$/,
+    /^urn:stadtstack:case:municipality:roebel-mueritz:[0-9a-f-]{36}$/,
   );
 
   const wrongIdentity = {
     ...first,
     caseUuidV7: "018f0000-0000-7000-8000-000000000001",
     caseId:
-      "urn:stadtstack:case:test:roebel-mueritz:018f0000-0000-7000-8000-000000000001",
+      "urn:stadtstack:case:municipality:roebel-mueritz:018f0000-0000-7000-8000-000000000001",
   };
   const coordinator = createCivicCaseCoordinator({
     jurisdictionValue: MUNICIPALITY_ID,

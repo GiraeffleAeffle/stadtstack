@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
+import { MUNICIPAL_CASE_ID, UUID_V7 } from "./case-id.ts";
+
 /**
  * A public, post-hoc receipt.  It does not mutate the signed Nostr root and
  * does not itself confer civic authority.
@@ -45,8 +47,7 @@ export type CaseBindingProjectionResponse = {
 };
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
-const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const CASE_ID = /^urn:stadtstack:case:test:([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?):([0-9a-f-]{36})$/u;
+const CASE_ID = MUNICIPAL_CASE_ID;
 
 function fail(code: string): never { throw new Error(code); }
 
@@ -206,7 +207,7 @@ export function createInMemoryCaseBindingProjection(
         const body = `${canonical(receipt)}\n`;
         return response(200, body, { "x-stadtstack-receipt-sha256": receipt.receiptChecksum });
       }
-      const match = /^\/v1\/public\/case-bindings\/(urn:stadtstack:case:test:[a-z0-9-]+:[0-9a-f-]{36})$/u.exec(parsed.path);
+      const match = /^\/v1\/public\/case-bindings\/(urn:stadtstack:case:municipality:[a-z0-9-]+:[0-9a-f-]{36})$/u.exec(parsed.path);
       if (!match) return response(404, "binding_not_found\n");
       const receipt = receipts.get(match[1]!);
       if (!receipt) return response(404, "binding_not_found\n");

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
+import { MUNICIPAL_CASE_ID, UUID_V7 } from "./case-id.ts";
+
 import {
   createInMemoryCaseBindingProjection,
   verifyPublicCaseBindingReceipt,
@@ -42,8 +44,7 @@ export type CaseStateRecoveryEvidenceV1 = Readonly<{
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
 const EVENT_ID = /^[0-9a-f]{64}$/u;
-const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const CASE_ID = /^urn:stadtstack:case:test:([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?):([0-9a-f-]{36})$/u;
+const CASE_ID = MUNICIPAL_CASE_ID;
 /** Reviewed staging-store capacity. The durable admission adapter enforces the
  * same bound before commit so a valid store can never become unsealable. */
 export const CASE_STATE_RECOVERY_MAX_CASES = 10_000;

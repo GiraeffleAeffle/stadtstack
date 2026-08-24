@@ -1,5 +1,7 @@
 import { types as utilTypes } from "node:util";
 
+import { MUNICIPAL_CASE_ID } from "./case-id.ts";
+
 import {
   acceptAdministrationWorkspaceResponseAsDraft,
   prepareAdministrationWorkRequest,
@@ -28,7 +30,7 @@ import type {
   ReviewedOutcomeInput,
 } from "./civic-case-coordinator.ts";
 
-const CASE_ID = /^urn:stadtstack:case:test:([a-z0-9-]+):[0-9a-f-]{36}$/u;
+const CASE_ID = MUNICIPAL_CASE_ID;
 const MUNICIPALITY = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const POLICY = /^[A-Za-z0-9:._-]{1,256}$/u;
 const ACTOR_ID = /^[A-Za-z0-9:._-]{1,256}$/u;

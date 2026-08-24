@@ -15,7 +15,7 @@ const digest = (value: string) => `sha256:${createHash("sha256").update(value).d
 const hex = (value: number) => value.toString(16).padStart(64, "0");
 
 function caseId(value: number): string {
-  return `urn:stadtstack:case:test:roebel-mueritz:01983a00-0000-7000-8000-${value.toString(16).padStart(12, "0")}`;
+  return `urn:stadtstack:case:municipality:roebel-mueritz:01983a00-0000-7000-8000-${value.toString(16).padStart(12, "0")}`;
 }
 
 function receipt(value: number, options: Readonly<{ caseId?: string; rootEventId?: string }> = {}): PublicCaseBindingReceiptV1 {

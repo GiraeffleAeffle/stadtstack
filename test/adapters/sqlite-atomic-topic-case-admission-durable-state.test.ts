@@ -18,6 +18,7 @@ import {
   verifyCaseShutdownSeal,
   type SqliteAtomicTopicCaseAdmissionOptions,
 } from "../../src/adapters/sqlite-atomic-topic-case-admission.ts";
+import { CASE_OPEN_EPOCH_FILENAME } from "../../src/case-store-epoch.ts";
 import type { AtomicTopicCaseAdmissionV1 } from "../../src/roebel-control-service.ts";
 
 const MUNICIPALITY_ID = "roebel-mueritz";
@@ -182,6 +183,90 @@ test("durable roots are exact non-symlink paths, while legacy roots remain tmp-o
     assert.throws(() => legacy.sealAndClose(), /atomic_admission_seal_unavailable/);
     legacy.close();
   } finally { if (existsSync(link)) unlinkSync(link); }
+});
+
+test("durable startup refuses a legacy Case record instead of rewriting its journal identity", () => {
+  const root = durableRoot();
+  const seeded = createSqliteAtomicTopicCaseAdmission(options(root));
+  seeded.sealAndClose();
+  const sealPath = join(root, CASE_SHUTDOWN_SEAL_FILENAME);
+  const priorSealBytes = readFileSync(sealPath, "utf8");
+
+  const database = new DatabaseSync(join(root, `stadtstack-${MUNICIPALITY_ID}-atomic-admission.sqlite`));
+  database.exec(`
+    INSERT INTO atomic_case_meta(case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum)
+    VALUES(
+      'urn:stadtstack:case:test:roebel-mueritz:018f0000-0000-7000-8000-000000000001',
+      '${MUNICIPALITY_ID}',
+      'case-00000000000000000000000000000000',
+      'sha256:${"a".repeat(64)}',
+      0,
+      'sha256:${"b".repeat(64)}'
+    );
+  `);
+  database.close();
+
+  assert.throws(
+    () => createSqliteAtomicTopicCaseAdmission(options(root)),
+    /atomic_admission_legacy_case_id_present/u,
+  );
+  assert.equal(readFileSync(sealPath, "utf8"), priorSealBytes);
+});
+
+test("legacy data in a partial atomic schema is rejected before seal or epoch mutation", () => {
+  const root = durableRoot();
+  const seeded = createSqliteAtomicTopicCaseAdmission(options(root));
+  seeded.sealAndClose();
+  const sealPath = join(root, CASE_SHUTDOWN_SEAL_FILENAME);
+  const epochPath = join(root, CASE_OPEN_EPOCH_FILENAME);
+  const priorSealBytes = readFileSync(sealPath, "utf8");
+
+  const database = new DatabaseSync(join(root, `stadtstack-${MUNICIPALITY_ID}-atomic-admission.sqlite`));
+  database.exec(`
+    DROP TABLE atomic_binding_outbox;
+    INSERT INTO atomic_case_meta(case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum)
+    VALUES(
+      'urn:stadtstack:case:test:roebel-mueritz:018f0000-0000-7000-8000-000000000001',
+      '${MUNICIPALITY_ID}',
+      'case-00000000000000000000000000000000',
+      'sha256:${"a".repeat(64)}',
+      0,
+      'sha256:${"b".repeat(64)}'
+    );
+  `);
+  database.close();
+
+  assert.equal(existsSync(epochPath), false);
+  assert.throws(
+    () => createSqliteAtomicTopicCaseAdmission(options(root)),
+    /atomic_admission_schema_invalid/u,
+  );
+  assert.equal(readFileSync(sealPath, "utf8"), priorSealBytes);
+  assert.equal(existsSync(epochPath), false);
+});
+
+test("admission rechecks a durable store for legacy Case records inside its write transaction", async () => {
+  const root = durableRoot();
+  const adapter = createSqliteAtomicTopicCaseAdmission(options(root));
+  const database = new DatabaseSync(join(root, `stadtstack-${MUNICIPALITY_ID}-atomic-admission.sqlite`));
+  database.exec(`
+    INSERT INTO atomic_case_meta(case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum)
+    VALUES(
+      'urn:stadtstack:case:test:roebel-mueritz:018f0000-0000-7000-8000-000000000001',
+      '${MUNICIPALITY_ID}',
+      'case-00000000000000000000000000000000',
+      'sha256:${"a".repeat(64)}',
+      0,
+      'sha256:${"b".repeat(64)}'
+    );
+  `);
+  database.close();
+
+  await assert.rejects(
+    adapter.admission.admit(input()),
+    /atomic_admission_legacy_case_id_present/u,
+  );
+  adapter.close();
 });
 
 test("durable state rejects dangling symlinks for every SQLite and seal sidecar target", () => {

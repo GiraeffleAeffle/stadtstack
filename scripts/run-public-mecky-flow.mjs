@@ -18,7 +18,7 @@ import { createPublicMecky } from "../src/public-mecky.ts";
 
 const municipalityId = "roebel-mueritz";
 const sourceCaseId = "marienfelder-strasse";
-const caseId = "urn:stadtstack:case:test:roebel-mueritz:018f0000-0000-7000-8000-000000000001";
+const caseId = "urn:stadtstack:case:municipality:roebel-mueritz:018f0000-0000-7000-8000-000000000001";
 const scope = { municipalityId, caseId: sourceCaseId };
 const policyVersion = "case-intake-v1";
 const departments = [

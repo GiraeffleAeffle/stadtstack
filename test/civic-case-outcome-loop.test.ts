@@ -23,7 +23,7 @@ import { createReferenceBrowserServer } from "../src/reference-browser.ts";
 
 const municipalityId = "roebel-mueritz";
 const sourceCaseId = "marienfelder-strasse";
-const caseId = "urn:stadtstack:case:test:roebel-mueritz:018f0000-0000-7000-8000-000000000001";
+const caseId = "urn:stadtstack:case:municipality:roebel-mueritz:018f0000-0000-7000-8000-000000000001";
 const policyVersion = "case-intake-v1";
 const secret = new Uint8Array(32).fill(11);
 const departments = ["planning", "traffic", "environment", "finance", "legal", "public-order", "social-affairs", "public-works"] as const;

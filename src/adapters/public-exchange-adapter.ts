@@ -16,6 +16,11 @@ import type {
   QueryEnvelope,
   ProjectionEnvelope,
 } from "../civic-case-coordinator.ts";
+import {
+  MUNICIPAL_CASE_ID,
+  parseMunicipalCaseId,
+  type MunicipalCaseIdentity,
+} from "../case-id.ts";
 
 export const PUBLIC_EXCHANGE_SCHEMA_VERSION = "public_exchange_record_v1" as const;
 export const PUBLIC_EXCHANGE_KIND = 39999 as const;
@@ -176,6 +181,17 @@ function nonEmptyString(value: unknown, code: string): string {
   return value.trim();
 }
 
+function requireMunicipalCaseIdentity(
+  value: unknown,
+  code = "public_exchange_case_id_invalid",
+): MunicipalCaseIdentity {
+  const caseId = nonEmptyString(value, code);
+  if (!MUNICIPAL_CASE_ID.test(caseId)) throw new Error(code);
+  const identity = parseMunicipalCaseId(caseId);
+  if (!identity) throw new Error(code);
+  return identity;
+}
+
 function requireChecksum(value: unknown, code: string): string {
   const checksum = nonEmptyString(value, code);
   if (!SHA256.test(checksum)) throw new Error(code);
@@ -322,20 +338,29 @@ function verifyBriefChecksum(brief: Record<string, unknown>): string {
   return checksum;
 }
 
-function verifyProjectionEnvelope(envelope: ProjectionEnvelope, caseId: string, policyVersion: string): Record<string, unknown> {
+function verifyProjectionEnvelope(
+  envelope: ProjectionEnvelope,
+  caseId: string,
+  policyVersion: string,
+): { projection: Record<string, unknown>; municipalityId: string } {
   if (!isObject(envelope) || envelope.schemaVersion !== "projection_envelope_v1") throw new Error("public_exchange_projection_invalid");
+  const caseIdentity = requireMunicipalCaseIdentity(caseId);
   if (envelope.caseId !== caseId || envelope.visibility !== "public" || envelope.policyVersion !== policyVersion) throw new Error("public_exchange_projection_scope_invalid");
   if (!Number.isSafeInteger(envelope.caseVersion) || envelope.caseVersion < 0 || !SHA256.test(envelope.journalHeadChecksum) || !SHA256.test(envelope.projectionChecksum)) throw new Error("public_exchange_projection_invalid");
-  if (!isObject(envelope.projection) || envelope.projection.schemaVersion !== "case_projection_v1" || envelope.projection.caseId !== caseId || envelope.projection.municipalityId !== "sample-municipality") throw new Error("public_exchange_projection_invalid");
+  if (!isObject(envelope.projection) || envelope.projection.schemaVersion !== "case_projection_v1" || envelope.projection.caseId !== caseId) throw new Error("public_exchange_projection_invalid");
+  if (envelope.projection.municipalityId !== caseIdentity.municipalityId) throw new Error("public_exchange_case_municipality_mismatch");
   const expected = sha256({ schemaVersion: "projection_envelope_v1", caseId, caseVersion: envelope.caseVersion, visibility: "public", policyVersion, projection: envelope.projection });
   if (expected !== envelope.projectionChecksum) throw new Error("public_exchange_projection_checksum_invalid");
-  return envelope.projection as unknown as Record<string, unknown>;
+  return {
+    projection: envelope.projection as unknown as Record<string, unknown>,
+    municipalityId: caseIdentity.municipalityId,
+  };
 }
 
 function mapRecord(envelope: ProjectionEnvelope, options: { caseId?: string; policyVersion?: string; signer: PublicExchangeSigner; correctionReference?: PublicExchangeRecordV1["correctionReference"]; artifactVersion?: number }): PublicExchangeRecordV1 {
   const caseId = options.caseId ?? envelope.caseId;
   const policyVersion = options.policyVersion ?? envelope.policyVersion;
-  const projection = verifyProjectionEnvelope(envelope, caseId, policyVersion);
+  const { projection, municipalityId } = verifyProjectionEnvelope(envelope, caseId, policyVersion);
   assertNoForbiddenPublicValue(projection, "public_exchange_disclosure_forbidden", "projection");
   const brief = projection.reviewedCitizenBrief;
   if (!isObject(brief) || brief.schemaVersion !== "citizen_brief_projection_v1" || brief.correctionState !== "current" || brief.authorityBinding !== "none") throw new Error("public_exchange_brief_not_current");
@@ -377,7 +402,7 @@ function mapRecord(envelope: ProjectionEnvelope, options: { caseId?: string; pol
     recordId,
     eventKind: PUBLIC_EXCHANGE_KIND,
     canonicalCaseId: caseId,
-    municipalityId: "sample-municipality",
+    municipalityId,
     caseVersion: envelope.caseVersion,
     projectionChecksum: envelope.projectionChecksum,
     artifact,
@@ -479,8 +504,9 @@ function validatePublicExchangeRecord(record: unknown): PublicExchangeRecordV1 {
   if (!isObject(record)) throw new Error("public_exchange_record_invalid");
   assertExactKeys(record, RECORD_KEYS, "public_exchange_record_unknown_field");
   if (record.schemaVersion !== PUBLIC_EXCHANGE_SCHEMA_VERSION || record.eventKind !== PUBLIC_EXCHANGE_KIND || record.visibility !== "public" || record.disclosurePolicy !== PUBLIC_EXCHANGE_DISCLOSURE_POLICY || record.authorityBinding !== "none") throw new Error("public_exchange_record_invalid");
-  const caseId = nonEmptyString(record.canonicalCaseId, "public_exchange_record_invalid");
-  if (!/^urn:stadtstack:case:/.test(caseId)) throw new Error("public_exchange_case_id_invalid");
+  const caseIdentity = requireMunicipalCaseIdentity(record.canonicalCaseId);
+  const caseId = caseIdentity.caseId;
+  if (record.municipalityId !== caseIdentity.municipalityId) throw new Error("public_exchange_case_municipality_mismatch");
   if (!Number.isSafeInteger(record.caseVersion) || (record.caseVersion as number) < 0) throw new Error("public_exchange_record_invalid");
   requireChecksum(record.projectionChecksum, "public_exchange_projection_checksum_invalid");
   const artifact = record.artifact;
@@ -715,7 +741,9 @@ function assertActor(actor: ActorBinding): void {
 export function createPublicExchangeAdapter(options: PublicExchangeAdapterOptions & { relay: PublicExchangeRelay }): PublicExchangeAdapter {
   if (!isObject(options) || !isObject(options.source) || typeof options.source.project !== "function") throw new Error("public_exchange_source_invalid");
   if (Object.prototype.hasOwnProperty.call(options.source, "handle")) throw new Error("public_exchange_source_handle_forbidden");
-  nonEmptyString(options.caseId, "public_exchange_case_id_required");
+  const configuredCaseId = nonEmptyString(options.caseId, "public_exchange_case_id_required");
+  const caseIdentity = requireMunicipalCaseIdentity(configuredCaseId);
+  const caseId = caseIdentity.caseId;
   nonEmptyString(options.policyVersion, "public_exchange_policy_version_required");
   assertActor(options.publicActor);
   assertRegistryProof(options.registryProof ?? PUBLIC_EXCHANGE_REGISTRY_PROOF, options.registrySnapshot);
@@ -724,7 +752,7 @@ export function createPublicExchangeAdapter(options: PublicExchangeAdapterOption
     const query: QueryEnvelope = {
       schemaVersion: "query_envelope_v1",
       queryType: "case_projection_v1",
-      caseId: options.caseId,
+      caseId,
       actorBinding: clone(options.publicActor),
       visibility: "public",
       policyVersion: options.policyVersion,
@@ -734,21 +762,21 @@ export function createPublicExchangeAdapter(options: PublicExchangeAdapterOption
     return clone(envelope);
   };
   const createCurrentRecord = (): PublicExchangeRecordV1 => {
-    const record = mapRecord(projectCurrent(), { caseId: options.caseId, policyVersion: options.policyVersion, signer: options.signer });
+    const record = mapRecord(projectCurrent(), { caseId, policyVersion: options.policyVersion, signer: options.signer });
     validatePublicExchangeRecord(record);
     return clone(record);
   };
   const createCorrectionRecord = (previous: PublicExchangeRecordV1): PublicExchangeRecordV1 => {
     const prior = validatePublicExchangeRecord(previous);
     if (prior.artifact.correctionState !== "current" || prior.correctionReference.relation === "retracts") throw new Error("public_exchange_correction_prior_invalid");
-    const current = mapRecord(projectCurrent(), { caseId: options.caseId, policyVersion: options.policyVersion, signer: options.signer, artifactVersion: prior.artifact.version + 1, correctionReference: { relation: "corrects", recordId: prior.recordId, priorChecksum: prior.recordChecksum } });
+    const current = mapRecord(projectCurrent(), { caseId, policyVersion: options.policyVersion, signer: options.signer, artifactVersion: prior.artifact.version + 1, correctionReference: { relation: "corrects", recordId: prior.recordId, priorChecksum: prior.recordChecksum } });
     if (current.artifact.checksum === prior.artifact.checksum || current.caseVersion <= prior.caseVersion) throw new Error("public_exchange_correction_unchanged");
     return validatePublicExchangeRecord(current);
   };
   const createRetractionRecord = (previous: PublicExchangeRecordV1): PublicExchangeRecordV1 => {
     const prior = validatePublicExchangeRecord(previous);
     if (prior.artifact.correctionState !== "current" || prior.correctionReference.relation === "retracts") throw new Error("public_exchange_retraction_prior_invalid");
-    const current = mapRecord(projectCurrent(), { caseId: options.caseId, policyVersion: options.policyVersion, signer: options.signer, artifactVersion: prior.artifact.version + 1, correctionReference: { relation: "retracts", recordId: prior.recordId, priorChecksum: prior.recordChecksum } });
+    const current = mapRecord(projectCurrent(), { caseId, policyVersion: options.policyVersion, signer: options.signer, artifactVersion: prior.artifact.version + 1, correctionReference: { relation: "retracts", recordId: prior.recordId, priorChecksum: prior.recordChecksum } });
     if (current.artifact.checksum !== prior.artifact.checksum) throw new Error("public_exchange_retraction_stale");
     current.artifact.correctionState = "retracted";
     current.artifact.public = null;

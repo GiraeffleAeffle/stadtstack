@@ -20,11 +20,10 @@ the public workload, giving it a database or object-store credential, or adding
 Kubernetes reconciliation
 RBAC would break the public capability boundary.
 
-The first complete journey is explicitly staging-only and still uses
-`urn:stadtstack:case:test:*` identities. It needs a small, replaceable path that
-attributes use of the tracer to deployment-pinned staging actors without
-pretending to prove a human identity or to be the production municipal identity
-system.
+The first complete journey is explicitly staging-only, but its durable Case
+identities remain municipality-scoped. Deployment environment belongs in the
+staging actor, release and receipt metadata—not in the Case identifier—so a
+later restore or production deployment cannot fork a Case journal.
 
 ## Decision
 

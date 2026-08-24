@@ -8,7 +8,7 @@ import { createNostrDiscussionAdapter } from "../src/adapters/discussion-adapter
 import { createSqliteJournalStore } from "../src/adapters/sqlite-journal-adapter.ts";
 
 const scope = { municipalityId: "sample-municipality", caseId: "sample-case" };
-const caseId = "urn:stadtstack:case:test:sample-municipality:018f0000-0000-7000-8000-000000000001";
+const caseId = "urn:stadtstack:case:municipality:sample-municipality:018f0000-0000-7000-8000-000000000001";
 const policyVersion = "case-intake-v1";
 const fixtureEvent = {
   kind: 1,

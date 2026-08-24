@@ -8,6 +8,7 @@ import {
 } from "nostr-tools/pure";
 
 import type { DiscussionArtifact } from "./adapters/discussion-adapter.ts";
+import { canonicalMunicipalCaseId } from "./case-id.ts";
 import type { CitizenSignedTopicSuggestionV1 } from "./citizen-suggestion.ts";
 
 export type TopicCaseIdentityV1 = {
@@ -210,13 +211,15 @@ export function deriveTopicCaseIdentity(
     fail("topic_case_scope_invalid");
   }
   const caseUuidV7 = deriveUuidV7(signedSuggestion.event as NostrEvent);
+  const caseId = canonicalMunicipalCaseId(municipalityId, caseUuidV7);
+  if (!caseId) fail("topic_case_scope_invalid");
   return {
     schemaVersion: "topic_case_identity_v1",
     municipalityId,
     topicId,
     candidateId: signedSuggestion.candidateId,
     caseUuidV7,
-    caseId: `urn:stadtstack:case:test:${municipalityId}:${caseUuidV7}`,
+    caseId,
   };
 }
 

@@ -290,6 +290,14 @@ The same candidate deterministically maps to one prospective Case identity,
 but only a human steward may perform the admission.
 _Avoid_: admitted suggestion, pre-created Case, autonomous intake
 
+### Canonical municipal Case identity
+
+The durable Case identity is exactly
+`urn:stadtstack:case:municipality:<municipality>:<uuid-v7>`. Deployment
+environment is metadata, never part of the Case ID. A store containing a
+legacy `urn:stadtstack:case:test:*` record is blocked at startup and admission;
+it is not rewritten or dual-read.
+
 **Human Case admission**:
 The accountable, idempotent steward transition that independently verifies a
 Topic discussion, cited Mecky answer, and citizen signature before atomically

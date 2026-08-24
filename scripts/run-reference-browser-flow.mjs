@@ -7,7 +7,7 @@ import { createNostrDiscussionAdapter } from "../src/adapters/discussion-adapter
 import { buildBrowserAcceptanceEvidence, createReferenceBrowserServer, sha256Reference } from "../src/reference-browser.ts";
 
 const municipalityId = "sample-municipality";
-const caseId = "urn:stadtstack:case:test:sample-municipality:018f0000-0000-7000-8000-000000000001";
+const caseId = "urn:stadtstack:case:municipality:sample-municipality:018f0000-0000-7000-8000-000000000001";
 const scope = { municipalityId, caseId: "sample-case" };
 const policyVersion = "case-intake-v1";
 const fixturePubkey = "7190b3fcc08cd9c4edb5ef541e8a578089cb8727ba93c4cfb0583e2287d57bd2";

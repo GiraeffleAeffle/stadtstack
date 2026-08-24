@@ -13,7 +13,7 @@ import {
   type PublicCaseBindingReader,
 } from "../src/public-case-binding-server.ts";
 
-const CASE_ID = "urn:stadtstack:case:test:roebel-mueritz:01983a00-0000-7000-8000-000000000001";
+const CASE_ID = "urn:stadtstack:case:municipality:roebel-mueritz:01983a00-0000-7000-8000-000000000001";
 const ROOT = "a".repeat(64);
 const HOST = "case-bindings.staging.example";
 const digest = (value: string) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
@@ -229,7 +229,7 @@ test("reader faults, forged receipts, and lookup mismatches are redacted as unav
       getByRootEventId() { return { ...receipt(), receiptChecksum: digest("forged") }; },
     },
     {
-      get() { return receipt("urn:stadtstack:case:test:roebel-mueritz:01983a00-0000-7000-8000-000000000002"); },
+      get() { return receipt("urn:stadtstack:case:municipality:roebel-mueritz:01983a00-0000-7000-8000-000000000002"); },
       getByRootEventId() { return receipt(CASE_ID, "d".repeat(64)); },
     },
   ];
