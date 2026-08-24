@@ -36,6 +36,10 @@ test("the reviewed-knowledge image is closed-context, source-only and non-deploy
   assert.match(pushPathBlock, /src\/reviewed-knowledge-runtime-entrypoint\.mjs/u);
   assert.match(workflow, /git archive --format=tar "\$GITHUB_SHA"/u);
   assert.match(workflow, /src\/staging-reviewed-public-knowledge-runtime\.ts/u);
+  assert.match(
+    workflow,
+    /LC_ALL=C sort\)" = "\$\(printf '%s\\n' [^\n]*src\/reviewed-public-knowledge-server\.ts src\/reviewed-public-knowledge\.ts/u,
+  );
   assert.match(workflow, /actions\/attest-build-provenance@[a-f0-9]{40}/u);
   assert.match(workflow, /anchore\/sbom-action@[a-f0-9]{40}/u);
   assert.match(workflow, /anonymous immutable tag and digest pulls/u);

@@ -60,7 +60,7 @@ jobs:
             src/reviewed-public-knowledge-server.ts \
             src/staging-reviewed-public-knowledge-runtime.ts \
             src/reviewed-knowledge-runtime-entrypoint.mjs | tar -xf - -C "$context"
-          test "$(find "$context" -type f | sed "s#^$context/##" | LC_ALL=C sort)" = "$(printf '%s\n' .dockerignore containers/reviewed-knowledge-runtime/Containerfile src/reviewed-knowledge-runtime-entrypoint.mjs src/reviewed-public-knowledge.ts src/reviewed-public-knowledge-server.ts src/staging-reviewed-public-knowledge-runtime.ts)"
+          test "$(find "$context" -type f | sed "s#^$context/##" | LC_ALL=C sort)" = "$(printf '%s\n' .dockerignore containers/reviewed-knowledge-runtime/Containerfile src/reviewed-knowledge-runtime-entrypoint.mjs src/reviewed-public-knowledge-server.ts src/reviewed-public-knowledge.ts src/staging-reviewed-public-knowledge-runtime.ts)"
           for path in .dockerignore containers/reviewed-knowledge-runtime/Containerfile src/reviewed-knowledge-runtime-entrypoint.mjs src/reviewed-public-knowledge.ts src/reviewed-public-knowledge-server.ts src/staging-reviewed-public-knowledge-runtime.ts; do
             test "$(git show "$GITHUB_SHA:$path" | sha256sum | cut -d' ' -f1)" = "$(sha256sum "$context/$path" | cut -d' ' -f1)"
           done
