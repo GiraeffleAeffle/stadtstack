@@ -243,6 +243,37 @@ basis. Raw audio, transcripts and private speaker mappings remain outside the
 Public knowledge projection.
 _Avoid_: recording, official minutes, automatic summary
 
+**Municipal publication candidate**:
+A checksum-bound reviewed artifact proposed for one named municipal publisher,
+official target kind, version and correction relationship. It may be prepared
+from a Kair deliberation artifact, Department response, Citizen Brief or other
+reviewed Case result, but it remains non-official and has no institutional
+effect until an accountable publisher accepts that exact version.
+_Avoid_: official answer, OParl record, automatic administration return
+
+**Municipal publication receipt**:
+An accountable binding that a named municipal publisher accepted one exact
+Municipal publication candidate and assigned its official identifier, version,
+publication state, timestamp and institutional-effect ceiling. This receipt,
+not transport through openDesk, MCP, Nostr or a model, establishes official
+publication.
+_Avoid_: delivery receipt, review attestation, agent approval
+
+**Official municipal publication**:
+A municipality-published source record carrying its official publisher,
+identifier, version, publication state and effect. It may enter the strict
+OParl-compatible projection only when its official kind and mapping fit OParl
+semantics; publication alone does not imply a binding council decision.
+_Avoid_: reviewed draft, imported OParl object, public summary
+
+**Municipal Civic Context Exchange**:
+A linked public exchange layer containing a strict OParl-compatible view of
+official parliamentary publications and a broader reviewed civic-context view.
+It preserves the type, source, review, visibility, publication, correction and
+effect status of each artifact rather than turning all civic material into
+custom OParl objects.
+_Avoid_: OParl 2, municipal truth database, MCP authority layer
+
 **Civic change event**:
 A content-minimal, cursor-addressable notice that an already-reviewed public
 artifact, correction or projection changed. It carries no raw source content,
@@ -302,6 +333,16 @@ A city-specific Adapter may capture a public article or council record, but a
 **Reviewed source projection**. Public Mecky can reuse that projection for
 ordinary cited answers; the source review is not repeated for every answer and
 never changes the Civic Case.
+
+A **Reviewed deliberation artifact** or checksum-bound **Administration
+response return** may prepare a **Municipal publication candidate**. Only the
+named municipality can issue the matching **Municipal publication receipt**
+and create an **Official municipal publication**. That publication may enter
+the strict OParl-compatible view when its official kind fits, while the broader
+**Municipal Civic Context Exchange** keeps the related Discussion, Case,
+Citizen Brief and status records linked without upgrading their authority. A
+new **Civic change event** then closes the information loop back to Röbel,
+Public Mecky, other municipalities and read-only agents.
 
 ## Boundary and companion language
 

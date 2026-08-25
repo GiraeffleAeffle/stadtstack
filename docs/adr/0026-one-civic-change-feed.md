@@ -41,12 +41,22 @@ time. It carries no title, summary, raw source reference, session/bundle
 identity or authority upgrade. Artifact content remains in the separately
 versioned Public knowledge projection.
 
+An Official municipal publication admitted through ADR 0030 becomes a new
+eligible artifact and change event. Its preceding Municipal publication
+candidate remains a distinct artifact with lower authority. The feed never
+upgrades a Kair derivative or openDesk response merely because it was delivered.
+
 MCP is a bounded read Adapter over exactly the same projection and digest. It
 may expose resources and read-only tools for retrieving a Topic, reviewed
 source record, Case projection, citation, correction, or change cursor. It
 must enforce municipality, visibility, source, and result-size limits. MCP
 notifications or subscriptions may later reduce polling, but they are not a
 second source of truth and do not replace cursor replay.
+
+MCP may expose the strict OParl-compatible view and the broader Municipal Civic
+Context Exchange defined in ADR 0030, but it must preserve their record kinds
+and authority states. It does not invent a generic OParl `Decision` resource;
+published results remain attached to the correct official source semantics.
 
 Nostr is a signed public mirror for eligible Discussion and Public exchange
 records. The event carries the public-safe envelope and projection digest. It

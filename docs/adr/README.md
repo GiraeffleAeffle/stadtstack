@@ -89,6 +89,10 @@ publication, runtime operations, public relay writes, or civic effects.
   gate any Röbel cryptographic ballot on a provider-neutral Citizen credential
   bridge and an explicit cross-municipality compatibility/ownership decision;
   never reopen the expired pilot or imply treasury authority.
+- [ADR 0030](./0030-explicit-municipal-publication-closes-civic-context-loop.md) —
+  close the administration-to-public-context loop through an explicit municipal
+  publication candidate and receipt, then expose official OParl-compatible and
+  broader reviewed civic-context views without inventing “OParl 2.”
 
 ## Historical
 

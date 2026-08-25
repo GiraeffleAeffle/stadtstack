@@ -24,12 +24,14 @@ summary eventually becomes public. Treating the three as one generic feed
 would silently turn consent into identity, a model output into a source
 attestation, or a session into a Civic case.
 
-The proposed edge capture, transcription, pseudonymisation, temporal graphing,
-and downstream retrieval are collaborator-reported direction pending written
-confirmation. The bundle schema, receipt fields, private review ledger, and
-Adapter API in this ADR are Stadtstack proposals rather than claims about a
-current Kair wire format. Processing location, controller/processor roles,
-lawful basis, retention, licensing, hosting, programme scope, and dates remain
+The current shared direction is to obtain Kair code access and test the runtime
+on commodity hardware operated by the team. The comparison to MeshCore or
+Meshtastic describes self-owned deployment ethos only and is not a protocol or
+topology claim. Edge capture, transcription, pseudonymisation, temporal
+graphing, downstream retrieval, the bundle schema, receipt fields, private
+review ledger, and Adapter API remain hypotheses until repository, licence and
+device inspection confirms them. Processing location, controller/processor
+roles, lawful basis, retention, support, programme scope, and dates remain
 unresolved.
 
 ## Decision
@@ -79,8 +81,11 @@ public council record, or evidence that must be retained under an independently
 applicable Case-journal policy.
 
 The bundle may be cited by a Topic or Civic case only through a provenance
-reference after the relevant review gate. A bundle is never an Official source
-record and never replaces the Case journal.
+reference after the relevant review gate. A reviewed derivative may also
+prepare a Municipal publication candidate under ADR 0030, but only a separate
+municipal publication receipt can create an Official municipal publication.
+A bundle is never an Official source record and never replaces the Case
+journal.
 
 ## Consequences
 
@@ -110,8 +115,9 @@ must use the separate discovery boundary in ADR 0027.
 ## Confirmation required before implementation
 
 The Meld/Kair technical owners and the responsible municipal/privacy owners
-must confirm the actual wire format, controller/processor roles, lawful basis,
-consent and revocation semantics, retention/deletion behavior, processing
-locations, licenses, model/runtime dependencies and delivery timeline. This
+must confirm repository access, licence, supported hardware, installation,
+updates and recovery, actual wire format, controller/processor roles, lawful
+basis, consent and revocation semantics, retention/deletion behavior,
+processing locations, model/runtime dependencies and delivery timeline. This
 ADR remains `proposed` until those assumptions and the Adapter's exact
 data-protection review are accepted.
