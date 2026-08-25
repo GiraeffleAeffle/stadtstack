@@ -7,16 +7,24 @@
 
 The Kair, Röbel, Stadtstack and openDesk integration is intended to be
 bidirectional. Existing municipal publications can ground a consented Kair
-session and a Röbel discussion. A signed resident suggestion can become a
+session and a resident discussion. A signed resident suggestion can become a
 Civic Case and enter administration work. The reviewed result should then
 return as improved public context for residents, municipalities and agents.
+This decision governs that municipality- and client-neutral publication
+boundary; the named products are reference systems and current tracers, not
+required participants.
 
-Kair and openDesk can create useful structured material, but neither is the
-municipal system of record. OParl provides anonymous read access to already
-public parliamentary information; it is not a write workflow and does not
-define generic community-discussion, administration-task, ballot or treasury
-objects. MCP is a delivery interface for resources and tools; it does not
-grant publication or municipal authority.
+Kair, openDesk, an RIS, or a Stadtstack deployment may be operated by a
+municipality and may host its system of record or publication workflow. Their
+software capability and hosting location are nevertheless distinct from
+publication authority: a system does not gain authority merely by producing or
+transporting content. A municipality may delegate publication execution to a
+named role, service account, or workflow in one of those systems under a named
+policy. OParl provides anonymous read access to already-public parliamentary
+information; it is not an automatic write workflow and does not define generic
+community-discussion, administration-task, ballot or treasury objects. MCP is
+a delivery interface for resources and tools; it does not grant publication or
+municipal authority.
 
 If a Kair session bundle or openDesk response were allowed to become an OParl
 record automatically, transport delivery would silently create official
@@ -35,13 +43,18 @@ artifacts:
    visibility and correction relationship. It is non-official and has no
    institutional effect;
 2. a **Municipal publication receipt** records that a named, accountable
-   municipal publisher accepted that exact candidate and assigned an official
-   identifier, publication state, version, timestamp and effect ceiling; and
+   municipal publication authority accepted that exact candidate and assigned
+   an official identifier, publication state, version, timestamp and effect
+   ceiling, together with the municipal policy and accountable principal or
+   recorded delegated workflow that performed the action; and
 3. an **Official municipal publication** is the resulting public source record.
 
-Only the receipt creates official publication. A Kair Adapter, openDesk
-connector, Case coordinator, agent, MCP server, Nostr relay or feed publisher
-cannot issue it.
+Only the receipt creates official publication. The designated municipal
+publication endpoint may be Kair, openDesk, an RIS, a Stadtstack deployment or
+another municipal system. It may issue the receipt only under the named
+municipal policy and accountable principal or recorded delegation; a Kair
+Adapter, openDesk connector, Case coordinator, agent, MCP server, Nostr relay
+or feed publisher cannot create official status merely by delivering content.
 
 Expose the resulting public information through a **Municipal Civic Context
 Exchange** with two linked views:
@@ -74,7 +87,7 @@ official; official publication does not necessarily mean a binding decision.
 
 The implementation seams are:
 
-- `CouncilContextCatalog` for exact official-source capture and mapping;
+- `MunicipalContextCatalog` for exact official-source capture and mapping;
 - `SessionEvidenceIntake` for consent-scoped Kair bundles and reviewed
   derivatives;
 - `CivicCaseCoordinator` for the resident-to-administration journey;
@@ -95,11 +108,12 @@ can cite the same correction-aware public context. Municipalities can share
 standard parliamentary records and broader reviewed civic learning without
 losing source or authority distinctions.
 
-The municipality must name a publication owner and target mapping before the
+The municipality must name the publication authority, policy, accountable
+principal or delegation, designated endpoint, and target mapping before the
 closed-loop tracer can be accepted. A provider-specific openDesk connector is
-insufficient evidence. The prototype also needs candidate/receipt persistence,
-idempotency, correction handling, strict mapping validation and public-projection
-equivalence tests.
+insufficient evidence on its own. The prototype also needs candidate/receipt
+persistence, idempotency, correction handling, strict mapping validation and
+public-projection equivalence tests.
 
 This ADR does not authorize a live municipal publication, OParl endpoint, MCP
 endpoint, Nostr publication, formal ballot, Safe transaction or treasury
@@ -107,8 +121,11 @@ execution.
 
 ## Rejected alternatives
 
-- **Let Kair or openDesk create OParl records directly:** grants official status
-  to a session or work-system output without a municipal publisher.
+- **Let content transport create OParl records automatically:** grants official
+  status to a session or work-system output without the municipality's named
+  policy and accountable publication authority. This does not prohibit a
+  municipality-operated Kair or openDesk workflow from publishing through the
+  explicit gate.
 - **Put all civic artifacts into custom OParl objects:** breaks standard
   semantics and creates a proprietary municipal fork.
 - **Treat human review as publication:** confuses evidence quality with
@@ -123,13 +140,17 @@ execution.
 This decision may move to `accepted` after a dependency-free tracer proves:
 
 1. a reviewed Kair artifact and an openDesk response remain non-official before
-   a valid publication receipt;
-2. only the named municipal publisher can accept the exact candidate version
-   and digest, idempotently;
+   a valid publication receipt, including when they are produced inside a
+   municipality-operated deployment;
+2. a municipality-operated Kair, openDesk, RIS or Stadtstack endpoint can
+   accept the exact candidate version and digest idempotently only when the
+   named policy and accountable principal or recorded delegation are valid; the
+   same endpoint fails closed without them;
 3. an invalid official-kind mapping fails closed and never enters the strict
    OParl-compatible view;
 4. the broader view preserves the candidate, review and authority distinctions;
 5. a correction or withdrawal creates a new change event with intact lineage;
-6. REST/cursor, MCP and the Röbel consumer observe the same official publication
-   version, digest and correction state; and
+6. REST/cursor, MCP and the configured consumer (Röbel in the current tracer)
+   observe the same official publication version, digest and correction state;
+   and
 7. no path grants Case admission, formal voting or treasury authority.

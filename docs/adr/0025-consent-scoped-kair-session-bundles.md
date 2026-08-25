@@ -5,20 +5,25 @@
 
 ## Context
 
+This ADR governs a municipality- and client-neutral session boundary. Röbel is
+the current client/tracer and Kair the proposed runtime, but neither is required
+by the exchange contract.
+
 The Röbel, Stadtstack, and Komma collaborators are exploring a contextual
-enrichment flow in which exact council records are mapped into shared context,
+enrichment flow in which exact Municipal source records (including specialized
+council/RIS records) are mapped into shared context,
 a consented Meld/Kair session is grounded in that context, and a structured
 session bundle can later contribute a reviewed derivative to a cross-client
 update feed. Röbel can surface that derivative beside signed discussions and
 municipal source material. A session bundle may contain conversation-derived
-claims, exact council-context references, and a temporal or topical structure.
+claims, exact Municipal-context references, and a temporal or topical structure.
 
 The bundle has a different authority and privacy shape from both other inbound
-seams. A signed Röbel discussion is public provenance, while an OParl/RIS
-capture preserves the exact publisher, source system, record kind, publication
+seams. A signed Röbel discussion is public provenance, while a Municipal source
+record preserves the exact publisher, source system, record kind, publication
 state, and authority of one public source record. OParl is an interchange
-specification and RIS is a source system/publication surface; neither label
-alone makes an imported item a final official decision. A recording session can
+specification and a RIS is a specialized source/publication surface; neither
+label alone makes an imported item a final official decision. A recording session can
 be consent-scoped, pseudonymised, revocable, and private even when a reviewed
 summary eventually becomes public. Treating the three as one generic feed
 would silently turn consent into identity, a model output into a source
@@ -41,7 +46,7 @@ Introduce a dedicated **Meld/Kair session-bundle Adapter** with a separate
 
 - one opaque bundle ID and one exact source-content digest;
 - municipality scope and session start/end metadata;
-- exact, versioned, checksum-bound references to reviewed council context;
+- exact, versioned, checksum-bound references to reviewed Municipal context;
 - a consent receipt digest, purpose, expiry, and revocation state;
 - the capture/adapter version and provenance owner;
 - an explicit redaction profile and private content references; and
@@ -50,7 +55,10 @@ Introduce a dedicated **Meld/Kair session-bundle Adapter** with a separate
 The Adapter may prepare a bundle for review. It cannot create a Topic, sign a
 Discussion, admit a Civic case, authenticate a resident, create an
 administration work request, publish a Citizen Brief, start participation,
-cast a vote, or execute treasury funds.
+cast a vote, or execute treasury funds. This does not prevent a municipality
+from operating Kair as a separately authorized client of a Municipal publication
+endpoint: the explicit Municipal publication action and its municipal
+credential, not this Adapter or a session bundle, govern that transition.
 
 Human review is required to derive a **Reviewed deliberation artifact** before
 any bundle-derived claim enters the Public knowledge projection. The private

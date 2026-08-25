@@ -5,8 +5,13 @@
 
 ## Context
 
-The project needs an RSS-like interchange so Röbel, Mecky, municipal tools,
-and future Netizen clients can learn what changed. MCP is useful for bounded
+This ADR governs a municipality- and client-neutral public change seam. Röbel,
+Mecky and Nostr are initial consumers or Adapters, not mandatory protocol
+participants.
+
+The project needs an RSS-like interchange so municipal and community clients
+(initially Röbel and Mecky), municipal tools, and future Netizen clients can
+learn what changed. MCP is useful for bounded
 agent access, while Nostr is already the signed public exchange seam for Röbel
 discussion and public-safe records. They solve different delivery problems.
 
@@ -45,6 +50,9 @@ An Official municipal publication admitted through ADR 0030 becomes a new
 eligible artifact and change event. Its preceding Municipal publication
 candidate remains a distinct artifact with lower authority. The feed never
 upgrades a Kair derivative or openDesk response merely because it was delivered.
+If a municipality operates Kair, openDesk or another client to publish an
+accepted candidate, it must use the separate Municipal publication action and
+endpoint. The feed remains read-only and cannot carry that municipal capability.
 
 MCP is a bounded read Adapter over exactly the same projection and digest. It
 may expose resources and read-only tools for retrieving a Topic, reviewed
@@ -74,8 +82,8 @@ The REST feed, MCP Adapter, and Nostr publisher all read from the same eligible
 projection version. A verification harness must prove that their
 public-safe records, correction state, and projection digest agree. None of
 the three transports can perform Human Case admission, openDesk handoff,
-Citizen Brief derivation, advisory participation, formal voting, or treasury
-execution.
+Citizen Brief derivation, advisory participation, formal voting, treasury
+execution, or a Municipal publication action.
 
 ## Consequences
 

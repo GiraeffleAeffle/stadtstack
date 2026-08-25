@@ -1,4 +1,4 @@
-# Kair × Röbel × Stadtstack civic-context integration contract
+# Municipal Civic Context Exchange — Kair, Röbel and Stadtstack working profile
 
 - **Status:** shared working contract; interfaces pending implementation evidence
 - **Date:** 2026-08-25
@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | Charlie Fisher | Komma Systems / Kair | Conversation-session software, contextual bundles, and a locally operated runtime that the team intends to test on self-owned hardware |
 | Max Brych | Röbel App | Resident-facing posts, signed discussions, pro/contra views, proposals, and the visible Civic Journey |
-| Maximilian Stahl | Stadtstack / Strausberg | Municipal-source adapters, shared Civic Case contracts, administration/openDesk exchange, public context interfaces, identity, voting and authority boundaries |
+| Maximilian Stahl | Stadtstack | Municipal-source adapters, shared Civic Case contracts, administration/openDesk exchange, public context interfaces, identity, voting and authority boundaries |
 
 Each contributor keeps control of their own implementation. A participating
 municipality remains the owner of its official records, publication policy,
@@ -29,14 +29,14 @@ The shared goal is a **bidirectional civic learning loop**:
 
 ```text
 official municipal publication / RIS / OParl / permitted public sources
-  -> exact source capture and common council-context mapping
+  -> exact source capture and common municipal-context mapping
   -> consented Kair session references that exact context
   -> reviewed deliberation artifact enters the shared change feed and MCP view
-  -> Röbel residents discuss, compare pro/contra and develop a signed proposal
+  -> a municipality-specific resident interface can discuss, compare pro/contra and develop a signed proposal
   -> an authorized human admits a Civic Case
   -> administration works through an openDesk-compatible Department package
   -> reviewed administration return becomes a municipal publication candidate
-  -> an authorized municipal publisher accepts the exact candidate
+  -> a municipality-operated Kair/openDesk/RIS/Stadtstack publication endpoint accepts the exact candidate under named municipal policy and accountable delegation
   -> official publication returns through RIS/OParl-compatible context and feed
 ```
 
@@ -48,26 +48,44 @@ important as the ingestion path.
 
 | Shared direction | Contract form | Status |
 | --- | --- | --- |
-| Normalize heterogeneous council records into common context | Preserve exact source, record kind, mapping evidence, publication state, and correction lineage around a Council context snapshot | Shared goal; exact source examples still to freeze |
-| Ground Kair sessions in council context | Reference exact source versions inside a consent-scoped private bundle, then separately review any public derivative | Shared goal; actual Kair interface awaits code access |
+| Normalize heterogeneous municipal records into common context | Preserve exact source, record kind, mapping evidence, publication state, and correction lineage around a Municipal context snapshot | Shared goal; exact source examples still to freeze |
+| Ground Kair sessions in municipal context | Reference exact source versions inside a consent-scoped private bundle, then separately review any public derivative | Shared goal; actual Kair interface awaits code access |
 | Provide an RSS-like, cross-client update stream | Use one replayable change feed with MCP over the same public projection | Shared goal; prototype contract proposed |
-| Let Röbel surface deliberation and resident signals | Link reviewed artifacts into the existing Civic Journey without automatic Case admission or voting authority | Shared goal; real-user staging acceptance outstanding |
-| Return administration results to public context | Prepare a municipal publication candidate, require an accountable publisher receipt, then publish the official result through the appropriate RIS/OParl-compatible view | Added closed-loop requirement; municipal target and owner to confirm |
+| Let a municipal resident interface surface deliberation and resident signals | Link reviewed artifacts into that interface's Civic Journey without automatic Case admission or voting authority | Shared goal; Röbel is the current tracer, while other interfaces remain possible |
+| Return administration results to public context | Prepare a municipal publication candidate, require a policy-bound municipal publication receipt, then publish the official result through the appropriate RIS/OParl-compatible view | Added closed-loop requirement; municipal authority, endpoint and target mapping to confirm |
 | Prototype in two months, targeting end of October | Retain the original three phases, then re-baseline once Kair repository access, test hardware, participants and source scope are confirmed | Original scoping target; not a current commitment |
 
-Two related tracks therefore remain distinct:
+Three related tracks therefore remain distinct:
 
-- the **interoperability prototype** proves source mapping, contextual bundle,
-  change-feed replay, and MCP consumption for facilitators/developers; and
 - the **Röbel staging product slice** proves the resident-facing Topic, Mecky,
-  Case, administration, Citizen Brief, and advisory Mitmachen journey.
+  Case, administration, Citizen Brief, and advisory Mitmachen journey;
+- the **municipality-neutral exchange protocol** proves source mapping,
+  contextual bundles, correction-aware change-feed replay, MCP consumption and
+  an authorized municipal-publication return; and
+- the **Kair device/runtime trial** confirms code access, licence, self-operated
+  hardware, consent behavior and the actual versioned session-bundle interface.
 
 They may progress in parallel and share public contracts, but one is not proof
-that the other works. Subject to municipality approval and source-specific
-rights, the intended first real interoperability-validation target is an exact
-Strausberg RIS capture; synthetic fixtures prove the contract before that real
-source is admitted. Röbel consumption follows the same reviewed public
-contract rather than receiving a private or source-system shortcut.
+that the others work. Röbel is the current product tracer, not the canonical
+municipality or mandatory interface for the protocol. A selected participating
+municipality supplies the first authorized source and publication tracer after
+synthetic fixtures pass. Candidate Kair trial contexts supplied for review,
+both pending participation, rights and
+publication-authority confirmation, are Herzogtum Lauenburg
+(Schleswig-Holstein; lead client NextLearning e.V., local partner Landvorteil
+e.V., and WFL) and Ludwigslust-Parchim (Mecklenburg-Vorpommern; South West
+Mecklenburg Economic Development Agency). Röbel may later consume the same
+contract or use Kair in local meetings if separately agreed; Strausberg remains
+a separate existing project context. Neither Röbel nor Strausberg is a protocol
+default or substitute for a participating municipality's approval. Every client consumes the same
+reviewed public contract rather than receiving a private or source-system
+shortcut.
+
+The protocol mandates no frontend. Each municipality or integrator may provide
+its own resident app, staff workspace, public portal and visual language while
+preserving the same versioned identifiers, authority states, corrections and
+receipts. Röbel is one concrete client profile, not a UI that every municipality
+must adopt.
 
 ## Product rule
 
@@ -103,7 +121,7 @@ as another source, and none creates a Civic case by itself.
 | --- | --- | --- | --- |
 | Röbel conversation | A signed public contribution, Topic, discussion graph, or citizen-signed suggestion candidate | Röbel preserves the Nostr provenance; a **Human Case admission** independently verifies the exact candidate before a Case event | A formal proposal, official record, or administration request |
 | Reviewed public source | One exact municipality-, publisher-, source-system-, and record-bound capture; OParl, RIS exports, feeds, and permitted HTML snapshots are capture/interchange formats | A municipality-approved source Adapter captures it; an explicitly authorized human performs **Reviewed source admission** under source and rights policy | A new canonical municipal database, every imported item being an official decision, editorial reporting disguised as an official publication, or an automatic answer approval |
-| Meld/Kair session bundle | If agreed, a consent-scoped bundle derived from one recording/session, with exact council-context references plus consent and redaction evidence | A proposed Meld/Kair connection verifies consent, context references, scope, retention, provenance, and review eligibility before any claim can enter the Public knowledge projection | Resident identity, official publication, Case admission, or authority transition |
+| Meld/Kair session bundle | If agreed, a consent-scoped bundle derived from one recording/session, with exact Municipal context references plus consent and redaction evidence | A proposed Meld/Kair connection verifies consent, context references, scope, retention, provenance, and review eligibility before any claim can enter the Public knowledge projection | Resident identity, official publication, Case admission, or authority transition |
 
 The seams may be joined by explicit provenance references after their own gates.
 For example, an admitted Topic can cite a reviewed RIS record, reviewed local
@@ -143,13 +161,15 @@ deliberately not identical:
 6. **Municipal publication candidate:** a reviewed Kair artifact, Department
    response, Citizen Brief, or result may be proposed for a named municipal
    publication target. The candidate binds the exact payload, version, digest,
-   proposed publisher, proposed official kind, and correction relationship. It
-   remains non-official and has no institutional effect.
-7. **Municipal publication receipt:** only a named accountable municipal
-   publisher can accept that exact candidate and assign an official identifier,
-   publication state, version, timestamp, and institutional-effect ceiling.
-   This receipt—not Kair, openDesk, MCP, an agent, or transport delivery—creates
-   the official municipal publication.
+   proposed publication authority, endpoint, official kind, and correction
+   relationship. It remains non-official and has no institutional effect.
+7. **Municipal publication receipt:** a designated municipality-operated Kair,
+   openDesk, RIS, Stadtstack, or other publication endpoint may accept that
+   exact candidate only under its named municipal policy and accountable
+   principal or recorded delegated workflow. The receipt assigns the official
+   identifier, publication state, version, timestamp, and institutional-effect
+   ceiling. The policy-bound receipt—not a Kair/openDesk output, MCP, an agent,
+   or ordinary transport delivery—creates the official municipal publication.
 8. **Authority transition:** formal submission, publication, vote, council
    decision, and treasury execution remain explicit transitions owned by the
    responsible city or governance system. Apart from the publication gate
@@ -161,6 +181,24 @@ status field: `originClass`, `reviewState`, `visibility`, `publicationState`,
 lineage (`correctionOf` / `supersedes`). A public artifact can still be
 unreviewed; a reviewed artifact can remain private; a published artifact can
 have no binding institutional effect.
+
+## Municipal operating and authority model
+
+The protocol deliberately separates three facts which may coincide in one
+municipal deployment but must not be inferred from one another:
+
+| Fact | Meaning | Example |
+| --- | --- | --- |
+| `operatedBy` | Who hosts and operates the runtime or data surface | A municipality runs Kair or openDesk on its own infrastructure; a local partner operates a trial device |
+| `systemRole` | What the software is doing in the exchange | Kair is a session runtime; openDesk is an administration workspace; an RIS or Stadtstack deployment is a publication endpoint |
+| `publicationAuthority` | Which municipal policy, accountable principal or recorded delegation can make an official publication | A named municipal office approves a version, or an approved service workflow executes that office's recorded delegation |
+
+Kair, openDesk, an RIS or Stadtstack may therefore be the **designated municipal
+publication endpoint**. It can create the official record and receipt when the
+candidate, authority policy, accountable principal or delegation, target
+mapping, and idempotency checks are valid. The same systems remain
+non-authoritative when they merely capture a session, prepare a draft, relay a
+response, or are operated outside that municipal delegation.
 
 ## Municipal Civic Context Exchange
 
@@ -174,10 +212,13 @@ The public exchange has two linked views:
    status/correction records.
 
 OParl provides anonymous read access to already-public parliamentary
-information. It is not the write workflow for a Kair session or openDesk task.
-The integration therefore does not invent private OParl extensions or label
-the broader view “OParl 2.” When an authorized municipal publication fits an
-official OParl kind, an Adapter may project it using the appropriate `Body`,
+information. It is not an automatic write workflow for a Kair session or
+openDesk task. A municipality-operated Kair, openDesk, RIS or Stadtstack
+workflow may create the appropriate official record when it executes the
+policy-bound publication receipt. The integration therefore does not invent
+private OParl extensions or label the broader view “OParl 2.” When an
+authorized municipal publication fits an official OParl kind, an Adapter may
+project it using the appropriate `Body`,
 `LegislativeTerm`, `Organization`, `Person`, `Membership`, `Meeting`,
 `AgendaItem`, `Paper`, `Consultation`, `File`, or `Location` relationship.
 There is no generic OParl `Decision` object; published results remain attached
@@ -198,14 +239,16 @@ uses the gate that belongs to the originating seam:
 ```json
 {
   "schemaVersion": "public_knowledge_artifact_v1",
-  "artifactRef": "urn:stadtstack:artifact:<municipality>:<opaque-id>",
+  "artifactRef": "urn:municipal-civic-context:artifact:<municipality>:<opaque-id>",
   "municipality": "<canonical-municipality>",
   "topicRef": "<optional-topic-id>",
   "caseRef": "<optional-canonical-case-id>",
   "artifactKind": "signed_discussion|reviewed_source_record|reviewed_deliberation_artifact|case_projection|municipal_publication_candidate|official_municipal_publication",
   "originClass": "municipal_source|community_statement|session_derivative|administration_work_product|case_projection",
   "reviewState": "accepted|superseded|withdrawn",
-  "sourceSystemKind": "roebel|ris|news_publisher|meld_kair|administration_workspace|municipal_publisher|case_journal",
+  "operatedBy": "municipality|municipal_partner|community_operator|independent_provider",
+  "systemRole": "resident_interface|session_runtime|administration_workspace|ris|municipal_publication_endpoint|source_adapter|case_journal",
+  "sourceSystemKind": "resident_interface|ris|news_publisher|session_runtime|administration_workspace|municipal_publisher|case_journal",
   "recordKind": "discussion|meeting|agenda_item|paper|consultation|file|published_result|article|session_derivative|case_projection|publication_candidate|official_publication",
   "captureFormat": "nostr|oparl|ris_export|rss|https_snapshot|private_bundle|administration_return|municipal_publication|case_journal",
   "sourceIdentifier": "<exact-originating-identifier>",
@@ -221,6 +264,12 @@ uses the gate that belongs to the originating seam:
     "attestationRef": "<optional-non-secret-reference>"
   },
   "institutionalEffect": "none|administrative_statement|formal_submission|formal_decision|implementation_commitment",
+  "publicationAuthority": {
+    "municipality": "<required-for-official-publication; otherwise-null>",
+    "policyRef": "<required-for-official-publication; otherwise-null>",
+    "principalRef": "<accountable-human-or-delegated-service-reference; otherwise-null>",
+    "endpointRef": "<municipality-designated-endpoint; otherwise-null>"
+  },
   "authorityReceiptRef": "<required-for-official-publication; otherwise-null>",
   "visibility": "public",
   "correction": {"state": "current|superseded|withdrawn", "supersedes": "<optional-artifact-ref>"},
@@ -238,10 +287,10 @@ The replay feed carries a separate, content-minimal **Civic change event**:
 ```json
 {
   "schemaVersion": "civic_change_event_v1",
-  "changeId": "urn:stadtstack:change:<municipality>:<opaque-id>",
+  "changeId": "urn:municipal-civic-context:change:<municipality>:<opaque-id>",
   "cursor": "<opaque-delivery-position>",
   "municipality": "<canonical-municipality>",
-  "artifactRef": "urn:stadtstack:artifact:<municipality>:<opaque-id>",
+  "artifactRef": "urn:municipal-civic-context:artifact:<municipality>:<opaque-id>",
   "artifactKind": "<public-artifact-kind>",
   "projectionVersion": "<version>",
   "projectionDigest": "sha256:<digest>",
@@ -262,11 +311,13 @@ credentials, and content outside the source-specific rights profile remain
 outside the projection.
 
 The projected `consentScope` is a public-safe eligibility class, never the
-private receipt or its participant mapping. `authorityReceiptRef` is mandatory
-for `official_municipal_publication`, points only to a public-safe receipt
-reference, and is `null` for artifacts without an authority transition.
-Pending/rejected review records and private consent details remain in their
-own ledgers and cannot enter this public envelope.
+private receipt or its participant mapping. `operatedBy` and `systemRole`
+describe deployment and software capability; they never establish civic
+authority. `authorityReceiptRef` and `publicationAuthority` are mandatory for
+`official_municipal_publication`, point only to public-safe authority and
+receipt references, and are `null` for artifacts without an authority
+transition. Pending/rejected review records and private consent details remain
+in their own ledgers and cannot enter this public envelope.
 
 ## Interchange transports
 
@@ -333,7 +384,7 @@ bundle can be reviewed:
   "bundleId": "<opaque-session-bundle-id>",
   "municipality": "<scope>",
   "session": {"pseudonym": "<session-scoped-id>", "startedAt": "<time>", "endedAt": "<time>"},
-  "contextRefs": [{"artifactRef": "<reviewed-council-context-ref>", "version": "<version>", "digest": "sha256:<digest>"}],
+  "contextRefs": [{"artifactRef": "<reviewed-municipal-context-ref>", "version": "<version>", "digest": "sha256:<digest>"}],
   "consent": {"receiptDigest": "sha256:<digest>", "purposes": ["privateReview"], "expiresAt": "<time>", "revokedAt": null},
   "provenance": {"producer": "<adapter>", "sourceDigest": "sha256:<digest>", "captureVersion": "<version>"},
   "privacyClassification": {"profile": "<version>", "state": "review_required", "assessmentRef": "<private-reference>"},
@@ -344,7 +395,7 @@ bundle can be reviewed:
 
 This shape is a **Stadtstack contract proposal**, not a claim about Kair's
 current wire format. Its context references bind a session derivative to exact,
-reviewed and versioned council context; they do not turn that context or the
+reviewed and versioned Municipal context; they do not turn that context or the
 session into an official decision. The Adapter must not infer a persistent
 Röbel member identity from a session pseudonym. An explicit, separately
 reviewed link receipt is required if a resident later chooses to associate a
@@ -362,11 +413,12 @@ must legally retain under the Case journal's own policy.
 ## Self-hosted Kair working hypothesis
 
 The current shared direction is to obtain access to the Kair code, buy suitable
-commodity hardware, and install and test the runtime independently. The
-comparison to MeshCore or Meshtastic is limited to the self-owned deployment
-ethos: a community can operate software on hardware it controls. It is not a
-claim of protocol compatibility, network topology, radio capability, or shared
-implementation.
+commodity hardware, and install and test the runtime independently. A later
+municipality may operate the same runtime itself, including as its designated
+publication endpoint. The comparison to MeshCore or Meshtastic is limited to
+the self-owned deployment ethos: a community or municipality can operate
+software on hardware it controls. It is not a claim of protocol compatibility,
+network topology, radio capability, or shared implementation.
 
 Before this becomes an accepted architecture, the device tracer must establish:
 
@@ -388,19 +440,26 @@ Civic Case or public projection.
 The first shared brief proposed a two-month infrastructure prototype targeting
 the end of October:
 
-1. ingest and normalize a concrete Strausberg RIS example, then prove the same
-   consumer contract with Röbel;
+1. ingest and normalize one participating municipality's authorized RIS/OParl
+   or other official-source example, then prove the same consumer contract in
+   the selected resident interface;
 2. bind one Kair session bundle to that context and publish a correction-aware
    change through the shared feed; and
-3. expose the same projection through bounded MCP resources and a Röbel client.
+3. expose the same projection through bounded MCP resources and a resident
+   interface client.
 
 That date is retained as the original scoping target, not a current delivery
 commitment. It must be re-baselined after Kair repository access, the first
 hardware installation, named prototype participants, municipal-source scope,
-and the responsible municipal publication owner are confirmed. The revised
-acceptance criterion adds the return path: an administration response becomes
-a candidate, is explicitly published by the municipality, and reappears as a
-new version through the same feed and MCP view.
+the designated publication endpoint, and the responsible municipal publication
+authority are confirmed. Candidate trial contexts are Herzogtum Lauenburg
+(Schleswig-Holstein; lead client NextLearning e.V., local partner Landvorteil
+e.V., and WFL) and Ludwigslust-Parchim (Mecklenburg-Vorpommern; South West
+Mecklenburg Economic Development Agency); their participation, roles, sources,
+rights and publication authority are not yet confirmed. The revised acceptance
+criterion adds the return path: an administration response becomes a candidate,
+is explicitly published through the municipality's authorized workflow, and
+reappears as a new version through the same feed and MCP view.
 
 ## Administration and participation continuation
 
@@ -423,11 +482,13 @@ Department package
 
 The openDesk response is an administration work record, not automatically an
 OParl record or official public answer. It can prepare the exact material for a
-publication candidate. The municipal publication receipt is the explicit
-return gate. Public Mecky can explain reviewed material without asking the
-administration to approve every generated sentence. Human review remains on
-source admission, Department response, Case admission, Citizen Brief
-derivation, publication, and every Authority transition.
+publication candidate and, when municipality-operated and policy-authorized,
+can execute the publication receipt itself. The municipal publication receipt
+is the explicit return gate. Public Mecky can explain reviewed material without
+asking the administration to approve every generated sentence. Human review
+remains on source admission, Department response, Case admission, Citizen
+Brief derivation, publication, and every Authority transition where municipal
+policy requires it.
 
 ## Cross-municipality discovery
 
@@ -478,7 +539,7 @@ surface being activated.
    withdrawal policy.
 3. A Meld/Kair session pseudonym cannot authenticate a Röbel account or Case
    Steward.
-4. A Meld/Kair derivative names exact council-context references and versions;
+4. A Meld/Kair derivative names exact Municipal context references and versions;
    missing or changed references fail closed.
 5. Private-review or retrieval consent cannot authorize Case/Department-package
    citation without a separate `caseCitation` purpose or documented lawful basis.
@@ -497,7 +558,10 @@ surface being activated.
     creating a parallel Mini App record.
 11. A Kair artifact or openDesk response cannot appear in the strict
     OParl-compatible view without an exact municipal publication receipt and a
-    valid mapping to an official OParl kind.
+    valid mapping to an official OParl kind; a municipality-operated Kair,
+    openDesk, RIS or Stadtstack endpoint publishes successfully only with its
+    named policy and accountable principal or recorded delegation, and fails
+    closed without them.
 12. Publishing an exact candidate creates a new correction-aware change event;
     the REST feed, MCP Adapter, and Röbel consumer observe the same version and
     digest, while the original candidate remains distinguishable from the
@@ -515,9 +579,11 @@ operational responsibilities.
 
 The municipality's designated owner controls source admission, publication
 policy, Case authority, and Authority transitions. The responsible municipal
-department owns administration task execution; openDesk may host or exchange
-the task record but is not the responsible authority. Controller/processor
-roles, lawful basis, consent language, retention, licensing, and support remain
-unresolved until the collaborators and responsible municipality accept them.
-No recipient gains the authority of another actor merely by consuming this
-contract.
+department owns administration task execution. Kair, openDesk, an RIS or a
+Stadtstack deployment may host the task record and may be the municipality's
+designated publication endpoint; only a named policy plus accountable principal
+or recorded delegation gives that endpoint authority to publish. Controller/
+processor roles, lawful basis, consent language, retention, licensing, and
+support remain unresolved until the collaborators and responsible municipality
+accept them. No recipient gains the authority of another actor merely by
+consuming this contract.

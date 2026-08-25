@@ -208,28 +208,29 @@ _Avoid_: crawler result, AI review, official decision, answer approval
 
 **Reviewed source projection**:
 A checksum-bound, municipality- and source-specific public snapshot of admitted
-local news or Ratsinformationssystem records prepared without publishing it.
+Municipal source records (for example local news or council/RIS records)
+prepared without publishing it.
 _Avoid_: raw source archive, mixed-authority index, deployed endpoint
 
-**Council source record**:
-A source-specific council capture normalized into a municipality-scoped record
+**Municipal source record**:
+A source-specific public capture normalized into a municipality-scoped record
 envelope while preserving the source system, originating identifier, record
-kind, publisher, publication state, version, and authority ceiling. OParl is an
-interchange format and a Ratsinformationssystem is a source/publication surface;
-neither makes an imported item an official decision merely because it is
+kind, publisher, publication state, version, and authority ceiling. Council
+records, OParl exports and Ratsinformationssystem surfaces are specialized
+examples; none makes an imported item an official decision merely because it is
 machine-readable.
 _Avoid_: civic truth, OParl truth, imported decision
 
-**Council context snapshot**:
-A reviewed, versioned, checksum-bound mapping of exact Council source records
+**Municipal context snapshot**:
+A reviewed, versioned, checksum-bound mapping of exact Municipal source records
 that can ground a Discussion or consent-scoped session. It preserves links to
 the originals and their different authority states; it is neither a new system
 of record nor an official decision.
-_Avoid_: council truth graph, merged official record, automatic decision
+_Avoid_: municipal truth graph, merged official record, automatic decision
 
 **Kair session bundle**:
 A consent-scoped, checksum-bound Meld/Kair handoff containing permitted session
-derivatives, exact Council context snapshot references, provenance, sensitivity,
+derivatives, exact Municipal context snapshot references, provenance, sensitivity,
 retention and correction state. The shape is a proposed integration contract,
 not a claim about Kair's current interface. It is a source artifact, not a
 Discussion, Civic case, identity binding or vote.
@@ -258,6 +259,24 @@ publication state, timestamp and institutional-effect ceiling. This receipt,
 not transport through openDesk, MCP, Nostr or a model, establishes official
 publication.
 _Avoid_: delivery receipt, review attestation, agent approval
+
+**Municipal publication action**:
+The explicitly authorized municipality-owned transition that validates one
+Municipal publication candidate at a named Municipal publication endpoint and
+emits its Municipal publication receipt. A municipality may operate Kair,
+openDesk, an RIS, Stadtstack or another service to execute this action, but only
+through a separately authorized municipal capability; preparing or delivering
+content never grants that capability.
+_Avoid_: automatic publication, session export, agent decision
+
+**Municipal publication endpoint**:
+The accountable municipal system boundary that receives an authorized Municipal
+publication action and returns an official identifier and Municipal publication
+receipt. It may be a municipality-operated Kair or openDesk workflow, a
+municipal RIS, a Stadtstack deployment, or another designated municipal
+service; it is not a generic webhook, feed writer, or public client API.
+_Avoid_: MCP write tool, ordinary task endpoint without publication delegation,
+public upload form
 
 **Official municipal publication**:
 A municipality-published source record carrying its official publisher,
@@ -303,8 +322,8 @@ through its **Department packages**; packages that have been reviewed may
 contribute to a **Reviewed citizen brief**. **Advisory participation** and **Council
 rehearsal** can inform deliberation about that brief, but neither creates an
 **Authority transition**. Formal submission, publication, or voting remains an
-explicit act of the **Official source** and its city owner. Accepted changes
-and corrections form the private **Case journal**. A reviewed artifact may be
+explicit act of the **Official source** under its responsible municipality.
+Accepted changes and corrections form the private **Case journal**. A reviewed artifact may be
 represented as a **Public exchange record**, but that record does not reveal
 the Case journal or transfer authority.
 
@@ -328,16 +347,21 @@ credential remains outside every public client. Public Mecky and the
 signed Discussion, while any formal governance vote remains a separate
 Authority transition.
 
-A city-specific Adapter may capture a public article or council record, but a
+A municipality-specific Adapter may capture a public article or council record, but a
 **Reviewed source admission** is required before the exact capture can enter a
 **Reviewed source projection**. Public Mecky can reuse that projection for
 ordinary cited answers; the source review is not repeated for every answer and
 never changes the Civic Case.
 
 A **Reviewed deliberation artifact** or checksum-bound **Administration
-response return** may prepare a **Municipal publication candidate**. Only the
-named municipality can issue the matching **Municipal publication receipt**
-and create an **Official municipal publication**. That publication may enter
+response return** may prepare a **Municipal publication candidate**. Only a
+named municipality, acting through an accountable principal or recorded
+delegation, can perform the matching **Municipal publication action** at its
+**Municipal publication endpoint**, issue the **Municipal publication receipt**,
+and create an **Official municipal publication**. A municipality may operate
+Kair or openDesk as that authorized endpoint; neither integration obtains
+publication authority from a session, a handoff, or the change feed. That
+publication may enter
 the strict OParl-compatible view when its official kind fits, while the broader
 **Municipal Civic Context Exchange** keeps the related Discussion, Case,
 Citizen Brief and status records linked without upgrading their authority. A
@@ -453,12 +477,12 @@ record, vote ledger, or publication authority.
 _Avoid_: civic source of truth, municipal database
 
 **Official source**:
-A city-owned record system that remains authoritative for its own records and
+A municipality-owned record system that remains authoritative for its own records and
 formal transitions.
 _Avoid_: imported truth, federation record
 
 **Authority transition**:
-An explicit city-owned change such as formal submission, publication, or vote;
+An explicit municipality-owned change such as formal submission, publication, or vote;
 it is never inferred from discussion, suggestion, review, forecast, or
 advisory participation.
 _Avoid_: workflow stage, assistant action
