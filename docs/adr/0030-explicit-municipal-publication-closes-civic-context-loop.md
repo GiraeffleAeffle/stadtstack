@@ -49,12 +49,20 @@ artifacts:
    recorded delegated workflow that performed the action; and
 3. an **Official municipal publication** is the resulting public source record.
 
-Only the receipt creates official publication. The designated municipal
-publication endpoint may be Kair, openDesk, an RIS, a Stadtstack deployment or
-another municipal system. It may issue the receipt only under the named
-municipal policy and accountable principal or recorded delegation; a Kair
-Adapter, openDesk connector, Case coordinator, agent, MCP server, Nostr relay
-or feed publisher cannot create official status merely by delivering content.
+“Distinct” describes three accountable states, not three servers, vendors or
+municipal departments. One municipality-operated Kair/openDesk workflow may
+prepare the candidate, present it for human approval, write the fitting
+RIS/OParl record, publish it, and emit the receipt in one continuous operation.
+The state transition remains explicit so neither an agent nor an integration
+can present a transported draft as an official municipal statement.
+
+Only the receipt proves official publication. The designated municipal
+publication endpoint may be the same Kair/openDesk workflow that handled the
+context, an RIS, a Stadtstack deployment or another municipal system. It may
+issue the receipt only under the named municipal policy and accountable
+principal or recorded delegation; a Kair Adapter, openDesk connector, Case
+coordinator, agent, MCP server, Nostr relay or feed publisher cannot create
+official status merely by delivering content.
 
 Expose the resulting public information through a **Municipal Civic Context
 Exchange** with two linked views:
