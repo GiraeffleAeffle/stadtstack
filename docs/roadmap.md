@@ -17,12 +17,16 @@ This clean public lineage starts with the smallest reviewable vertical slices:
 5. exercise three role-scoped companion contexts;
 6. round-trip one reviewed public exchange record through a local Nostr
    Adapter; and
-7. prove replay, correction, deletion, and reference-surface evidence locally.
+7. prove replay, correction, explicit withdrawal from future eligibility, and
+   reference-surface evidence locally without claiming erasure of independent
+   originals or permanent public copies.
 
 The next accepted product seam keeps ordinary Röbel posts and discussions
-Topic-bound until a resident signs a proposal. A registered human steward then
-uses one idempotent admission command to create the Case and preserve that
-Topic provenance before any department or openDesk round trip begins.
+Topic-bound until a resident signs one exact suggestion candidate. An
+explicitly authorized human Case Steward under municipality policy then uses
+one idempotent admission command to create the Case and preserve that Topic
+provenance before any department or openDesk round trip begins. The production
+identity and authorization mechanism remains an implementation gate.
 
 The accepted control seam now keeps that command behind a separately
 authenticated Case Steward interface. The public application may only read a
@@ -90,18 +94,30 @@ Ratsinformationssystem projections from exact human attestations. A loopback
 reference transport revalidates and serves the exact checksum-bound bytes on
 the two Röbel GET routes. It does not crawl or deploy a public endpoint.
 
-Meld/Kair is a proposed third source Adapter, not a shortcut through the civic
-journey. Its first slice is contract-only: one synthetic, consent-scoped Kair
-session bundle enters a local `pending_review` inbox, one human reviewer derives
-a public-safe deliberation artifact, and correction or withdrawal removes that
-artifact from the next prepared Public knowledge projection. Raw audio,
-transcripts, private speaker mappings and model working state never enter the
-public Module. The initial interchange remains a versioned cursor-based change
-feed; MCP may expose bounded read resources and tools over the same reviewed
-bytes, while Nostr may mirror separately signed public-safe records. Neither
-protocol gains source review, Case, publication, voting or treasury authority.
+Meld/Kair is a proposed contextual-enrichment connection, not merely a third
+source Adapter and not a shortcut through the Civic Journey. The collaborator
+direction under review maps exact council records into shared context, grounds a
+consented session in that context, and makes one reviewed public-safe derivative
+discoverable across clients. Its first proof remains contract-only: one exact
+synthetic council-context fixture and one consent-scoped Kair session bundle
+enter a local `pending_review` path; one human reviewer derives a public-safe
+deliberation artifact; correction or withdrawal removes that artifact from the
+next prepared Public knowledge projection. Raw audio, transcripts, private
+speaker mappings and model working state never enter the public Module.
 
-Next implementation slices are:
+Subject to municipality approval and source-specific rights, an exact
+Strausberg RIS capture is the intended first real interoperability-validation
+target after the fixtures pass. The proposed canonical replay surface remains
+a versioned cursor-based change feed. MCP may expose eligibility-gated,
+read-only bodies, meetings, agenda items, papers, decisions, reviewed artifacts,
+and change cursors over the same reviewed bytes; subscriptions remain jointly
+deferred. Nostr may mirror separately signed public-safe records. No transport
+gains source review, Case, publication, voting or treasury authority.
+
+Next implementation slices are listed in dependency order within their path.
+The interoperability preparation in items 11–12 may progress in parallel with
+the Röbel staging path once the shared source, consent, and review contracts are
+accepted; neither path is proof that the other works:
 
 1. merge the green stacked Case boundary, continuation, transport, runtime,
    recovery-gate, durable-seal, deployment-preflight and recovery-activation
@@ -122,15 +138,19 @@ Next implementation slices are:
 8. expose the resulting current Citizen Brief through the same Röbel journey
    and public knowledge checksum consumed by Mecky and Mitmachen; and
 9. deploy one synthetic reviewed-source projection behind the reviewed public
-   Adapter and prove correction withdrawal through the Röbel consumer; and
+   Adapter and prove correction withdrawal through the Röbel consumer;
 10. add correction and withdrawal UX before any formal governance or treasury
-   integration; then
-11. freeze a synthetic Kair session-bundle fixture and prove consent,
-    public-safe extraction, human review, correction and withdrawal locally
-    before adding a Meld/Kair network Adapter; and
+   integration;
+11. freeze exact synthetic council-context and Kair session-bundle fixtures and
+    prove context binding, consent purposes, public-safe extraction, human
+    review, correction, withdrawal, and `caseCitation` isolation locally before
+    adding a Meld/Kair network connection; and, only after municipality and
+    rights approval, repeat the source-capture proof against the intended real
+    Strausberg RIS target; and
 12. expose one correction-aware Civic change feed over the already-reviewed
-    projection, then add MCP as a read-only agent Adapter rather than a
-    resident-facing fan-out transport; then
+    projection, then add the bounded municipal MCP resources and one Röbel
+    consumer over the same version and digest rather than treating MCP as an
+    ungoverned resident-facing fan-out transport; then
 13. prove a provider-neutral Citizen credential bridge over the complete
     Thirdweb-backed signed-Nostr tracer, including passkey-signed commitment
     enrolment, replay, recovery, rotation, revocation and post-Anchor
@@ -140,12 +160,14 @@ Next implementation slices are:
     ballot with advisory legal effect, frozen eligibility and isolated
     off-chain stores while keeping treasury execution absent.
 
-For the first accepted staging journey, deployment and browser proof now take
-precedence over adding another contract slice. Provider-neutral passkey/Safe
-coexistence follows the complete Thirdweb-backed tracer; it is not a hidden
-signup prerequisite. No duplicate eligibility or voting suite is deployed
-before the credential bridge, real deployed-verifier proof, and
-compatibility/ownership decision in ADR 0029.
+For the first accepted staging journey, deployment and browser proof take
+precedence on the Röbel product path. That priority does not block the separate
+interoperability track's document review or synthetic fixture preparation, but
+it does block presenting that preparation as a live Röbel capability.
+Provider-neutral passkey/Safe coexistence follows the complete Thirdweb-backed
+tracer; it is not a hidden signup prerequisite. No duplicate eligibility or
+voting suite is deployed before the credential bridge, real deployed-verifier
+proof, and compatibility/ownership decision in ADR 0029.
 
 Formal city authority, live operations, second-city federation, and public
 relay publication require new owners, ADRs, and exact external-effects gates.
