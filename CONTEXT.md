@@ -212,22 +212,35 @@ local news or Ratsinformationssystem records prepared without publishing it.
 _Avoid_: raw source archive, mixed-authority index, deployed endpoint
 
 **Council source record**:
-A source-specific OParl or Ratsinformationssystem capture normalized into a
-municipality-scoped record envelope while preserving its origin, version and
-authority ceiling. It is not reviewed public knowledge merely because it is
+A source-specific council capture normalized into a municipality-scoped record
+envelope while preserving the source system, originating identifier, record
+kind, publisher, publication state, version, and authority ceiling. OParl is an
+interchange format and a Ratsinformationssystem is a source/publication surface;
+neither makes an imported item an official decision merely because it is
 machine-readable.
 _Avoid_: civic truth, OParl truth, imported decision
 
+**Council context snapshot**:
+A reviewed, versioned, checksum-bound mapping of exact Council source records
+that can ground a Discussion or consent-scoped session. It preserves links to
+the originals and their different authority states; it is neither a new system
+of record nor an official decision.
+_Avoid_: council truth graph, merged official record, automatic decision
+
 **Kair session bundle**:
 A consent-scoped, checksum-bound Meld/Kair handoff containing permitted session
-derivatives, provenance, sensitivity, retention and correction state. It is a
-source artifact, not a Discussion, Civic case, identity binding or vote.
+derivatives, exact Council context snapshot references, provenance, sensitivity,
+retention and correction state. The shape is a proposed integration contract,
+not a claim about Kair's current interface. It is a source artifact, not a
+Discussion, Civic case, identity binding or vote.
 _Avoid_: meeting decision, civic case bundle, transcript truth
 
 **Reviewed deliberation artifact**:
 A public-safe extract from one Kair session bundle admitted by an accountable
-human under an exact consent and review policy. Raw audio, transcripts and
-private speaker mappings remain outside the Public knowledge projection.
+human under exact consent and review policies. Any use in a Case or Department
+package requires a distinct `caseCitation` purpose or other documented lawful
+basis. Raw audio, transcripts and private speaker mappings remain outside the
+Public knowledge projection.
 _Avoid_: recording, official minutes, automatic summary
 
 **Civic change event**:

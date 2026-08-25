@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Kommunales Wissen gemeinsam nutzbar machen: Charlies Vorschlag und die sichere Einbindung in Röbel und Stadtstack, einfach erklärt." />
+  <title>Kommunales Wissen gemeinsam nutzbar machen</title>
+  <style>
+    :root {
+      --paper: #f7f6f1;
+      --ink: #1c2928;
+      --muted: #5d6b69;
+      --line: #d8dfda;
+      --green: #075b4c;
+      --mint: #d9f2e8;
+      --blue: #e2edff;
+      --gold: #fff0c8;
+      --card: #fffefa;
+      --shadow: 0 16px 48px rgba(19, 55, 48, .10);
+      --radius: 22px;
+      --max: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: radial-gradient(circle at 10% 5%, #e5f7ef 0, transparent 22rem), var(--paper);
+      font: 18px/1.6 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: inherit; }
+    a:focus-visible, summary:focus-visible { outline: 3px solid #d88b00; outline-offset: 4px; }
+    .skip { position: absolute; left: 1rem; top: -5rem; padding: .7rem 1rem; background: var(--ink); color: white; border-radius: 8px; }
+    .skip:focus { top: 1rem; }
+    .wrap { width: min(var(--max), calc(100% - 2.5rem)); margin: 0 auto; }
+    header { padding: 1.25rem 0 4rem; }
+    nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: .9rem; }
+    .mark { font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--green); }
+    .status { padding: .45rem .75rem; border: 1px solid #9acabb; border-radius: 999px; color: #075b4c; background: #ecfaf5; font-size: .78rem; font-weight: 700; }
+    .hero { display: grid; grid-template-columns: 1.2fr .8fr; gap: clamp(2rem, 7vw, 7rem); align-items: center; padding-top: clamp(3rem, 8vw, 7rem); }
+    .eyebrow { margin: 0; color: var(--green); font-size: .8rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    h1, h2, h3 { line-height: 1.07; letter-spacing: -.035em; }
+    h1 { max-width: 780px; margin: .8rem 0 1.2rem; font-family: Georgia, "Times New Roman", serif; font-size: clamp(3.3rem, 8vw, 7.2rem); font-weight: 500; }
+    h1 em { color: var(--green); font-style: normal; }
+    .lead { max-width: 680px; margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.35rem, 2.5vw, 2rem); line-height: 1.3; }
+    .hero-card, .card, .example, .protection, details { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
+    .hero-card { padding: 1.5rem; transform: rotate(1.5deg); }
+    .hero-card p { margin: 0; }
+    .hero-card strong { display: block; margin: .9rem 0 .35rem; font-size: 1.25rem; }
+    main { padding-bottom: 5rem; }
+    section { padding: clamp(3.5rem, 8vw, 7rem) 0; border-top: 1px solid var(--line); }
+    .section-heading { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 2rem; align-items: start; margin-bottom: 2.3rem; }
+    .number { padding-top: .45rem; color: var(--green); font-size: .82rem; font-weight: 800; letter-spacing: .12em; }
+    h2 { margin: 0 0 .7rem; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2.25rem, 5vw, 4.4rem); font-weight: 500; }
+    .intro { max-width: 700px; margin: 0; color: var(--muted); }
+    .example { max-width: 780px; padding: clamp(1.4rem, 4vw, 2.3rem); border-color: #bdcfec; background: var(--blue); }
+    .example strong { display: block; font-size: 1.15rem; }
+    .example blockquote { margin: 1rem 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.45rem, 3vw, 2.1rem); line-height: 1.25; }
+    .flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1rem; }
+    .step { position: relative; min-height: 220px; padding: 1.25rem; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
+    .step:nth-child(2) { background: #f6f8ed; }
+    .step:nth-child(3) { background: var(--mint); }
+    .step:nth-child(4) { background: var(--gold); }
+    .step:nth-child(5) { background: #edf4fc; }
+    .step-no { display: inline-grid; width: 2rem; height: 2rem; place-items: center; border-radius: 50%; color: white; background: var(--green); font-size: .82rem; font-weight: 800; }
+    .step h3 { margin: 1.25rem 0 .55rem; font-size: 1.23rem; }
+    .step p { margin: 0; color: var(--muted); font-size: .94rem; }
+    .boundary { max-width: 900px; margin: 1.5rem 0 0; padding: 1rem 1.2rem; border-left: 4px solid var(--green); background: #e9f7f0; font-weight: 650; }
+    .roles, .protections, .questions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .card, .protection { padding: 1.35rem; }
+    .card h3, .protection h3 { margin: 0 0 .45rem; font-size: 1.22rem; }
+    .card p, .protection p { margin: 0; color: var(--muted); }
+    .card.meld { border-color: #d4bd71; background: #fffaf0; }
+    .test { max-width: 850px; padding: clamp(1.3rem, 4vw, 2.4rem); border-radius: var(--radius); color: white; background: var(--green); }
+    .test h3 { margin: 0 0 .7rem; font-size: 1.55rem; }
+    .test p { margin: 0; color: #ddf5ec; }
+    details { max-width: 900px; margin-top: 1.5rem; overflow: hidden; box-shadow: none; }
+    summary { padding: 1rem 1.25rem; cursor: pointer; font-weight: 750; }
+    details div { padding: 0 1.25rem 1.25rem; color: var(--muted); font-size: .94rem; }
+    details ul { margin: .7rem 0 0; padding-left: 1.2rem; }
+    .closing { max-width: 900px; padding: clamp(1.7rem, 5vw, 3.2rem); border-radius: var(--radius); color: white; background: var(--ink); }
+    .closing p { max-width: 720px; margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.7rem, 4vw, 3.1rem); line-height: 1.18; }
+    footer { padding: 2rem 0 3rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .88rem; }
+    @media (max-width: 820px) {
+      .hero, .section-heading { grid-template-columns: 1fr; }
+      .section-heading { gap: .6rem; }
+      .flow { grid-template-columns: 1fr; }
+      .step { min-height: 0; }
+      .roles, .protections, .questions { grid-template-columns: 1fr; }
+      .hero-card { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#inhalt">Zum Inhalt springen</a>
+  <header class="wrap">
+    <nav aria-label="Seitennavigation">
+      <span class="mark">Röbel · Stadtstack</span>
+      <span class="status">Arbeitsstand · gemeinsam zu bestätigen</span>
+    </nav>
+    <div class="hero">
+      <div>
+        <p class="eyebrow">Unser aktuelles Verständnis von Charlies Vorschlag</p>
+        <h1>Kommunales Wissen <em>gemeinsam nutzbar</em> machen</h1>
+        <p class="lead">Öffentliche Unterlagen und freiwillige Gespräche sollen nicht nebeneinander verschwinden, sondern verständlich verbunden werden – damit Menschen und Kommunen voneinander lernen können.</p>
+      </div>
+      <aside class="hero-card" aria-label="Leitsatz">
+        <p class="eyebrow">Wichtig</p>
+        <strong>Technik entscheidet nicht.</strong>
+        <p>Menschen, zuständige Stellen und die jeweils vorgesehenen demokratischen Verfahren bleiben verantwortlich.</p>
+      </aside>
+    </div>
+  </header>
+
+  <main id="inhalt" class="wrap">
+    <section>
+      <div class="section-heading">
+        <span class="number">01 · Warum</span>
+        <div>
+          <h2>Gute Erkenntnisse sollen weiterhelfen.</h2>
+          <p class="intro">Zu einem kommunalen Thema gibt es oft Sitzungsunterlagen, Erfahrungen von Menschen und moderierte Gespräche. Charlies Kernidee ist, diese Zusammenhänge behutsam zu bündeln: mit klaren Quellen, freiwilliger Zustimmung und einer verständlichen Aktualisierung, die auch andere Apps, Menschen oder Kommunen nutzen können.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <span class="number">02 · Beispiel</span>
+        <div>
+          <h2>Eine Beobachtung aus dem Alltag</h2>
+          <p class="intro">So könnte ein Thema beginnen. Es ist ein Beispiel, kein Beschluss und keine automatische Zusage.</p>
+        </div>
+      </div>
+      <article class="example">
+        <strong>Marienfelder Straße</strong>
+        <blockquote>„Die Querung an der Marienfelder Straße ist gefährlich.“</blockquote>
+        <p>Andere Menschen ergänzen Erfahrungen und Gegenargumente. Daraus kann eine gemeinsame Diskussion entstehen – aber nicht automatisch ein Beschluss.</p>
+      </article>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <span class="number">03 · Der Weg</span>
+        <div>
+          <h2>Ein Thema, fünf verständliche Schritte</h2>
+          <p class="intro">So verstehen wir den vorgeschlagenen Wissensfluss. Er hilft bei der Einordnung; er ist noch kein Verwaltungsverfahren oder Beschluss.</p>
+        </div>
+      </div>
+      <div class="flow" aria-label="Fünf Schritte vom Hinweis zum sichtbaren Ergebnis">
+        <article class="step"><span class="step-no">1</span><h3>Zusammenhang herstellen</h3><p>Öffentliche Sitzungsunterlagen und andere erlaubte Quellen werden einem Thema eindeutig zugeordnet.</p></article>
+        <article class="step"><span class="step-no">2</span><h3>Freiwillig sprechen</h3><p>Ein moderiertes Gespräch kann sich genau auf diese Unterlagen beziehen – nur mit klarer Zustimmung der Beteiligten.</p></article>
+        <article class="step"><span class="step-no">3</span><h3>Prüfen und bündeln</h3><p>Eine benannte Person prüft, welche Erkenntnisse richtig zugeordnet und öffentlich teilbar sind.</p></article>
+        <article class="step"><span class="step-no">4</span><h3>Als Aktualisierung teilen</h3><p>Eine kurze, nachvollziehbare Zusammenfassung kann in einem gemeinsamen Informationsstrom erscheinen.</p></article>
+        <article class="step"><span class="step-no">5</span><h3>Im Alltag weiterverwenden</h3><p>Röbel, Mecky oder andere Werkzeuge können sie mit Quellen zeigen und in Diskussionen einordnen.</p></article>
+      </div>
+      <p class="boundary">Ein Hinweis wird nicht automatisch zum Fall. Ein Gespräch wird nicht automatisch veröffentlicht. Eine Abstimmung wird nicht automatisch verbindlich.</p>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <span class="number">04 · Beiträge</span>
+        <div>
+          <h2>Was die Beteiligten beitragen können</h2>
+          <p class="intro">Die gemeinsame Arbeit verbindet nicht einfach Daten oder Zuständigkeiten. Jede Rolle bleibt klar erkennbar.</p>
+        </div>
+      </div>
+      <div class="roles">
+        <article class="card"><h3>Röbel App</h3><p>Der öffentliche Ort für Beiträge, Diskussionen und den sichtbaren Verlauf eines Themas.</p></article>
+        <article class="card"><h3>Stadtstack</h3><p>Die gemeinsame Struktur, damit ein Thema nicht zwischen Zuständigkeiten verloren geht und Schritte nachvollziehbar bleiben.</p></article>
+        <article class="card"><h3>Öffentliche Quellen</h3><p>Sitzungsunterlagen, Beschlüsse und lokale Berichterstattung – mit klarer Kennzeichnung, woher etwas stammt.</p></article>
+        <article class="card meld"><h3>Meld/Kair · in Klärung</h3><p>Ein möglicher Baustein für Gespräche, die nur mit ausdrücklicher Zustimmung ausgewertet werden. Ob und wie das integriert wird, wird gemeinsam festgelegt.</p></article>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <span class="number">05 · Schutz</span>
+        <div>
+          <h2>Schutz und Verantwortung gehören dazu.</h2>
+          <p class="intro">Öffentlichkeit ist nicht dasselbe wie Zustimmung. Automatisierung ist nicht dasselbe wie Entscheidung.</p>
+        </div>
+      </div>
+      <div class="protections">
+        <article class="protection"><h3>Gespräche bleiben geschützt.</h3><p>Erst nach Zustimmung, Prüfung und einer klaren Entscheidung darf daraus etwas öffentlich werden.</p></article>
+        <article class="protection"><h3>Quellen werden nicht vermischt.</h3><p>Offizielle Unterlagen bleiben offizielle Unterlagen; Medienberichte bleiben Medienberichte.</p></article>
+        <article class="protection"><h3>KI hilft, sie herrscht nicht.</h3><p>Mecky kann beim Finden und Erklären helfen. Mecky eröffnet keine Fälle, vertritt keine Verwaltung, gibt keine Stimme ab und bewegt kein Geld.</p></article>
+        <article class="protection"><h3>Formelle Schritte bleiben formell.</h3><p>Beratung, verbindliche Abstimmung und eine mögliche Auszahlung brauchen jeweils eigene, zuständige Verfahren.</p></article>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <span class="number">06 · Erster Test</span>
+        <div>
+          <h2>Wir beginnen klein und überprüfbar.</h2>
+          <p class="intro">Bevor echte Daten oder verbindliche Verfahren genutzt werden, soll der gesamte Weg in einer sicheren Testumgebung sichtbar funktionieren.</p>
+        </div>
+      </div>
+      <article class="test">
+        <h3>Der erste vollständige Test</h3>
+        <p>Wir testen zwei Dinge parallel: den sichtbaren Röbel-Weg vom Thema über Prüfung und Bürgerbrief bis zur beratenden Beteiligung – und mit künstlichen Beispieldaten den Wissensfluss aus öffentlichem Kontext, freiwilligem Gespräch, geprüfter Zusammenfassung und gemeinsamer Aktualisierung. Wenn Kommune und Quellenrechte es erlauben, soll danach ein echter Strausberger Ratsinformations-Beispielbestand diesen Wissensfluss erproben. Beide Wege treffen erst an einer geprüften öffentlichen Stelle zusammen.</p>
+      </article>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <span class="number">07 · Offen</span>
+        <div>
+          <h2>Was wir gemeinsam klären müssen</h2>
+          <p class="intro">Diese Fragen sind keine Fußnoten. Sie entscheiden darüber, ob der Vorschlag vertrauenswürdig umgesetzt werden kann.</p>
+        </div>
+      </div>
+      <div class="questions">
+        <article class="card"><h3>Prüfung</h3><p>Wer darf was prüfen, korrigieren oder zurückziehen?</p></article>
+        <article class="card"><h3>Quellen</h3><p>Welche Quellen dürfen übernommen werden und wie werden Änderungen sichtbar?</p></article>
+        <article class="card"><h3>Zustimmung</h3><p>Was bedeutet Zustimmung genau – für Auswertung, Zitat und Veröffentlichung?</p></article>
+        <article class="card"><h3>Beteiligung</h3><p>Wie unterscheiden wir Beratung, formelle Abstimmung und eine mögliche Auszahlung?</p></article>
+      </div>
+      <details>
+        <summary>Technische Hinweise für Interessierte</summary>
+        <div>
+          Die technische Umsetzung würde öffentliche Quellen, zustimmungsbasierte Gesprächsinhalte und den öffentlichen Verlauf getrennt behandeln. Für Agenten sind begrenzte Lesezugriffe vorgesehen; sie erhalten keine Entscheidungs-, Abstimmungs- oder Zahlungsbefugnis.
+          <ul>
+            <li>Sitzungsinformationen, Meldungen und Korrekturen behalten ihre Herkunft.</li>
+            <li>Private Gesprächsinhalte bleiben von öffentlichen Beiträgen getrennt.</li>
+            <li>Änderungen sollen nachvollziehbar sein; dauerhaft öffentliche Beiträge können gesondert signiert veröffentlicht werden.</li>
+            <li>Identität, formelle Abstimmung und Stadtkasse gehören nicht in den ersten Test und brauchen eigene Entscheidungen.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <section>
+      <div class="closing">
+        <p>Das Ziel ist nicht mehr Technik. Das Ziel ist, dass Menschen sehen können: Mein Hinweis wurde gehört, geprüft und hat einen nachvollziehbaren nächsten Schritt.</p>
+      </div>
+    </section>
+  </main>
+  <footer class="wrap">Arbeitsstand: unser aktuelles Verständnis des gemeinsamen Vorschlags – gemeinsam zu bestätigen. Meld/Kair wird untersucht; es ist nicht implementiert und nicht vereinbart. <a href="./council-context-network.html">Technischen Arbeitsstand öffnen</a>.</footer>
+</body>
+</html>
