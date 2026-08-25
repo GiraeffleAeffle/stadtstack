@@ -66,6 +66,14 @@
     .step-no { display: inline-grid; width: 2rem; height: 2rem; place-items: center; border-radius: 50%; color: white; background: var(--green); font-size: .82rem; font-weight: 800; }
     .step h3 { margin: 1.25rem 0 .55rem; font-size: 1.23rem; }
     .step p { margin: 0; color: var(--muted); font-size: .94rem; }
+    .timeline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0 2rem; }
+    .timeline article { min-height: 210px; padding: 1.35rem; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
+    .timeline article:nth-child(1) { border-top: 6px solid #bdcfec; }
+    .timeline article:nth-child(2) { border-top: 6px solid #b5e8d4; }
+    .timeline article:nth-child(3) { border-top: 6px solid #e7c982; }
+    .timeline .phase { display: block; color: var(--green); font-size: .75rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+    .timeline h3 { margin: 1rem 0 .55rem; font-size: 1.22rem; }
+    .timeline p { margin: 0; color: var(--muted); font-size: .94rem; }
     .boundary { max-width: 900px; margin: 1.5rem 0 0; padding: 1rem 1.2rem; border-left: 4px solid var(--green); background: #e9f7f0; font-weight: 650; }
     .roles, .protections, .questions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
     .card, .protection { padding: 1.35rem; }
@@ -87,6 +95,8 @@
       .section-heading { gap: .6rem; }
       .flow { grid-template-columns: 1fr; }
       .step { min-height: 0; }
+      .timeline { grid-template-columns: 1fr; }
+      .timeline article { min-height: 0; }
       .roles, .protections, .questions { grid-template-columns: 1fr; }
       .hero-card { transform: none; }
     }
@@ -196,12 +206,30 @@
 
     <section>
       <div class="section-heading">
-        <span class="number">06 · Drei Wege, eine gemeinsame Schnittstelle</span>
+        <span class="number">06 · Zeitplan und Wege</span>
         <div>
-          <h2>Was jetzt läuft – und was später erprobt wird</h2>
-          <p class="intro">Im ersten Entwurf war ein Infrastruktur-Prototyp bis Ende Oktober vorgesehen. Dieses ursprüngliche Ziel bleibt dokumentiert, muss aber nach Zugang zum Code, Auswahl der Hardware, teilnehmenden Kommunen und Datenquellen neu terminiert werden.</p>
+          <h2>Der ursprüngliche Zeitplan – und was wir jetzt tun</h2>
+          <p class="intro">Der erste gemeinsame Entwurf sah einen zweimonatigen Prototyp bis Ende Oktober vor. Die drei Phasen bleiben als verständlicher Ablauf erhalten; der Termin wird erst neu festgelegt, wenn Codezugang, Hardware, Quellen und teilnehmende Kommunen bestätigt sind.</p>
         </div>
       </div>
+      <div class="timeline" aria-label="Drei ursprüngliche Prototypphasen">
+        <article>
+          <span class="phase">Phase 1 · Quelle verbinden</span>
+          <h3>Eine kommunale Quelle auswählen</h3>
+          <p>Eine Kommune stellt eine eindeutige öffentliche Quelle bereit. Wir ordnen die Unterlagen nach Herkunft, Version und Status zu – zum Beispiel passende RIS- oder OParl-Inhalte, ohne daraus automatisch einen Beschluss zu machen.</p>
+        </article>
+        <article>
+          <span class="phase">Phase 2 · Kontext bilden</span>
+          <h3>Gespräch und geprüfte Aktualisierung</h3>
+          <p>Ein freiwilliges Kair-Gespräch kann sich auf genau diese Quelle beziehen. Eine geprüfte Zusammenfassung wird als Veröffentlichungskandidat vorbereitet; erst die zuständige kommunale Freigabe macht daraus einen offiziellen Eintrag.</p>
+        </article>
+        <article>
+          <span class="phase">Phase 3 · Austausch öffnen</span>
+          <h3>Für Apps und Agenten lesbar</h3>
+          <p>Die freigegebene Fassung erscheint im gemeinsamen Änderungsstrom und in begrenzten MCP-Lesezugängen. Eine lokale App – zunächst Röbel – und andere Clients können dieselbe Version mit sichtbarer Herkunft nutzen.</p>
+        </article>
+      </div>
+      <p class="boundary">Der ursprüngliche Zeitplan beschreibt die Reihenfolge, nicht eine Zusage. Der laufende Röbel/Stadtstack-Test geht parallel weiter. Kair und openDesk können in einer kommunalen Umgebung mit dem Veröffentlichungsdienst verbunden sein; wenn die Kommune einen dieser Dienste dafür ausdrücklich bestimmt, kann er nach menschlicher Freigabe den Veröffentlichungsschritt auslösen und den passenden offiziellen kommunalen Datensatz zurück in den gemeinsamen Kontext geben – soweit die Semantik passt, auch als RIS/OParl-kompatiblen Eintrag.</p>
       <article class="test">
         <h3>Strang 1 · Gemeinsame, stadtunabhängige Schnittstelle</h3>
         <p>Eine ausgewählte Kommune stellt eine eindeutige öffentliche Quelle bereit. Daraus entsteht ein nach Herkunft und Änderungen nachvollziehbarer Informationsstrom. OParl bleibt dabei der gemeinsame Zugang zu passenden parlamentarischen Veröffentlichungen; zusätzliche, geprüfte Informationen werden sauber daneben verknüpft.</p>
@@ -210,7 +238,7 @@
         <h3>Strang 3 · Kair später vor Ort erproben</h3>
         <p>Nach Code-, Lizenz- und Gerätetest kann ein freiwilliges Kair-Gespräch sich auf dieselben Quellen beziehen. Eine geprüfte Zusammenfassung kann nach menschlicher Freigabe durch die Kommune als neue offizielle Aktualisierung sichtbar werden und von passenden Apps und Agenten gelesen werden.</p>
         <h3>Mögliche Testkontexte · noch zu bestätigen</h3>
-        <p>Im Herzogtum Lauenburg in Schleswig-Holstein soll NextLearning e.V. aus Berlin federführend sein; Landvorteil e.V. aus Ratzeburg ist als lokaler Partner und die Wirtschaftsförderungsgesellschaft Herzogtum Lauenburg mbH (WFL) als Unterstützerin genannt. Für Ludwigslust-Parchim in Mecklenburg-Vorpommern wird die Wirtschaftsförderung Südwestmecklenburg als Unterstützerin genannt. Ob, mit wem und in welchem Umfang dort getestet wird, muss noch gemeinsam bestätigt werden.</p>
+        <p>Als mögliche spätere Testkontexte sind das Herzogtum Lauenburg in Schleswig-Holstein (mit NextLearning e.V. aus Berlin als genanntem Lead, Landvorteil e.V. aus Ratzeburg als lokalem Partner und der Wirtschaftsförderungsgesellschaft Herzogtum Lauenburg mbH / WFL als Unterstützung) sowie Ludwigslust-Parchim in Mecklenburg-Vorpommern (mit Unterstützung der Wirtschaftsförderung Südwestmecklenburg) genannt. Das sind keine Zusagen: Kommune, Rollen, Quellen, Rechte und Umfang müssen erst gemeinsam bestätigt werden.</p>
       </article>
     </section>
 
@@ -231,7 +259,7 @@
       <details>
         <summary>Technische Hinweise für Interessierte</summary>
         <div>
-          Die technische Umsetzung behandelt offizielle Veröffentlichungen der Kommune, freiwillige Gesprächsinhalte, Beiträge aus lokalen Apps und Verwaltungsentwürfe als unterschiedliche Arten von Information. Kair, openDesk und ein Veröffentlichungsdienst können im gleichen kommunalen Umfeld laufen; erst die nachvollziehbar von einem Menschen freigegebene Veröffentlichung der genauen Fassung macht aus einem Entwurf eine offizielle Mitteilung. Die Trennung beschreibt Herkunft und Verantwortung, nicht verschiedene Server. Für Agenten sind begrenzte Lesezugriffe vorgesehen; sie erhalten keine Entscheidungs-, Abstimmungs- oder Zahlungsbefugnis.
+          Die technische Umsetzung behandelt offizielle Veröffentlichungen der Kommune, freiwillige Gesprächsinhalte, Beiträge aus lokalen Apps und Verwaltungsentwürfe als unterschiedliche Arten von Information. Kair, openDesk und ein Veröffentlichungsdienst können im gleichen kommunalen Umfeld einen gemeinsamen Ablauf bilden; wenn die Kommune Kair oder openDesk dafür ausdrücklich bestimmt, kann der Dienst nach menschlicher Freigabe die genaue Fassung veröffentlichen und als passenden offiziellen kommunalen Datensatz zurückgeben – soweit die Semantik passt, auch als RIS/OParl-kompatiblen Eintrag. Die Trennung beschreibt Herkunft und Verantwortung, nicht verschiedene Server. Für Agenten sind begrenzte Lesezugriffe vorgesehen; sie erhalten keine Entscheidungs-, Abstimmungs- oder Zahlungsbefugnis.
           <ul>
             <li>Sitzungsinformationen, Meldungen und Korrekturen behalten ihre Herkunft.</li>
             <li>Private Gesprächsinhalte bleiben von öffentlichen Beiträgen getrennt.</li>
