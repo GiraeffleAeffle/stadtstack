@@ -17,12 +17,104 @@ This clean public lineage starts with the smallest reviewable vertical slices:
 5. exercise three role-scoped companion contexts;
 6. round-trip one reviewed public exchange record through a local Nostr
    Adapter; and
-7. prove replay, correction, deletion, and reference-surface evidence locally.
+7. prove replay, correction, explicit withdrawal from future eligibility, and
+   reference-surface evidence locally without claiming erasure of independent
+   originals or permanent public copies.
+
+## End-to-end status on 2026-08-25
+
+The architecture covers the intended Civic Journey, but the complete real-user
+staging journey has **not** been accepted end to end yet. “Implemented” below
+means that a contract, reference module, synthetic tracer or UI exists; it does
+not mean that a Röbel resident has successfully completed the whole line in the
+deployed staging environment.
+
+| Journey segment | Evidence today | Remaining acceptance gate |
+| --- | --- | --- |
+| Thirdweb sign-in → signed normal post | Thirdweb-backed web path and Nostr provenance exist | One real staging person signs in, publishes, reloads, and sees the same post |
+| Post → Discussion → pro/contra tree and sunburst | Discussion UI and synthetic graph examples exist | Promote a real signed post and prove both views and replies in the browser |
+| Explicit `@Mecky` question → cited answer | Public Mecky boundary and answer presentation exist | Live retrieval over admitted Röbel/RIS/news records with visible citations, freshness and failure behavior |
+| Resident adopts/signs a suggestion | Topic suggestion and citizen-signature contracts exist | One real signed suggestion remains bound to the exact Discussion and Mecky answer |
+| Human Case admission → one Civic Case | Coordinator, Case journal and public binding receipt exist | Authorized staging steward admits the real candidate without exposing its credential to Röbel |
+| Department package → openDesk return → Citizen Brief | Provider-neutral request/return and review contracts plus synthetic tracers exist | One idempotent staging connector round trip and independent review produce the same browser-visible Case version |
+| Citizen Brief → advisory Mitmachen | Advisory projection exists | The real returned brief appears in the same Journey and records one effect-free advisory result |
+| Municipal publication → RIS/OParl-compatible return | ADR 0030 now defines candidate, receipt and two-view public exchange | Name a municipal publication owner/target and prove the closed-loop publication tracer |
+| Kair session → reviewed context artifact | ADR 0025 and the exchange contract define the boundary | Receive the code, confirm the licence, install one owned device, freeze the actual bundle contract and run one consented test |
+| Verified Citizen credential | Thirdweb is the current staging baseline; provider-neutral bridge is designed | Real passkey enrolment/recovery plus Safe/Pimlico and membership binding are not implemented or accepted |
+| Formal private ballot | Strausberg-labelled contract/proof substrate and operational plans exist | A Röbel-specific ownership decision, credential bridge, fresh deployment/verifier proof and isolated ballot exercise |
+| Treasury execution | Synthetic/read-only budget context only | Municipality-owned Safe policy, signers, legal effect, spending limits and an explicitly authorized execution path; no live funds are in scope now |
+
+## Delivery tracks
+
+The work separates into three tracks. They share identifiers and public
+contracts, but a result in one track is not evidence that another has been
+accepted.
+
+### Track A — municipality- and client-neutral protocol
+
+Define and prove the Municipal source record, Municipal context snapshot,
+publication-candidate/receipt/action boundary, strict OParl-compatible view,
+broader Municipal Civic Context Exchange, and correction-aware read surfaces.
+This track names no default municipality, resident app, session product, or
+administration client. Kair, openDesk, Röbel, Mecky and a future client may
+consume or execute explicitly authorized parts of it without becoming its
+authority owner.
+
+### Track B — current Röbel/Stadtstack staging tracer (first)
+
+This is the nearest product acceptance path and does not depend on Kair:
+
+```text
+A. Thirdweb sign-in -> normal signed post -> Discussion -> pro/contra tree/sunburst
+B. cited Public Mecky answer -> resident-edited and signed suggestion
+C. Human Case admission -> synthetic openDesk return -> Reviewed citizen brief
+   -> advisory Mitmachen result, all on one Topic/Case/Journey identity
+```
+
+Steps A–C do not need a new formal-voting smart-contract deployment. They use
+the current Thirdweb/Nostr identity baseline and effect-free staging authority.
+Passkey, Safe and Pimlico work belongs to the provider-neutral Citizen
+credential bridge before any separate formal-ballot or treasury track; it is
+not already a completed Röbel login or a prerequisite for proving the first
+Civic Journey. Formal ballot and treasury remain separate authority lanes
+rather than hidden side effects of a proposal.
+
+### Track C — later Kair municipal trial
+
+After code, licence, owned hardware, consent boundaries and the actual bundle
+interface are verified, run one Kair trial against a selected Municipal context
+snapshot. The two candidate contexts supplied for the proposed Kair trials are
+currently unconfirmed:
+
+- Herzogtum Lauenburg (Schleswig-Holstein), with lead client NextLearning e.V.
+  (Berlin), local partner Landvorteil e.V. (Ratzeburg), and support from the
+  Economic Development Corporation of the Duchy of Lauenburg (WFL); and
+- Ludwigslust-Parchim (Mecklenburg-Vorpommern), supported by the South West
+  Mecklenburg Economic Development Agency.
+
+Their responsible municipal operator, source owner, publication authority,
+rights and trial scope still have to be confirmed. Neither context is a protocol
+default or a commitment to publish. The trial then proves:
+
+```text
+selected Municipal source -> Kair device/session -> reviewed artifact
+-> municipal publication candidate -> explicit municipal publication action
+-> receipt -> updated feed/MCP/resident-client context
+```
+
+Provider-neutral Citizen credentials, a formal private ballot and treasury
+eligibility/execution remain later, separately authorized decisions. The
+existing Strausberg-labelled voting substrate is retained as a scoped pilot
+asset; it is not a Kair trial target, Röbel deployment, or shared municipal
+default. Röbel may later consume Kair-derived reviewed context or support a Kair
+meeting in its own Civic Journey, but Track B does not wait for that integration.
 
 The next accepted product seam keeps ordinary Röbel posts and discussions
-Topic-bound until a resident signs a proposal. A registered human steward then
-uses one idempotent admission command to create the Case and preserve that
-Topic provenance before any department or openDesk round trip begins.
+Topic-bound until a resident signs one exact suggestion candidate. An
+explicitly authorized human Case Steward under municipality policy then uses
+one idempotent admission command to create the Case and preserve that Topic
+provenance before any department or openDesk round trip begins. The production
+identity and authorization mechanism remains an implementation gate.
 
 The accepted control seam now keeps that command behind a separately
 authenticated Case Steward interface. The public application may only read a
@@ -86,11 +178,53 @@ Only the coordinator can apply that command and derive the brief used by the
 shared public knowledge projection.
 
 The accepted reviewed-source seam now prepares separate local-news and
-Ratsinformationssystem projections from exact human attestations. A loopback
-reference transport revalidates and serves the exact checksum-bound bytes on
-the two Röbel GET routes. It does not crawl or deploy a public endpoint.
+Municipal-source projections (including Ratsinformationssystem records) from
+exact human attestations. A loopback reference transport revalidates and serves
+the exact checksum-bound bytes on the two Röbel GET routes. It does not crawl or
+deploy a public endpoint.
 
-Next implementation slices are:
+Kair is a proposed contextual-enrichment connection, not merely a third source
+Adapter and not a shortcut through the Civic Journey. Charlie Fisher / Komma
+Systems brings the session/runtime layer; the current shared direction is to
+obtain code access and install it on commodity hardware controlled by the team.
+That deployment model remains a hypothesis until repository, licence and device
+evidence exists. Track C maps exact Municipal source records into a Municipal
+context snapshot, grounds a consented session in that context, and makes one
+reviewed public-safe derivative discoverable across clients. Its first proof
+remains contract-only: one exact synthetic Municipal-context fixture and one
+consent-scoped Kair session bundle enter a local `pending_review` path; one
+human reviewer derives a public-safe deliberation artifact; correction or
+withdrawal removes that artifact from the next prepared Public knowledge
+projection. Raw audio, transcripts, private speaker mappings and model working
+state never enter the public Module.
+
+The candidate real contexts are Herzogtum Lauenburg and Ludwigslust-Parchim,
+subject to the confirmations listed in Track C. A participating municipality,
+source owner, rights policy and publication authority must select the exact
+source and endpoint before any real capture or publication trial. The canonical
+replay surface remains a versioned cursor-based change feed. MCP may expose
+eligibility-gated, read-only bodies,
+meetings, agenda items, papers, consultations, files, published result fields,
+reviewed artifacts, and change cursors over the same reviewed bytes;
+subscriptions remain jointly deferred. Nostr may mirror separately signed
+public-safe records. No transport gains source review, Case, publication,
+voting or treasury authority.
+
+The return path is governed by ADR 0030. A reviewed Kair artifact or openDesk
+response may prepare a Municipal publication candidate, but only a named
+municipal publisher performing the explicit Municipal publication action at its
+designated endpoint may issue the accountable receipt that creates an Official
+municipal publication. The
+strict OParl-compatible projection contains only official parliamentary objects
+that fit OParl semantics. The broader Municipal Civic Context Exchange keeps
+Discussions, Reviewed sources, Citizen Briefs, Case projections and status
+records linked without turning them into custom OParl objects. A new Civic
+change event then closes the loop back to Röbel, Mecky and other clients.
+
+Next implementation slices are listed in dependency order within their track.
+Items 1–10 are the immediate Track B Röbel/Stadtstack tracer. Items 11–13 are
+Track C and Track A preparation and may progress in parallel without blocking
+Track B. Items 14–15 remain later credential and scoped-voting decisions:
 
 1. merge the green stacked Case boundary, continuation, transport, runtime,
    recovery-gate, durable-seal, deployment-preflight and recovery-activation
@@ -111,14 +245,44 @@ Next implementation slices are:
 8. expose the resulting current Citizen Brief through the same Röbel journey
    and public knowledge checksum consumed by Mecky and Mitmachen; and
 9. deploy one synthetic reviewed-source projection behind the reviewed public
-   Adapter and prove correction withdrawal through the Röbel consumer; and
+   Adapter and prove correction withdrawal through the Röbel consumer;
 10. add correction and withdrawal UX before any formal governance or treasury
-   integration.
+   integration;
+11. freeze exact synthetic Municipal-context and Kair session-bundle fixtures and
+    prove context binding, consent purposes, public-safe extraction, human
+    review, correction, withdrawal, and `caseCitation` isolation locally before
+    adding a Kair network connection; obtain the Kair repository and licence,
+    install one owned test device, prove update/rollback/recovery and freeze the
+    actual versioned bundle interface; and, only after a participating
+    municipality, source owner, publication authority and rights policy select
+    one participating context, repeat the source-capture proof against that
+    chosen real target; then
+12. expose one correction-aware Civic change feed over the already-reviewed
+    projection, then add the bounded municipal MCP resources and one compatible
+    reference consumer over the same version and digest. Röbel may implement
+    that client profile, but the protocol proof must not require it; then
+13. implement ADR 0030's Municipal publication candidate and receipt, use one
+    synthetic openDesk return to create an explicitly authorized publication,
+    validate its strict OParl-compatible mapping, and observe the resulting
+    correction-aware change through REST, MCP and the same reference client;
+    then
+14. prove a provider-neutral Citizen credential bridge over the complete
+    Thirdweb-backed signed-Nostr tracer, including passkey-signed commitment
+    enrolment, replay, recovery, rotation, revocation and post-Anchor
+    non-transfer; and
+15. decide explicitly whether the Strausberg-labelled Gnosis pilot may host a
+    Röbel exercise, then prepare one fresh namespaced formal cryptographic
+    ballot with advisory legal effect, frozen eligibility and isolated
+    off-chain stores while keeping treasury execution absent.
 
-For the first accepted staging journey, deployment and browser proof now take
-precedence over adding another contract slice. Provider-neutral passkey/Safe
-coexistence follows the complete Thirdweb-backed tracer; it is not a hidden
-signup prerequisite.
+For the first accepted staging journey, deployment and browser proof take
+precedence on the Röbel product path. That priority does not block the separate
+interoperability track's document review or synthetic fixture preparation, but
+it does block presenting that preparation as a live Röbel capability.
+Provider-neutral passkey/Safe coexistence follows the complete Thirdweb-backed
+tracer; it is not a hidden signup prerequisite. No duplicate eligibility or
+voting suite is deployed before the credential bridge, real deployed-verifier
+proof, and compatibility/ownership decision in ADR 0029.
 
 Formal city authority, live operations, second-city federation, and public
 relay publication require new owners, ADRs, and exact external-effects gates.

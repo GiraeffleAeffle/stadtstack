@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f4f1e9" />
+  <meta name="description" content="A shared civic learning loop connecting Kair sessions, the Röbel App, Stadtstack, municipal work, OParl-compatible publications and agent-readable context." />
+  <title>Council Context Network / civic learning loop</title>
+  <style>
+    :root {
+      --paper: #f4f1e9;
+      --paper-deep: #e9e5dc;
+      --ink: #20201e;
+      --ink-soft: #6d6b65;
+      --line: #aaa69d;
+      --card: rgba(255, 255, 252, 0.92);
+      --mint: #b9efd9;
+      --mint-deep: #2c8f70;
+      --blue: #cbd5f0;
+      --blue-deep: #566caa;
+      --pink: #f0cce1;
+      --pink-deep: #a55882;
+      --ochre: #e7c982;
+      --ochre-deep: #936b14;
+      --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Baskerville, Georgia, serif;
+      --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --pad: clamp(20px, 4vw, 64px);
+      --max: 1440px;
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 8%, rgba(185, 239, 217, .22), transparent 24rem),
+        radial-gradient(circle at 92% 24%, rgba(203, 213, 240, .22), transparent 27rem),
+        var(--paper);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.5;
+      text-rendering: optimizeLegibility;
+      overflow-x: hidden;
+    }
+
+    a { color: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    ::selection { background: var(--mint); color: var(--ink); }
+
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      left: 16px;
+      top: -80px;
+      padding: 12px 16px;
+      background: var(--ink);
+      color: white;
+      border-radius: 10px;
+      transition: top .2s ease;
+    }
+    .skip-link:focus { top: 16px; }
+
+    .topbar {
+      position: fixed;
+      z-index: 50;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 72px;
+      padding: 12px var(--pad);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+
+    .brand,
+    .menu-button {
+      pointer-events: auto;
+      color: white;
+      background: rgba(31, 31, 29, .95);
+      border: 0;
+      box-shadow: 0 8px 28px rgba(20, 20, 18, .12);
+    }
+
+    .brand {
+      min-height: 48px;
+      padding: 0 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      border-radius: 16px 16px 18px 16px;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .brand span { color: #bdbbb5; font-family: var(--mono); font-weight: 400; }
+
+    .menu-button {
+      width: 52px;
+      height: 48px;
+      border-radius: 16px 16px 16px 18px;
+      cursor: pointer;
+      font-size: 21px;
+      letter-spacing: 3px;
+      line-height: 1;
+    }
+
+    .menu-button:focus-visible,
+    .brand:focus-visible,
+    .argument-node:focus-visible,
+    .button:focus-visible,
+    .chapter-nav a:focus-visible {
+      outline: 3px solid var(--ochre);
+      outline-offset: 3px;
+    }
+
+    .progress-track {
+      position: fixed;
+      z-index: 55;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 3px;
+      background: transparent;
+    }
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      background: var(--mint-deep);
+      transition: width .08s linear;
+    }
+
+    .chapter-nav {
+      position: fixed;
+      z-index: 45;
+      right: var(--pad);
+      top: 68px;
+      width: min(330px, calc(100vw - 40px));
+      padding: 18px;
+      border: 1px solid rgba(32, 32, 30, .12);
+      border-radius: 18px 6px 18px 18px;
+      background: rgba(255, 255, 252, .97);
+      box-shadow: 0 22px 70px rgba(30, 28, 23, .18);
+      opacity: 0;
+      transform: translateY(-12px) scale(.98);
+      visibility: hidden;
+      transition: .22s ease;
+      max-height: calc(100dvh - 90px - env(safe-area-inset-bottom));
+      overflow: auto;
+    }
+
+    .chapter-nav.open { opacity: 1; transform: none; visibility: visible; }
+    .chapter-nav p {
+      margin: 0 0 12px;
+      color: var(--ink-soft);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .chapter-nav a {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 8px;
+      min-height: 44px;
+      padding: 11px 8px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .chapter-nav a span { color: var(--ink-soft); font-family: var(--mono); font-size: 10px; padding-top: 3px; }
+    .chapter-nav a:hover,
+    .chapter-nav a.active { background: var(--paper); }
+
+    main { min-height: 100vh; }
+    .frame { width: min(var(--max), 100%); margin: 0 auto; }
+    .section { position: relative; padding: clamp(88px, 10vw, 160px) var(--pad); }
+
+    .kicker {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .hero {
+      min-height: 100svh;
+      padding-top: clamp(112px, 14vh, 170px);
+      display: flex;
+      align-items: center;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(280px, .7fr);
+      gap: clamp(32px, 7vw, 110px);
+      align-items: center;
+    }
+
+    .hero h1 {
+      margin: 22px 0 20px;
+      max-width: 940px;
+      font-family: var(--serif);
+      font-size: clamp(58px, 9.4vw, 140px);
+      font-weight: 400;
+      line-height: .82;
+      letter-spacing: -.06em;
+    }
+    .hero h1 em { font-weight: 400; color: var(--mint-deep); }
+
+    .hero-dek {
+      max-width: 760px;
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(22px, 2.5vw, 38px);
+      line-height: 1.18;
+      letter-spacing: -.02em;
+    }
+
+    .hero-dek .mark-blue { background: linear-gradient(transparent 62%, var(--blue) 62%); }
+    .hero-dek .mark-pink { background: linear-gradient(transparent 62%, var(--pink) 62%); }
+
+    .hero-aside { position: relative; min-height: 560px; }
+    .mini-card {
+      position: absolute;
+      width: min(100%, 310px);
+      padding: 18px;
+      border: 1px solid rgba(32, 32, 30, .12);
+      border-radius: 18px 18px 6px 18px;
+      background: var(--card);
+      box-shadow: 0 16px 45px rgba(35, 32, 26, .08);
+      backdrop-filter: blur(8px);
+    }
+    .mini-card:nth-of-type(1) { top: 15px; left: 0; transform: rotate(-1.5deg); }
+    .mini-card:nth-of-type(2) { top: 220px; right: 0; transform: rotate(1.2deg); }
+    .mini-card:nth-of-type(3) { bottom: 4px; left: 24px; transform: rotate(-.6deg); }
+    .mini-card .label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .mini-card .label span { font: 10px/1 var(--mono); color: var(--ink-soft); text-transform: uppercase; letter-spacing: .12em; }
+    .mini-card .mini-title { margin: 12px 0 7px; color: var(--ink); font-family: var(--serif); font-weight: 400; font-size: 24px; line-height: 1.05; }
+    .mini-card p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.45; }
+
+    .mini-link {
+      position: absolute;
+      border-left: 1px dashed var(--ink-soft);
+      border-bottom: 1px dashed var(--ink-soft);
+      opacity: .65;
+      pointer-events: none;
+    }
+    .link-a { top: 168px; left: 60px; width: 210px; height: 80px; }
+    .link-b { top: 370px; right: 55px; width: 210px; height: 90px; transform: scaleX(-1); }
+
+    .hero-actions { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 10px; }
+    .button {
+      min-height: 46px;
+      padding: 0 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      border: 1px solid var(--ink);
+      border-radius: 999px;
+      background: transparent;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      cursor: pointer;
+    }
+    .button.primary { background: var(--ink); color: white; }
+    .button .arrow { transition: transform .2s ease; }
+    .button:hover .arrow { transform: translateX(4px); }
+
+    .hero-quote {
+      margin: clamp(70px, 11vw, 150px) auto 0;
+      max-width: 1190px;
+      text-align: center;
+      font-family: var(--serif);
+      font-size: clamp(28px, 4.4vw, 62px);
+      line-height: 1.1;
+      letter-spacing: -.03em;
+    }
+    .hero-quote::before { content: "\201C"; display: block; height: .55em; font-size: 1.45em; line-height: 1; }
+    .hero-quote .gap { background: var(--pink); }
+    .hero-quote .fix { background: var(--mint); }
+    .hero-quote cite { display: block; margin-top: 24px; font: 10px/1.3 var(--mono); color: var(--ink-soft); letter-spacing: .12em; text-transform: uppercase; }
+
+    .map-section {
+      background:
+        radial-gradient(circle, rgba(32, 32, 30, .13) 1px, transparent 1.3px) 0 0 / 22px 22px,
+        rgba(236, 234, 228, .72);
+      border-top: 1px solid rgba(32, 32, 30, .09);
+      border-bottom: 1px solid rgba(32, 32, 30, .09);
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr);
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 56px;
+    }
+    .section-head h2 {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(40px, 6vw, 84px);
+      font-weight: 400;
+      line-height: .95;
+      letter-spacing: -.05em;
+    }
+    .section-head h2 em { font-weight: 400; color: var(--blue-deep); }
+    .section-head .intro { max-width: 580px; margin: 16px 0 0; color: var(--ink-soft); font-size: 15px; }
+
+    .argument-node {
+      position: absolute;
+      width: 270px;
+      min-height: 168px;
+      padding: 17px 18px 18px;
+      border: 1px solid rgba(32, 32, 30, .14);
+      border-radius: 17px 17px 5px 17px;
+      background: rgba(255, 255, 253, .95);
+      box-shadow: 0 18px 55px rgba(43, 39, 30, .08);
+      text-decoration: none;
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+    .argument-node:hover { transform: translateY(-5px); box-shadow: 0 24px 64px rgba(43, 39, 30, .14); }
+    .node-meta { display: flex; justify-content: space-between; gap: 12px; font: 10px/1.2 var(--mono); color: var(--ink-soft); letter-spacing: .1em; text-transform: uppercase; }
+    .argument-node h3 { margin: 18px 0 8px; font-family: var(--serif); font-size: 25px; line-height: 1.02; font-weight: 400; }
+    .argument-node p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.45; }
+    .argument-node .bar { height: 5px; margin-top: 15px; border-radius: 8px; background: var(--node-color, var(--mint)); transform-origin: left; }
+
+    .pipeline-board {
+      position: relative;
+      margin: 0 auto;
+      max-width: 1240px;
+      padding: clamp(24px, 4vw, 52px);
+      border: 1px solid rgba(32,32,30,.13);
+      border-radius: 26px 26px 8px 26px;
+      background:
+        radial-gradient(circle, rgba(32,32,30,.11) 1px, transparent 1.2px) 0 0 / 19px 19px,
+        rgba(239,239,236,.78);
+    }
+    .pipeline-board .board-title { margin: 0 0 30px; font: 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+    .pipeline-grid {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) 70px minmax(0,1fr) 70px minmax(0,1fr);
+      align-items: stretch;
+      gap: 4px;
+    }
+    .pipeline-node.argument-node { position: relative; width: auto; min-height: 236px; }
+    .pipeline-arrow { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--ink-soft); }
+    .pipeline-arrow .glyph { font-family: var(--serif); font-size: 30px; line-height: 1; }
+    .pipeline-arrow .cap { font: 9px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .08em; text-align: center; max-width: 96px; }
+    .pipeline-who { display: block; margin-top: 10px; font: 10px/1.3 var(--mono); color: var(--ink-soft); text-transform: none; letter-spacing: 0; }
+    .pipeline-result {
+      width: min(600px, 96%);
+      margin: 36px auto 0;
+      padding: 20px 26px;
+      border-radius: 999px;
+      color: white;
+      background: var(--ink);
+      text-align: center;
+      font-family: var(--serif);
+      font-size: clamp(17px, 2vw, 23px);
+    }
+    .pipeline-result::before { content: "\2193"; display: block; height: 26px; margin-top: -44px; color: var(--ink-soft); font-family: var(--mono); font-size: 16px; }
+
+    .preview-section { background: var(--paper); }
+    .preview-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(260px, .7fr);
+      gap: clamp(32px, 6vw, 90px);
+      padding: clamp(26px, 5vw, 68px);
+      border: 1px solid rgba(32, 32, 30, .16);
+      border-radius: 30px 30px 8px 30px;
+      background: rgba(255, 255, 252, .82);
+    }
+
+    .chapter {
+      scroll-margin-top: 74px;
+      border-top: 1px solid rgba(32, 32, 30, .1);
+      background: rgba(244, 241, 233, .76);
+    }
+    .chapter.tone-cool {
+      background:
+        linear-gradient(135deg, rgba(203, 213, 240, .19), transparent 34rem),
+        rgba(239, 239, 236, .88);
+    }
+    .chapter.tone-mint {
+      background:
+        linear-gradient(135deg, rgba(185, 239, 217, .19), transparent 34rem),
+        rgba(244, 241, 233, .92);
+    }
+    .chapter.tone-pink {
+      background:
+        linear-gradient(135deg, rgba(240, 204, 225, .18), transparent 34rem),
+        rgba(244, 241, 233, .92);
+    }
+    .chapter.dark {
+      color: #f6f3eb;
+      background: #242421;
+      border-top-color: rgba(255,255,255,.12);
+    }
+    .chapter.dark .kicker,
+    .chapter.dark .chapter-intro,
+    .chapter.dark .chapter-content p,
+    .chapter.dark .chapter-side p { color: #c7c4bb; }
+
+    .chapter-layout {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 760px) minmax(230px, 1fr);
+      column-gap: clamp(26px, 5vw, 78px);
+      align-items: start;
+    }
+    .chapter-index { position: sticky; top: 100px; grid-column: 1; }
+    .chapter-index .number {
+      display: block;
+      margin-bottom: 10px;
+      font-family: var(--serif);
+      font-size: 50px;
+      line-height: .9;
+      color: var(--chapter-color, var(--blue-deep));
+    }
+    .chapter-index .axis {
+      display: block;
+      width: 58px;
+      height: 1px;
+      margin-top: 18px;
+      padding: 0;
+      border: 0;
+      background: currentColor;
+      opacity: .45;
+    }
+    .chapter-main { grid-column: 2; min-width: 0; }
+    .chapter-side { grid-column: 3; min-width: 0; }
+    .chapter-wide { grid-column: 2 / -1; min-width: 0; }
+    .chapter h2 {
+      margin: 0 0 24px;
+      font-family: var(--serif);
+      font-size: clamp(44px, 6vw, 88px);
+      font-weight: 400;
+      line-height: .93;
+      letter-spacing: -.05em;
+    }
+    .chapter-intro {
+      margin: 0 0 46px;
+      max-width: 780px;
+      color: var(--ink-soft);
+      font-family: var(--serif);
+      font-size: clamp(23px, 2.4vw, 36px);
+      line-height: 1.2;
+      letter-spacing: -.025em;
+    }
+    .chapter-content p {
+      margin: 0 0 1.35em;
+      color: #33322f;
+      font-family: var(--serif);
+      font-size: clamp(18px, 1.46vw, 21px);
+      line-height: 1.62;
+      hanging-punctuation: first last;
+    }
+    .chapter-content p:last-child { margin-bottom: 0; }
+    .chapter-content strong { font-weight: 650; }
+    .chapter-content .opening-line {
+      font-size: clamp(24px, 2.2vw, 33px);
+      line-height: 1.34;
+      letter-spacing: -.018em;
+    }
+    .chapter-content .opening-line::first-letter {
+      float: left;
+      padding: .02em .09em 0 0;
+      color: var(--chapter-color, var(--mint-deep));
+      font-size: 3.35em;
+      line-height: .72;
+    }
+    .chapter-side {
+      position: sticky;
+      top: 102px;
+      display: grid;
+      gap: 14px;
+    }
+    .chapter-side .note,
+    .definition-card {
+      padding: 18px;
+      border: 1px solid rgba(32, 32, 30, .14);
+      border-radius: 16px 16px 5px 16px;
+      background: rgba(255,255,252,.82);
+      box-shadow: 0 12px 38px rgba(35,32,26,.05);
+    }
+    .chapter.dark .chapter-side .note,
+    .chapter.dark .definition-card { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.16); }
+    .chapter-side .note h3,
+    .definition-card h3 { margin: 0 0 8px; font-family: var(--serif); font-size: 22px; font-weight: 400; line-height: 1.05; }
+    .chapter-side .note p,
+    .definition-card p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+    .chapter-side .note .tag,
+    .definition-card .tag { display: block; margin-bottom: 12px; font: 10px/1 var(--mono); letter-spacing: .11em; text-transform: uppercase; color: var(--ink-soft); }
+
+    .pullquote {
+      position: relative;
+      margin: clamp(62px, 8vw, 110px) 0;
+      padding: 22px 0 18px;
+      border-top: 1px dashed var(--line);
+      border-bottom: 1px dashed var(--line);
+      font-family: var(--serif);
+      font-size: clamp(30px, 4vw, 56px);
+      line-height: 1.08;
+      letter-spacing: -.03em;
+      text-align: center;
+    }
+    .pullquote::before { content: "\201C"; display: block; height: .55em; font-size: 1.35em; line-height: .85; }
+    .pullquote cite { display: block; margin-top: 20px; font: 9px/1.3 var(--mono); color: var(--ink-soft); text-transform: uppercase; letter-spacing: .12em; }
+    .highlight-mint { background: linear-gradient(transparent 57%, var(--mint) 57% 92%, transparent 92%); }
+    .highlight-blue { background: linear-gradient(transparent 57%, var(--blue) 57% 92%, transparent 92%); }
+    .highlight-pink { background: linear-gradient(transparent 57%, var(--pink) 57% 92%, transparent 92%); }
+    .highlight-ochre { background: linear-gradient(transparent 57%, var(--ochre) 57% 92%, transparent 92%); }
+
+    .logic-strip {
+      margin: 54px 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .logic-strip .definition-card { min-height: 200px; }
+    .logic-strip .definition-card:nth-child(1) { border-top: 6px solid var(--blue); }
+    .logic-strip .definition-card:nth-child(2) { border-top: 6px solid var(--mint); }
+    .logic-strip .definition-card:nth-child(3) { border-top: 6px solid var(--ochre); }
+    .definition-card .big { display: block; margin: 8px 0 12px; font-family: var(--serif); font-size: 27px; font-weight: 400; line-height: 1.1; }
+
+    .register-grid {
+      margin: 54px 0;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .register-node {
+      position: relative;
+      min-height: 190px;
+      padding: 18px;
+      border: 1px solid rgba(32,32,30,.14);
+      border-radius: 12px 12px 4px 12px;
+      background: rgba(255,255,252,.94);
+    }
+    .register-node .num { display: block; margin-bottom: 30px; font: 10px/1 var(--mono); color: var(--ink-soft); }
+    .register-node strong { display: block; margin-bottom: 8px; font-family: var(--serif); font-size: 21px; font-weight: 400; line-height: 1.08; }
+    .register-node span { display: block; color: var(--ink-soft); font-size: 12px; line-height: 1.45; }
+    .register-node:nth-child(1) { border-top: 6px solid var(--pink); }
+    .register-node:nth-child(2) { border-top: 6px solid var(--mint); }
+    .register-node:nth-child(3) { border-top: 6px solid var(--ochre); }
+    .register-node:nth-child(4) { border-top: 6px solid var(--blue); }
+
+    .constellation {
+      margin: 56px 0;
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 12px;
+    }
+    .constellation article {
+      min-height: 190px;
+      padding: 20px;
+      border: 1px solid rgba(32,32,30,.14);
+      border-radius: 17px 17px 5px 17px;
+      background: rgba(255,255,252,.84);
+    }
+    .constellation article:nth-child(1) { grid-column: 1 / span 5; grid-row: 1; border-top: 7px solid var(--blue); }
+    .constellation article:nth-child(2) { grid-column: 6 / span 4; grid-row: 1; border-top: 7px solid var(--mint); }
+    .constellation article:nth-child(3) { grid-column: 10 / span 3; grid-row: 1; border-top: 7px solid var(--ochre); }
+    .constellation article:nth-child(4) { grid-column: 2 / span 4; grid-row: 2; border-top: 7px solid var(--pink); }
+    .constellation article:nth-child(5) { grid-column: 6 / span 6; grid-row: 2; border-top: 7px solid var(--ink); }
+    .constellation h3 { margin: 0 0 14px; font-family: var(--serif); font-size: 24px; font-weight: 400; line-height: 1.08; }
+    .constellation p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+
+    .threshold-box {
+      margin: 54px 0;
+      padding: clamp(25px, 4vw, 52px);
+      border: 1px solid rgba(32,32,30,.16);
+      border-radius: 24px 24px 7px 24px;
+      background: linear-gradient(100deg, rgba(240,204,225,.6), rgba(185,239,217,.5));
+    }
+    .threshold-box p { margin: 0; font-family: var(--serif); font-size: clamp(26px, 3.4vw, 46px); line-height: 1.1; letter-spacing: -.025em; }
+    .threshold-box small { display: block; margin-top: 24px; font: 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+
+    .closing-manifesto {
+      margin: clamp(70px, 10vw, 140px) auto 0;
+      max-width: 1160px;
+      text-align: center;
+      font-family: var(--serif);
+      font-size: clamp(36px, 5.6vw, 78px);
+      font-weight: 400;
+      line-height: 1.02;
+      letter-spacing: -.04em;
+    }
+    .closing-manifesto .mint { color: var(--mint); }
+    .closing-manifesto .pink { color: var(--pink); }
+
+    .source-band {
+      padding: clamp(64px, 8vw, 112px) var(--pad);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 86% 18%, rgba(185,239,217,.28), transparent 22rem),
+        #eceae4;
+      border-top: 1px solid rgba(32,32,30,.14);
+    }
+    .source-layout {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1.35fr) minmax(260px, .65fr);
+      gap: clamp(26px, 5vw, 78px);
+      align-items: start;
+    }
+    .source-band h2 {
+      margin: 0 0 26px;
+      max-width: 900px;
+      font-family: var(--serif);
+      font-size: clamp(38px, 5vw, 68px);
+      font-weight: 400;
+      line-height: .98;
+      letter-spacing: -.04em;
+    }
+    .source-band h2 em { color: var(--mint-deep); font-weight: 400; }
+    .source-copy p {
+      margin: 0 0 1.25em;
+      max-width: 760px;
+      color: #3a3935;
+      font-family: var(--serif);
+      font-size: clamp(18px, 1.45vw, 21px);
+      line-height: 1.58;
+    }
+    .source-links { display: grid; gap: 12px; }
+    .source-link {
+      min-height: 120px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid rgba(32,32,30,.15);
+      border-radius: 17px 17px 5px 17px;
+      background: rgba(255,255,252,.84);
+      text-decoration: none;
+      transition: transform .2s ease, background .2s ease;
+    }
+    .source-link:hover { transform: translateY(-3px); background: white; }
+    .source-link span { font: 10px/1.2 var(--mono); letter-spacing: .11em; text-transform: uppercase; color: var(--ink-soft); }
+    .source-link strong { font-family: var(--serif); font-size: 21px; font-weight: 400; line-height: 1.1; }
+    .source-link:focus-visible { outline: 3px solid var(--ochre); outline-offset: 3px; }
+
+    .page-footer {
+      padding: 30px var(--pad) 42px;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      border-top: 1px solid rgba(255,255,255,.12);
+      color: #aaa79f;
+      background: #242421;
+      font: 10px/1.4 var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    [data-reveal] { opacity: 1; transition: opacity .35s ease; }
+
+    @media (max-width: 1240px) {
+      .pipeline-grid { grid-template-columns: 1fr; }
+      .pipeline-arrow { flex-direction: row; padding: 6px 0; }
+      .pipeline-arrow .glyph { transform: rotate(90deg); }
+    }
+
+    @media (max-width: 920px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .hero-aside { min-height: 430px; }
+      .mini-card { width: min(78vw, 330px); }
+      .mini-card:nth-of-type(1) { left: 0; }
+      .mini-card:nth-of-type(2) { top: 140px; right: 0; }
+      .mini-card:nth-of-type(3) { top: 285px; bottom: auto; left: 8%; }
+      .mini-link { display: none; }
+      .section-head { grid-template-columns: 1fr; }
+      .preview-card { grid-template-columns: 1fr; }
+      .chapter-layout { grid-template-columns: 80px minmax(0, 1fr); }
+      .chapter-index { grid-column: 1; }
+      .chapter-main, .chapter-wide { grid-column: 2; }
+      .chapter-side { position: static; grid-column: 2; margin-top: 30px; grid-template-columns: repeat(2, 1fr); }
+      .source-layout { grid-template-columns: 80px minmax(0, 1fr); }
+      .source-links { grid-column: 2; grid-template-columns: 1fr 1fr; }
+      .register-grid { grid-template-columns: repeat(2, 1fr); }
+      .constellation article:nth-child(n) { grid-column: span 6; grid-row: auto; }
+    }
+
+    @media (max-width: 620px) {
+      :root { --pad: 18px; }
+      .topbar { height: 62px; }
+      .brand { min-height: 44px; max-width: calc(100vw - 88px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .brand span { display: none; }
+      .menu-button { width: 48px; height: 44px; }
+      .hero { align-items: flex-start; }
+      .hero h1 { font-size: clamp(54px, 20vw, 92px); }
+      .hero-aside { min-height: 0; display: grid; gap: 12px; }
+      .mini-card { position: relative; inset: auto !important; width: 100%; transform: none !important; }
+      .hero-quote { text-align: left; }
+      .hero-quote::before { text-align: center; }
+      .chapter-layout { grid-template-columns: 1fr; }
+      .chapter-index { position: static; grid-column: 1; margin-bottom: 28px; }
+      .chapter-index .number { font-size: 38px; }
+      .chapter-main, .chapter-wide, .chapter-side { grid-column: 1; }
+      .chapter-side { grid-template-columns: 1fr; }
+      .source-layout { grid-template-columns: 1fr; }
+      .source-links { grid-column: 1; grid-template-columns: 1fr; }
+      .chapter h2 { overflow-wrap: anywhere; }
+      .logic-strip, .register-grid { grid-template-columns: 1fr; }
+      .constellation { grid-template-columns: 1fr; }
+      .constellation article:nth-child(n) { grid-column: 1; grid-row: auto; }
+      .page-footer { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      [data-reveal] { opacity: 1; }
+    }
+
+    @media print {
+      .topbar, .progress-track, .chapter-nav, .hero-actions { display: none !important; }
+      body { background: white; color: black; font-size: 11pt; }
+      .section { padding: 36pt 0; break-inside: auto; }
+      .hero { min-height: 0; }
+      [data-reveal] { opacity: 1; }
+      .chapter-layout { display: block; }
+      .chapter-index, .chapter-side { position: static; }
+      .chapter-index { margin-bottom: 18pt; }
+      .chapter-side { margin-top: 18pt; }
+      .chapter.dark { color: black !important; background: white !important; border-color: #777 !important; }
+      .chapter.dark .kicker, .chapter.dark .chapter-intro, .chapter.dark .chapter-content p, .chapter.dark .chapter-side p { color: #333 !important; }
+      .chapter.dark .chapter-side .note, .chapter.dark .definition-card { color: black !important; background: white !important; border-color: #999 !important; }
+      .closing-manifesto .mint, .closing-manifesto .pink { color: black !important; }
+      .source-band { color: black; background: white; }
+      .pullquote, .logic-strip, .register-grid, .constellation, .threshold-box, .pipeline-board { break-inside: avoid; }
+      .page-footer { color: black; background: white; border-top-color: #999; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to brief</a>
+  <div class="progress-track" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+  <header class="topbar">
+    <a class="brand" href="#opening" aria-label="Council Context Network, back to opening">Council Context Network <span>CCN / 01</span></a>
+    <button class="menu-button" id="menuButton" type="button" aria-label="Open chapter navigation" aria-expanded="false" aria-controls="chapterNav">•••</button>
+  </header>
+  <nav class="chapter-nav" id="chapterNav" aria-label="Brief chapters">
+    <p>Brief index</p>
+    <a href="#opening"><span>00</span>Shared project</a>
+    <a href="#flow"><span>01</span>The civic loop</a>
+    <a href="#contributors"><span>02</span>Three contributors</a>
+    <a href="#standards"><span>03</span>Municipal context</a>
+    <a href="#mcp"><span>04</span>Feed and MCP</a>
+    <a href="#prototype"><span>05</span>Self-hosted Kair</a>
+    <a href="#phases"><span>06</span>Prototype plan</a>
+    <a href="#questions"><span>07</span>Boundaries</a>
+    <a href="#next"><span>08</span>Next working session</a>
+  </nav>
+
+  <main id="content" tabindex="-1">
+    <section class="section hero" id="opening" data-section="opening">
+      <div class="frame">
+        <div class="hero-grid">
+          <div data-reveal>
+            <p class="kicker">Shared working brief · Municipal Civic Context Exchange</p>
+            <h1>Council<br><em>Context</em><br>Network</h1>
+            <p class="hero-dek">Three contributors are shaping a reusable exchange between community conversation, local knowledge and municipal work. Kair can help a group build context together. Röbel is the current Stadtstack reference tracer for the resident-facing journey. Stadtstack keeps sources, the Civic Journey, administration handoff and public results connected without making one city or interface the centre.</p>
+            <div class="hero-actions">
+              <a class="button primary" href="#flow">Enter the brief <span class="arrow">→</span></a>
+              <button class="button" type="button" onclick="window.print()">Print / save</button>
+            </div>
+          </div>
+
+          <aside class="hero-aside" aria-label="Three contributors and their parts" data-reveal>
+            <article class="mini-card">
+              <div class="label"><span>Kair · Komma Systems</span><span>01</span></div>
+              <p class="mini-title">Charlie Fisher</p>
+              <p>Conversation sessions, context bundles and a software runtime that communities can test on hardware they control.</p>
+            </article>
+            <div class="mini-link link-a" aria-hidden="true"></div>
+            <article class="mini-card">
+              <div class="label"><span>Röbel App</span><span>02</span></div>
+              <p class="mini-title">Max Brych</p>
+              <p>The resident-facing feed, signed discussions, proposals and a clear public journey from a local topic to its outcome.</p>
+            </article>
+            <div class="mini-link link-b" aria-hidden="true"></div>
+            <article class="mini-card">
+              <div class="label"><span>Stadtstack · municipal exchange</span><span>03</span></div>
+              <p class="mini-title">Maximilian Stahl</p>
+              <p>Municipal context, the Civic Case, administration exchange, public knowledge interfaces and explicit authority boundaries. The exchange contract is not owned by any one city.</p>
+            </article>
+          </aside>
+        </div>
+
+        <blockquote class="hero-quote" data-reveal>
+          A resident should be able to follow one line: from a post or conversation, through evidence and deliberation, into municipal work—and back to a public, understandable result. Every municipality can use its own interface and publication practice.
+          <cite>The shared outcome</cite>
+        </blockquote>
+      </div>
+    </section>
+
+    <section class="section map-section" id="flow" data-section="flow">
+      <div class="frame">
+        <header class="section-head" data-reveal>
+          <p class="kicker">01 / The civic information loop</p>
+          <div>
+            <h2>Context in, <em>public learning back</em></h2>
+            <p class="intro">The network is not a one-way import. Existing municipal records can ground a session or discussion. A resulting proposal can enter administration work. Once the municipality publishes an outcome under its own policy, that update becomes part of the public context for the next conversation.</p>
+          </div>
+        </header>
+
+        <div class="pipeline-board" data-reveal>
+          <p class="board-title">Council Context Network / one loop with explicit handoffs</p>
+          <div class="pipeline-grid" role="group" aria-label="How municipal context, community deliberation and administration connect">
+            <a class="argument-node pipeline-node" href="#contributors" style="--node-color:var(--blue-deep)">
+              <div class="node-meta"><span>Published context</span><span>01</span></div>
+              <h3>Municipal records and local sources</h3>
+              <p>Meetings, agenda items, papers, files, published results and permitted reporting retain their exact origin and status.</p>
+              <span class="pipeline-who">Input: already public municipal context</span>
+              <div class="bar" style="width:100%"></div>
+            </a>
+            <div class="pipeline-arrow" aria-hidden="true"><span class="glyph">→</span><span class="cap">exact context refs</span></div>
+            <a class="argument-node pipeline-node" href="#contributors" style="--node-color:var(--mint-deep)">
+              <div class="node-meta"><span>Community journey</span><span>02</span></div>
+              <h3>Session context and a community client</h3>
+              <p>A consented Kair session can build a reviewed context bundle. A compatible resident-facing client can host posts, pro and contra, cited questions and signed proposals. Röbel is the current Stadtstack reference tracer, not a required client.</p>
+              <span class="pipeline-who">Optional runtime: Kair · reference tracer: Röbel App</span>
+              <div class="bar" style="width:100%"></div>
+            </a>
+            <div class="pipeline-arrow" aria-hidden="true"><span class="glyph">→</span><span class="cap">review + public derivative</span></div>
+            <a class="argument-node pipeline-node" href="#contributors" style="--node-color:var(--pink-deep)">
+              <div class="node-meta"><span>Municipal return</span><span>03</span></div>
+              <h3>openDesk work and publication</h3>
+              <p>A Civic Case can reach the responsible department. A municipality may run Kair, openDesk and its publication service in one environment. After accountable human approval, its designated publication role or governed service can accept the exact version under municipal policy and issue a municipality-authorized publication.</p>
+              <span class="pipeline-who">Return: municipality-authorized publication → updated context</span>
+              <div class="bar" style="width:100%"></div>
+            </a>
+          </div>
+          <div class="pipeline-result" data-reveal>Published municipal context → optional Kair session bundle → shared feed/MCP → compatible discussion and proposal client → municipal administration work → municipality-authorized publication → updated RIS/OParl-compatible context. Each arrow carries provenance; only accountable municipal approval and the designated publication role or service change institutional status. The provenance boundary remains logical even when Kair, openDesk and publication run together.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section chapter tone-cool" id="contributors" data-section="contributors" style="--chapter-color:var(--blue-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">02</span>
+          <p class="kicker">Three contributors</p>
+          <hr class="axis" aria-hidden="true" />
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Three parts of one project</h2>
+          <p class="chapter-intro">The first brief described three complementary contributions. The interfaces will be refined together once the Kair code and a test device are available.</p>
+          <div class="chapter-content">
+            <p class="opening-line"><strong>Charlie Fisher / Komma Systems / Kair</strong> contributes the session layer: software that can capture and organise the context of a group conversation and produce a structured bundle for permitted reuse.</p>
+            <p><strong>Max Brych / Röbel App</strong> contributes the public community layer: ordinary posts, signed discussions, pro/contra views, proposals and the current Stadtstack reference tracer for the resident-facing journey.</p>
+            <p><strong>Maximilian Stahl / Stadtstack</strong> contributes municipality-neutral source adapters, shared Civic Case contracts, administration and openDesk exchange, public projections, identity and governance boundaries.</p>
+            <p>The municipality remains responsible for official records, publication and decisions. Technical stewardship by any of the three contributors does not grant municipal authority.</p>
+          </div>
+        </div>
+        <aside class="chapter-side" data-reveal>
+          <article class="note">
+            <span class="tag">Shared seam</span>
+            <h3>Topic and source references</h3>
+            <p>Every component can refer to the same topic and exact source versions without sharing one database or identity system.</p>
+          </article>
+          <article class="note">
+            <span class="tag">Shared outcome</span>
+            <h3>One visible journey</h3>
+            <p>Mini Apps may provide focused views, but posts, discussion, proposal, administration, participation and result remain connected.</p>
+          </article>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section chapter" id="standards" data-section="standards" style="--chapter-color:var(--ochre-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">03</span>
+          <p class="kicker">Municipal context</p>
+          <hr class="axis" aria-hidden="true" />
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>A reusable layer around OParl</h2>
+          <p class="chapter-intro">The goal is not a private fork called “OParl 2.” It is a Municipal Civic Context Exchange: a strict OParl-compatible view for official parliamentary publications, plus a broader linked view for reviewed civic context.</p>
+          <div class="chapter-content">
+            <p class="opening-line">OParl makes already-public parliamentary information readable across systems. It is not a write workflow for a Kair session, community proposal or openDesk task.</p>
+            <p>A reviewed Kair artifact or administration response may become a <strong>municipal publication candidate</strong>. A municipality may operate Kair, openDesk and the publication service together, but accountable human approval must still record which designated publication role or governed service accepted the exact version under municipal policy. Only then is it a <strong>municipality-authorized publication</strong> that can be mapped into the appropriate RIS/OParl-compatible objects. This provenance distinction is logical, not a requirement to operate separate systems.</p>
+            <p>The broader exchange can also link reviewed discussions, sources, Citizen Briefs and status updates without pretending that they are OParl objects. Public Mecky and other agents read these records with citations and visible status.</p>
+            <p>Corrections, withdrawals and superseding publications remain explicit events, so other municipalities and agents can see not only what exists but what changed.</p>
+          </div>
+        </div>
+        <aside class="chapter-side" data-reveal>
+          <article class="note">
+            <span class="tag">Strict view</span>
+            <h3>OParl-compatible publication</h3>
+            <p>Official bodies, meetings, agenda items, papers, files and published results keep their standard meaning and official publisher.</p>
+          </article>
+          <article class="note">
+            <span class="tag">Broader view</span>
+            <h3>Municipal Civic Context</h3>
+            <p>Reviewed community artifacts and administration updates stay linked, typed and clearly below official authority until published.</p>
+          </article>
+        </aside>
+        <blockquote class="pullquote chapter-wide" data-reveal>
+          Kair and openDesk can help create and route material inside a municipality's own environment. After accountable human approval, a governed municipal publication action creates the <span class="highlight-ochre">municipality-authorized publication</span>. The exchange makes both the relationship and the difference visible, whether the tools run together or apart.
+          <cite>Closing the loop without blurring authority</cite>
+        </blockquote>
+      </div>
+    </section>
+
+    <section class="section chapter tone-mint" id="mcp" data-section="mcp" style="--chapter-color:var(--mint-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">04</span>
+          <p class="kicker">Delivery</p>
+          <hr class="axis" aria-hidden="true" />
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>One shared stream, several clients</h2>
+            <p class="chapter-intro">A correction-aware update stream lets municipal portals, resident-facing apps such as Röbel, other municipalities, residents and agents follow the same public context without scraping every source separately.</p>
+          <div class="chapter-content">
+            <p class="opening-line">One eligibility-gated Public knowledge projection feeds three bounded surfaces: REST/cursor for replay, MCP for agent reads, and Nostr for permanently public signed exchange.</p>
+            <p>The REST surface answers “what changed since this cursor?” with deterministic pages and explicit correction records. MCP exposes read-only resources for published municipal records and the broader reviewed civic context over the same version and digest.</p>
+            <p>MCP cannot admit a Case, attest a review, send an openDesk request, publish a Citizen Brief, start Mitmachen, cast a formal vote, sign a Safe transaction, or move treasury funds. Whether subscriptions or notifications belong in the first shared prototype is a jointly deferred decision; if added, they must not create a second source of truth.</p>
+          </div>
+        </div>
+        <aside class="chapter-side" data-reveal>
+          <article class="note">
+            <span class="tag">Initial interchange</span>
+            <h3>Replay the cursor</h3>
+            <p>Bounded REST pages make updates, corrections and withdrawals verifiable.</p>
+          </article>
+          <article class="note">
+            <span class="tag">Agent Adapter</span>
+            <h3>Read the projection</h3>
+            <p>MCP is capability-bounded and never becomes identity or authority.</p>
+          </article>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section chapter tone-pink" id="prototype" data-section="prototype" style="--chapter-color:var(--pink-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">05</span>
+          <p class="kicker">Self-hosted Kair</p>
+          <hr class="axis" aria-hidden="true" />
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Software for hardware a community controls</h2>
+          <p class="chapter-intro">The current shared direction is that the Kair code may become available for local operators to install and test on hardware they buy and operate themselves. This remains a future trial track, not a dependency of the current Röbel/Stadtstack product work.</p>
+        </div>
+        <aside class="chapter-side" data-reveal>
+          <article class="note">
+            <span class="tag">Deployment model</span>
+            <h3>Locally operated</h3>
+            <p>The comparison to MeshCore or Meshtastic describes the self-owned deployment ethos only; it is not a claim of protocol compatibility.</p>
+          </article>
+        </aside>
+
+        <div class="register-grid chapter-wide" data-reveal>
+          <article class="register-node"><span class="num">CODE ACCESS</span><strong>Repository and licence</strong><span>Confirm how the team receives the Kair code, what may be modified and redistributed, and which dependencies must remain available.</span></article>
+          <article class="register-node"><span class="num">DEVICE TEST</span><strong>Install and recover</strong><span>Document supported hardware, installation, updates, rollback, device identity, offline operation and recovery.</span></article>
+          <article class="register-node"><span class="num">DATA BOUNDARY</span><strong>Consent and deletion</strong><span>Verify where session data is processed, what is retained, how consent is proven, and what withdrawal can actually remove.</span></article>
+          <article class="register-node"><span class="num">INTEGRATION</span><strong>One versioned bundle</strong><span>Test a private-by-default bundle with exact source references and a separately reviewed public derivative.</span></article>
+        </div>
+
+        <div class="chapter-main" data-reveal>
+          <div class="chapter-content">
+            <p>This is a working deployment hypothesis until repository access and the first hardware installation confirm it. Kair remains independent software; Stadtstack defines only the exchange boundary needed to reference sources, consent and reviewed output. Any municipality can choose its own hosting and operational model.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section chapter" id="phases" data-section="phases" style="--chapter-color:var(--blue-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">06</span>
+          <p class="kicker">Three coordinated tracks</p>
+          <hr class="axis" aria-hidden="true" />
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>One shared boundary, three independent tracks</h2>
+          <p class="chapter-intro">The first brief proposed a two-month infrastructure prototype targeting the end of October. That remains a historical scoping target and must be re-baselined once code access, hardware, participating municipalities and source scope are confirmed. The current Röbel/Stadtstack tracer does not wait for Kair.</p>
+        </div>
+
+        <div class="logic-strip chapter-wide" data-reveal>
+          <article class="definition-card"><span class="tag">Track 01 · shared protocol</span><span class="big">Municipal Civic Context Exchange</span><p>Map one selected municipality's exact public source into a source-preserving context. Deliver reviewed public updates through a correction-aware feed, strict OParl-compatible view and broader linked civic-context view.</p></article>
+          <article class="definition-card"><span class="tag">Track 02 · current product tracer</span><span class="big">Röbel + Stadtstack</span><p>Prove the resident journey now in the current Stadtstack reference tracer: ordinary post, discussion, pro/contra, cited Mecky, signed suggestion, Case, administration return, Citizen Brief and advisory participation. Kair remains optional here.</p></article>
+          <article class="definition-card"><span class="tag">Track 03 · future municipal trials</span><span class="big">Kair runtime + compatible clients</span><p>After code, licence and device validation, test one consented bundle and the same exchange contract with a participating municipality and any compatible client. Röbel can be one client, never the required one.</p></article>
+        </div>
+        <div class="pipeline-result chapter-wide" data-reveal><strong>Candidate Kair trial contexts — confirmation required:</strong> Herzogtum Lauenburg, Schleswig-Holstein (lead client NextLearning e.V., Berlin; local partner Landvorteil e.V., Ratzeburg; supported by Wirtschaftsförderungsgesellschaft Herzogtum Lauenburg mbH / WFL), and Ludwigslust-Parchim, Mecklenburg-Vorpommern (supported by the South West Mecklenburg Economic Development Agency). These are possible trial contexts, not commitments or protocol defaults. <strong>Closed-loop acceptance:</strong> carry one resident proposal into municipal administration work, return a reviewed response, issue a governed municipal publication, and observe the new version through the same feed and MCP interface.</div>
+      </div>
+    </section>
+
+    <section class="section chapter dark" id="questions" data-section="questions" style="--chapter-color:var(--pink)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">07</span>
+          <p class="kicker">Boundaries</p>
+          <hr class="axis" aria-hidden="true" />
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Open questions</h2>
+          <p class="chapter-intro">The prototype should answer these questions with executable evidence rather than assumptions.</p>
+        </div>
+
+        <div class="constellation chapter-wide" data-reveal>
+          <article><h3>Consent and identity</h3><p>What exactly does a Meld/Kair session consent permit: retrieval, public exchange, Case citation, or only private review? A session pseudonym must not become a client member identity without a separate link receipt.</p></article>
+          <article><h3>Code and device operation</h3><p>Confirm repository access, licence, supported hardware, install, update, rollback, device identity, encryption, offline replay and operational support.</p></article>
+          <article><h3>Source legality and correction</h3><p>For each OParl/RIS or local-news Adapter, confirm terms of use, source owner, capture rights, update cadence, withdrawal, and correction behavior.</p></article>
+          <article><h3>Publication authority</h3><p>Which municipal role or governed publication service, after accountable human approval, may turn an openDesk response or reviewed session artifact into a municipality-authorized publication? Which OParl-compatible kind and identifier should represent it? The service may run beside Kair and openDesk in the same municipal environment.</p></article>
+          <article><h3>Cross-municipality discovery</h3><p>Similarity must remain opt-in, public-safe discovery. It cannot merge Cases, copy session content, infer consent, or make another municipality's record authoritative.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section chapter tone-cool" id="next" data-section="next" style="--chapter-color:var(--mint-deep)">
+      <div class="frame chapter-layout">
+        <aside class="chapter-index" data-reveal>
+          <span class="number">08</span>
+          <p class="kicker">Next working session</p>
+          <hr class="axis" aria-hidden="true" />
+        </aside>
+        <div class="chapter-main" data-reveal>
+          <h2>Put one real example through the interfaces</h2>
+          <div class="chapter-content">
+            <p class="opening-line"><strong>Charlie Fisher, Max Brych and Maximilian Stahl</strong> should agree which track is being tested in each session: one selected municipal source record for the exchange, one Kair installation and consented session when the runtime is ready, and one compatible client topic. Röbel is the current Stadtstack reference tracer, not the default municipality or required client.</p>
+            <p>The interoperability session should settle the Kair repository/runtime and hardware install, source and bundle identifiers, the feed/MCP resource shape, and the municipal publication-return contract. In parallel, the Röbel staging tracer should prove post → discussion → cited Mecky → signed proposal → Human Case → synthetic openDesk return → Citizen Brief → advisory Mitmachen.</p>
+          </div>
+        </div>
+
+        <div class="chapter-wide" data-reveal>
+          <p class="closing-manifesto">The essence is a <span class="mint">civic learning loop</span>: public records inform a conversation, the conversation can improve municipal work, and an authorized result returns as better public context for residents, municipalities and agents.</p>
+        </div>
+      </div>
+    </section>
+
+    <aside class="source-band" aria-labelledby="source-title">
+      <div class="frame source-layout">
+        <div>
+          <p class="kicker">Sources</p>
+        </div>
+        <div class="source-copy">
+          <h2 id="source-title">Working sources and <em>assumptions</em>.</h2>
+          <p>This shared working brief combines a city-neutral Municipal Civic Context Exchange with the current Röbel/Stadtstack product tracer and a future Kair trial track. Kair repository access, licence, supported hardware, processing location and operational responsibilities remain to be confirmed by testing. The end-of-October date is the original scoping target, not a current delivery commitment.</p>
+        </div>
+        <div class="source-links" aria-label="Source links">
+          <a class="source-link" href="https://oparl.org/spezifikation/" target="_blank" rel="noopener noreferrer">
+            <span>Standard</span>
+            <strong>OParl specification ↗</strong>
+          </a>
+          <a class="source-link" href="https://oparl.org" target="_blank" rel="noopener noreferrer">
+            <span>Standard</span>
+            <strong>OParl.org ↗</strong>
+          </a>
+          <a class="source-link" href="https://github.com/Roebel-Labs/Roebel-App" target="_blank" rel="noopener noreferrer">
+            <span>Repository</span>
+            <strong>Roebel-Labs / Roebel-App ↗</strong>
+          </a>
+          <a class="source-link" href="https://modelcontextprotocol.io/specification/draft/server/resources" target="_blank" rel="noopener noreferrer">
+            <span>Protocol</span>
+            <strong>MCP resources ↗</strong>
+          </a>
+          <a class="source-link" href="https://github.com/nostr-protocol/nostr" target="_blank" rel="noopener noreferrer">
+            <span>Protocol</span>
+            <strong>Nostr protocol ↗</strong>
+          </a>
+          <a class="source-link" href="./MELD_KAIR_OPARL_INTEGRATION_CONTRACT.md">
+            <span>Contract</span>
+            <strong>Meld/Kair integration boundary ↗</strong>
+          </a>
+          <a class="source-link" href="./council-context-network-plain.html">
+            <span>Plain-language brief</span>
+            <strong>Einfach erklärt ↗</strong>
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <footer class="page-footer">
+      <span>Council Context Network / Context in, public learning back</span>
+      <a href="#opening">Return to opening ↑</a>
+    </footer>
+  </main>
+
+  <script>
+    (() => {
+      const menuButton = document.getElementById('menuButton');
+      const chapterNav = document.getElementById('chapterNav');
+      const progressBar = document.getElementById('progressBar');
+      const navLinks = [...chapterNav.querySelectorAll('a')];
+      const sections = document.querySelectorAll('[data-section]');
+
+      const closeMenu = (returnFocus = false) => {
+        const wasOpen = chapterNav.classList.contains('open');
+        chapterNav.classList.remove('open');
+        menuButton.setAttribute('aria-expanded', 'false');
+        menuButton.setAttribute('aria-label', 'Open chapter navigation');
+        if (returnFocus && wasOpen) menuButton.focus();
+      };
+
+      menuButton.addEventListener('click', () => {
+        const open = chapterNav.classList.toggle('open');
+        menuButton.setAttribute('aria-expanded', String(open));
+        menuButton.setAttribute('aria-label', open ? 'Close chapter navigation' : 'Open chapter navigation');
+      });
+      navLinks.forEach(link => link.addEventListener('click', () => closeMenu(true)));
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenu(true); });
+      document.addEventListener('click', event => {
+        if (!chapterNav.contains(event.target) && event.target !== menuButton) closeMenu();
+      });
+
+      const updateProgress = () => {
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        const ratio = max > 0 ? window.scrollY / max : 0;
+        progressBar.style.width = `${Math.min(100, Math.max(0, ratio * 100))}%`;
+      };
+      addEventListener('scroll', updateProgress, { passive: true });
+      updateProgress();
+
+      if ('IntersectionObserver' in window) {
+        const sectionObserver = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            navLinks.forEach(link => {
+              const active = link.getAttribute('href') === `#${entry.target.id}`;
+              link.classList.toggle('active', active);
+              if (active) link.setAttribute('aria-current', 'location');
+              else link.removeAttribute('aria-current');
+            });
+          });
+        }, { rootMargin: '-40% 0px -52% 0px' });
+        sections.forEach(section => sectionObserver.observe(section));
+      }
+    })();
+  </script>
+</body>
+</html>
