@@ -1,4 +1,4 @@
-# Municipal Civic Context Exchange — Kair, Röbel and Stadtstack working profile
+# Municipal Civic Context Exchange — city-neutral working profile with Röbel as tracer
 
 - **Status:** shared working contract; interfaces pending implementation evidence
 - **Date:** 2026-08-25
@@ -75,9 +75,11 @@ publication-authority confirmation, are Herzogtum Lauenburg
 (Schleswig-Holstein; lead client NextLearning e.V., local partner Landvorteil
 e.V., and WFL) and Ludwigslust-Parchim (Mecklenburg-Vorpommern; South West
 Mecklenburg Economic Development Agency). Röbel may later consume the same
-contract or use Kair in local meetings if separately agreed; Strausberg remains
-a separate existing project context. Neither Röbel nor Strausberg is a protocol
-default or substitute for a participating municipality's approval. Every client consumes the same
+contract or use Kair in local meetings if separately agreed. No city's council
+or RIS material is implied as the protocol default: each participating
+municipality supplies its own source, review and publication context. Röbel is
+not a protocol default or substitute for a participating municipality's
+approval. Every client consumes the same
 reviewed public contract rather than receiving a private or source-system
 shortcut.
 
@@ -199,6 +201,16 @@ candidate, authority policy, accountable principal or delegation, target
 mapping, and idempotency checks are valid. The same systems remain
 non-authoritative when they merely capture a session, prepare a draft, relay a
 response, or are operated outside that municipal delegation.
+
+When a municipality operates several of these systems together, they form one
+municipal context-to-publication pipeline: a Kair session or openDesk work
+product can remain linked to the shared context, become a publication
+candidate, and be handed to the municipality-designated publication action.
+Kair or openDesk may execute that action when the municipality has explicitly
+assigned them the role; the policy-bound receipt is still the step that makes
+the exact version official. The workflow is therefore one connected line even
+when the implementation keeps the individual modules, databases or services
+separate for operational reasons.
 
 ## Municipal Civic Context Exchange
 
