@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "municipal_context_snapshot_v1",
+  "snapshotId": "urn:stadtstack:municipal-context:sample-municipality:2026-001",
+  "municipalityId": "sample-municipality",
+  "version": 1,
+  "generatedAtUtc": "2026-08-25T09:00:00.000Z",
+  "sourceRecords": [
+    {
+      "recordId": "urn:stadtstack:municipal-source:sample-municipality:paper-2026-001",
+      "sourceSystem": "synthetic-ris",
+      "sourceRecordId": "paper-2026-001",
+      "recordKind": "paper",
+      "publisher": "Sample Municipality",
+      "publicationState": "official_public",
+      "authorityCeiling": "official_publication",
+      "sourceVersion": "1",
+      "contentSha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  ],
+  "contentSha256": "sha256:7eb0ac1bc6a8d436c44a8a6a8dc341813d0d330f3dee3ef64d3ba5047d64ba07"
+}

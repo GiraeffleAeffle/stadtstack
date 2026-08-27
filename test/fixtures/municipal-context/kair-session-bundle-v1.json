@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "kair_session_bundle_v1",
+  "bundleId": "kair-bundle-synthetic-2026-001",
+  "municipalityId": "sample-municipality",
+  "sourceContentSha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "sessionStartedAtUtc": "2026-08-25T10:00:00.000Z",
+  "sessionEndedAtUtc": "2026-08-25T10:45:00.000Z",
+  "contextReferences": [
+    {
+      "snapshotId": "urn:stadtstack:municipal-context:sample-municipality:2026-001",
+      "version": 1,
+      "contentSha256": "sha256:7eb0ac1bc6a8d436c44a8a6a8dc341813d0d330f3dee3ef64d3ba5047d64ba07"
+    }
+  ],
+  "consent": {
+    "receiptSha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "purposes": [
+      "publicSafeReview"
+    ],
+    "expiresAtUtc": "2026-09-25T10:45:00.000Z",
+    "revoked": false
+  },
+  "adapter": {
+    "version": "synthetic-kair-adapter-1",
+    "provenanceOwner": "sample-session-operator"
+  },
+  "redactionProfile": "public-safe-deliberation-v1",
+  "privateContentReferences": [
+    "private://kair/session/2026-001/audio",
+    "private://kair/session/2026-001/transcript"
+  ],
+  "eligibilityState": "pending_review",
+  "capturedAtUtc": "2026-08-25T10:46:00.000Z",
+  "bundleSha256": "sha256:27a8e90685131824767977c002dac228dff474416ae8ddfe6592f2127e943b54"
+}

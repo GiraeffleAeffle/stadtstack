@@ -21,7 +21,55 @@ This clean public lineage starts with the smallest reviewable vertical slices:
    reference-surface evidence locally without claiming erasure of independent
    originals or permanent public copies.
 
-## End-to-end status on 2026-08-25
+## Execution checkpoint on 2026-08-27
+
+The latest work improved delivery safety, but it did **not** complete a
+resident-visible journey stage:
+
+- Röbel App PR
+  [#72](https://github.com/GiraeffleAeffle/Roebel-App/pull/72) is merged at
+  `9a478809a3d64b9efea279b6ee088a1346b045b4`. The source contains the normal
+  post, explicit Discussion promotion, pro/contra views, `@Mecky` response and
+  citizen-suggestion seams described below.
+- Röbel staging operations PR
+  [#40](https://github.com/GiraeffleAeffle/roebel-staging-operations/pull/40)
+  is merged on protected `main` at
+  `5172dcc4c7a515981a5fe4ea311f7d2f22e66273`. Its participant transport is
+  authenticated, rootless, receipt-bound and fail-closed.
+- Activation stopped before mutation because the prerequisite
+  `NetworkPolicy/stadtstack-roebel-staging-lab/e2e-workbench` is absent. The
+  participant endpoint still returns `404`; no participant Secret, workload,
+  shared-source change or civic-authority effect was created.
+- In parallel, Stadtstack now has a dependency-free municipality-neutral
+  reference tracer for items 11–13: exact Municipal-context and Kair bundle
+  fixtures, human review, correction-aware withdrawal from the current public
+  projection, a bounded cursor feed, equivalent read-only MCP/reference-consumer
+  pages, and a synthetic municipal publication receipt admitted only through a
+  preconfigured policy/authority trust anchor with strict `Paper` mapping. It
+  performs no network, Case, live municipal, voting or treasury effect and
+  does not close `G0`–`G3`.
+- Therefore the number of end-to-end stages accepted by a real staging user
+  remains **zero**. Source code, synthetic fixtures and hardened deployment
+  machinery are evidence of readiness, not evidence of user acceptance.
+
+Work now proceeds through the following gates in order. A gate closes only
+with browser-visible evidence and stable identifiers, not merely a merge:
+
+| Gate | Owning repository or repositories | Exact acceptance evidence |
+| --- | --- | --- |
+| `G0` Restore the staging participant prerequisite | `roebel-staging-operations` | The reviewed baseline workbench NetworkPolicy exists through GitOps; protected activation succeeds; the participant status endpoint returns `200`; rollback and activation receipts are retained |
+| `G1` Prove the first resident loop | `Roebel-App`, then only the reviewed image digest in `roebel-staging-operations` | One real Thirdweb user publishes an ordinary signed feed post, reloads it, explicitly promotes that same post to a Discussion, adds one pro and one contra, and receives one same-thread `@Mecky` answer with citations or an honest insufficient-evidence result |
+| `G2` Continue the same identity into a Civic Case | `Roebel-App` for product UX, `stadtstack` for neutral contracts/reference behavior, and `roebel-staging-operations` for reviewed deployment state | The same user edits and signs one suggestion; a human Case Steward admits it once; one synthetic administration/openDesk return becomes an independently reviewed Citizen Brief; the same Journey appears as effect-free advisory participation in Mitmachen |
+| `G3` Close the municipal publication loop | `stadtstack` plus a named municipality-owned connector/deployment repository | The municipality explicitly publishes an accepted result, produces a receipt and exposes the corrected result through its RIS/OParl-compatible and broader context views |
+
+No new architecture ADR is a prerequisite for `G0` or `G1`. Passkey/Safe/
+Pimlico migration, formal voting contracts, treasury execution, Kair hardware
+and a production openDesk connector remain later decisions. They must not be
+used to postpone the first accepted baseline journey. ADRs are updated only
+when execution reveals a genuine decision not already covered by ADRs
+0001–0030.
+
+## End-to-end status updated on 2026-08-27
 
 The architecture covers the intended Civic Journey, but the complete real-user
 staging journey has **not** been accepted end to end yet. “Implemented” below
