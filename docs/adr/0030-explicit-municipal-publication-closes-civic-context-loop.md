@@ -127,6 +127,26 @@ This ADR does not authorize a live municipal publication, OParl endpoint, MCP
 endpoint, Nostr publication, formal ballot, Safe transaction or treasury
 execution.
 
+## Reference implementation checkpoint — 2026-08-27
+
+The dependency-free municipal-context tracer now keeps both a reviewed Kair
+derivative and a synthetic reviewed openDesk return non-official, prepares an
+exact publication candidate, and accepts it idempotently only through a
+preconfigured synthetic authority trust anchor bound to the exact checksum,
+municipality, policy, principal, endpoint, validity window and official-kind
+authorization. A caller-minted authorization, reused official identifier or
+changed replay action fails closed. The resulting receipt binds the candidate
+version and authorization checksum and creates one synthetic Official municipal
+publication. An invalid authority or non-standard kind fails closed; only the
+Official `Paper` enters the strict OParl-compatible view,
+while the broader projection retains the reviewed return and non-official
+candidate. REST-style cursor pages, MCP and the reference consumer bind the
+same publication and correction digest.
+
+This ADR remains `proposed`: the authority and endpoint are synthetic fixtures,
+not a named participating municipality or live publication delegation, and the
+current Röbel consumer has not observed the exchange.
+
 ## Rejected alternatives
 
 - **Let content transport create OParl records automatically:** grants official

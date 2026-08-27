@@ -32,7 +32,11 @@ private operations, or personal data.
   Department task and binds its returned response only as a private draft for
   independent review;
 - an effect-free Citizen Brief readiness Adapter that exposes exact Department
-  blockers and prepares one checksum-bound human steward command; and
+  blockers and prepares one checksum-bound human steward command;
+- a dependency-free Municipal Civic Context Exchange tracer with exact
+  Municipal/Kair fixtures, human review and withdrawal, a bounded change feed,
+  read-only MCP parity, and a synthetic trust-anchored `Paper` publication
+  receipt; and
 - synthetic tests and architecture decisions describing the authority and
   privacy boundaries.
 
@@ -60,6 +64,7 @@ npm test
 npm run demo:synthetic
 npm run demo:public-mecky
 npm run demo:civic-outcome-loop
+npm run demo:municipal-context
 ```
 
 The test suite is offline and deterministic. It uses generated keys only in

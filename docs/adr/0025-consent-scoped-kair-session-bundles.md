@@ -109,6 +109,22 @@ They also make it possible to discard or correct a bundle without rewriting a
 signed Discussion or municipal source record. Cross-municipality similarity
 must use the separate discovery boundary in ADR 0027.
 
+## Reference implementation checkpoint — 2026-08-27
+
+The dependency-free municipal-context tracer now freezes one synthetic
+`municipal_context_snapshot_v1` and one synthetic `kair_session_bundle_v1`.
+`SessionEvidenceIntake`-equivalent reference behavior verifies exact context and
+consent bindings, derives a public-safe artifact only through a human review
+command, keeps private content references out of the public projection, rejects
+`caseCitation` without its separate purpose, and records withdrawal as a new
+correction event while removing the reviewed artifact and any unpublished
+candidate derived from it from the next current public projection.
+
+This evidence does not change this ADR's `proposed` status. The fixture is an
+exchange hypothesis, not Kair's asserted wire format. Repository, licence,
+device, controller/processor, lawful-basis, retention and actual consent
+semantics still require the confirmations below.
+
 ## Rejected alternatives
 
 - **Treat every bundle as a Röbel post:** loses session consent and source

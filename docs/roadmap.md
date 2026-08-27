@@ -40,6 +40,14 @@ resident-visible journey stage:
   `NetworkPolicy/stadtstack-roebel-staging-lab/e2e-workbench` is absent. The
   participant endpoint still returns `404`; no participant Secret, workload,
   shared-source change or civic-authority effect was created.
+- In parallel, Stadtstack now has a dependency-free municipality-neutral
+  reference tracer for items 11–13: exact Municipal-context and Kair bundle
+  fixtures, human review, correction-aware withdrawal from the current public
+  projection, a bounded cursor feed, equivalent read-only MCP/reference-consumer
+  pages, and a synthetic municipal publication receipt admitted only through a
+  preconfigured policy/authority trust anchor with strict `Paper` mapping. It
+  performs no network, Case, live municipal, voting or treasury effect and
+  does not close `G0`–`G3`.
 - Therefore the number of end-to-end stages accepted by a real staging user
   remains **zero**. Source code, synthetic fixtures and hardened deployment
   machinery are evidence of readiness, not evidence of user acceptance.

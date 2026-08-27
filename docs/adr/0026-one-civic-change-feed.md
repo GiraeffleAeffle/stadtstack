@@ -98,6 +98,20 @@ schema, and signed Nostr mirror still need implementation and Operations
 review. A public endpoint or relay publication is not authorized by this ADR;
 the deployment and publication effects remain separate decisions.
 
+## Reference implementation checkpoint — 2026-08-27
+
+The dependency-free municipal-context tracer now emits bounded
+`civic_change_event_v1` cursor pages for reviewed artifacts, withdrawals,
+publication candidates and Official municipal publications. A read-only MCP
+Adapter and a compatible reference consumer verify the same page bytes,
+projection version and digest. Old events remain append-only and content
+minimal; private Kair bundle identifiers, consent receipts and content
+references never enter the feed.
+
+This ADR remains `proposed`: the existing signed Nostr public-exchange Adapter
+has not yet been composed with this new eligibility feed, and no REST, MCP or
+relay deployment is authorized by the local tracer.
+
 ## Rejected alternatives
 
 - **MCP as the only feed:** couples fan-out interchange to agent-session
