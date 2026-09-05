@@ -21,6 +21,9 @@ private operations, or personal data.
   request without submitting it;
 - a human admission event plus one checksum-bound public knowledge projection
   shared by public Mecky and the read-only advisory Mitmachen surface;
+- a city-neutral citizen-adoption evidence verifier for signed sources, issuer
+  receipts, trusted ledger acceptance and nonce-bound current eligibility;
+  [staff admission integration remains pending](docs/adr/0031-citizen-adoption-evidence-before-case-admission.md);
 - an effect-free human-reviewed source preparer that emits checksum-bound local
   news or Ratsinformationssystem projections without crawling or publishing;
 - a credential-free loopback reference transport that serves those immutable

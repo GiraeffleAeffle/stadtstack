@@ -395,6 +395,29 @@ as an exact NIP-01 event. It awaits human Case admission and has not been
 published, submitted, voted on, or accepted into the Case journal.
 _Avoid_: automatic proposal, submitted motion, Case event
 
+**Participant suggestion**:
+An author's signed, immutable suggestion tied to a public Topic discussion and
+its cited Mecky answer. It awaits adoption by an eligible citizen.
+_Avoid_: citizen credential, admitted Case, municipal proposal
+
+**Municipal civic eligibility**:
+A time-bounded qualification under one municipality's issuer policy to request
+civic participation. It grants neither the Case Steward role nor municipal
+decision authority.
+_Avoid_: wallet ownership, staging invitation, administrative endorsement
+
+**Citizen adoption**:
+An eligible citizen's signature supporting the exact wording and source of a
+Participant suggestion, with an issuer receipt binding that citizen to the
+suggestion and municipality. It requests Case Steward review.
+_Avoid_: Case admission, vote, edited suggestion
+
+**Adoption acceptance**:
+The issuer ledger's immutable acknowledgment of one signed Citizen adoption
+and its original receipt time. It records receipt of the adoption, while human
+Case admission remains a separate transition.
+_Avoid_: Case binding receipt, refreshed eligibility, municipal approval
+
 **Topic suggestion candidate**:
 A citizen-signed suggestion whose source discussion, Mecky answer, and
 municipality remain bound to a Topic while no Civic Case identifier exists.
