@@ -4,7 +4,7 @@ import {
   createInMemoryCaseBindingProjection,
   verifyPublicCaseBindingReceipt,
   type CaseBindingProjectionReader,
-  type PublicCaseBindingReceiptV1,
+  type PublicCaseBindingReceipt,
 } from "./case-binding-projection.ts";
 import type {
   CaseBindingOutboxEntryV1,
@@ -93,7 +93,7 @@ export async function createCaseBindingOutboxProjector(
   outbox: CredentialFreeCaseBindingOutboxReader,
 ): Promise<CaseBindingOutboxProjection> {
   const replay = captureReplay(outbox);
-  let receipts: readonly PublicCaseBindingReceiptV1[] = Object.freeze([]);
+  let receipts: readonly PublicCaseBindingReceipt[] = Object.freeze([]);
   let afterSequence = 0;
   let active = createInMemoryCaseBindingProjection();
 

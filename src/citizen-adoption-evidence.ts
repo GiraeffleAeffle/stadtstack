@@ -250,17 +250,10 @@ async function responseJson(response: Response, signal: AbortSignal): Promise<un
   } finally { await reader.cancel().catch(() => {}); }
 }
 
-export function createCitizenAdoptionEvidenceVerifier(dependencies: Readonly<{
-  policy: CitizenAdoptionEvidencePolicy;
-  acceptance: CitizenAdoptionAcceptanceReader;
-  fetch?: typeof fetch;
-  now?: () => Date;
-  timeoutMs?: number;
-}>): Readonly<{ verify(bundle: unknown): Promise<VerifiedCitizenAdoptionEvidence> }> {
-  const policy = snapshot(dependencies.policy) as CitizenAdoptionEvidencePolicy;
+export function verifyCitizenAdoptionPolicy(input: unknown): CitizenAdoptionEvidencePolicy {
+  const policy = snapshot(input) as CitizenAdoptionEvidencePolicy;
   exact(policy, ["municipalityId", "policyVersion", "issuer", "issuerKeyId", "issuerPublicKey", "allowedAgentPubkeys",
     "receiptTtlSeconds", "statusBaseUrl", "statusMaxAgeSeconds", "maxEventClockSkewSeconds"]);
-  const timeoutMs = dependencies.timeoutMs ?? 10_000;
   let statusBase: URL;
   try { statusBase = new URL(policy.statusBaseUrl); } catch { fail("citizen_adoption_policy_invalid"); }
   if (typeof policy.municipalityId !== "string" || !SLUG.test(policy.municipalityId) ||
@@ -274,11 +267,153 @@ export function createCitizenAdoptionEvidenceVerifier(dependencies: Readonly<{
     !integer(policy.statusMaxAgeSeconds) || policy.statusMaxAgeSeconds < 1 || policy.statusMaxAgeSeconds > 300 ||
     !integer(policy.maxEventClockSkewSeconds) || policy.maxEventClockSkewSeconds > 300 ||
     statusBase.protocol !== "https:" || statusBase.username || statusBase.password || statusBase.hash || statusBase.search ||
-    statusBase.pathname.endsWith("/") || statusBase.href !== policy.statusBaseUrl ||
-    !integer(timeoutMs) || timeoutMs < 1 || timeoutMs > 10_000 ||
-    typeof dependencies.acceptance?.resolve !== "function" || typeof (dependencies.fetch ?? globalThis.fetch) !== "function" ||
-    (dependencies.now !== undefined && typeof dependencies.now !== "function")
+    statusBase.pathname.endsWith("/") || statusBase.href !== policy.statusBaseUrl
   ) fail("citizen_adoption_policy_invalid");
+  return policy;
+}
+
+function issuerProof(policy: CitizenAdoptionEvidencePolicy) {
+  const key = createPublicKey({ key: Buffer.concat([
+    Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(policy.issuerPublicKey, "hex"),
+  ]), format: "der", type: "spki" });
+  return (value: unknown, message: unknown) => {
+    const parsed = exact(value, ["algorithm", "keyId", "signature"]);
+    if (parsed.algorithm !== "Ed25519" || parsed.keyId !== policy.issuerKeyId || typeof parsed.signature !== "string" ||
+      !/^[A-Za-z0-9_-]{86}$/u.test(parsed.signature)
+    ) fail("citizen_adoption_proof_invalid");
+    const signature = Buffer.from(parsed.signature, "base64url");
+    if (signature.toString("base64url") !== parsed.signature || !verifySignature(null, Buffer.from(canonical(message)), key, signature)) fail("citizen_adoption_proof_invalid");
+  };
+}
+
+/** Bounded immutable transport snapshot; carries no verification claim. */
+export function readCitizenAdoptionBundle(input: unknown): CitizenAdoptionEvidenceBundle {
+  const parsed = exact(snapshot(input), BUNDLE_KEYS);
+  if (parsed.schemaVersion !== "eligible_citizen_adopted_topic_suggestion_v1") fail("citizen_adoption_bundle_invalid");
+  return parsed as CitizenAdoptionEvidenceBundle;
+}
+
+function inspectBundle(input: unknown, policy: CitizenAdoptionEvidencePolicy, startedAt: number) {
+  const proof = issuerProof(policy);
+  const bundle = readCitizenAdoptionBundle(input);
+  const source = sources(bundle, policy);
+  const receipt = exact(bundle.eligibilityReceipt, RECEIPT_KEYS);
+  const core = exact(receipt.eligibilityCore, CORE_KEYS);
+  if (!integer(core.issuedAt) || !integer(core.expiresAt) || core.expiresAt - core.issuedAt !== policy.receiptTtlSeconds ||
+    core.issuedAt > startedAt || core.expiresAt <= startedAt || core.issuedAt < source.suggestion.created_at
+  ) fail("citizen_adoption_receipt_expired");
+  same(core, {
+    municipalityId: policy.municipalityId, eligibilityClass: "municipal_civic_participation",
+    subjectPubkey: source.adoption.pubkey, participantSuggestionId: source.suggestion.id, topicId: source.topicId,
+    policyVersion: policy.policyVersion, issuer: policy.issuer, issuedAt: core.issuedAt, expiresAt: core.expiresAt,
+    authorityBinding: "civic_eligibility_only",
+  });
+  const payloadChecksum = digest(core);
+  const receiptId = `urn:stadtstack:municipal-civic-eligibility-receipt:${payloadChecksum}`;
+  const statusRef = `${policy.statusBaseUrl}/${payloadChecksum}`;
+  same({ ...receipt, proof: null }, {
+    schemaVersion: "municipal_civic_eligibility_receipt_v1", eligibilityCore: core,
+    receiptId, payloadChecksum, statusRef, proof: null,
+  });
+  proof(receipt.proof, { domain: "municipal-civic-eligibility-receipt/v1",
+    schemaVersion: "municipal_civic_eligibility_receipt_v1", receiptId, payloadChecksum, statusRef });
+  const adoptionCore = {
+    municipalityId: policy.municipalityId, topicId: source.topicId,
+    participantSuggestionId: source.suggestion.id, participantSuggestionRef: `nostr://event/${source.suggestion.id}`,
+    participantPubkey: source.root.pubkey, sourceDiscussionId: source.root.id,
+    sourceAnswerReceiptId: source.draftCore.sourceAnswerReceiptId, adopterPubkey: source.adoption.pubkey,
+    eligibilityReceiptId: receiptId, eligibilityReceiptChecksum: payloadChecksum,
+    title: source.draftCore.title, summary: source.draftCore.summary,
+  };
+  const adoptionId = `urn:stadtstack:citizen-topic-suggestion-adoption:${digest(adoptionCore)}`;
+  same(content(source.adoption), { schemaVersion: "public_citizen_topic_suggestion_adoption_v1", adoptionId,
+    ...adoptionCore, entryState: "case_steward_review_required", authorityBinding: "civic_eligibility_only", submittedToCivicWorkflow: false });
+  same(source.adoption.tags, [
+    ["schema", "citizen_adopted_topic_suggestion_v1"], ["municipality", policy.municipalityId], ["topic", source.topicId],
+    ["e", source.suggestion.id, "", "adopted-suggestion"], ["e", source.root.id, "", "root"], ["p", source.root.pubkey],
+    ["eligibility-receipt", receiptId], ["credential-class", "municipal-civic-eligibility"],
+  ]);
+  return { bundle, source, core, receiptId, payloadChecksum, statusRef, adoptionId, startedAt };
+}
+
+type InspectedBundle = ReturnType<typeof inspectBundle>;
+
+function inspectAcceptance(value: unknown, checked: InspectedBundle, policy: CitizenAdoptionEvidencePolicy) {
+  const acceptance = exact(snapshot(value), ACCEPTANCE_KEYS);
+  const { source, core, receiptId, adoptionId, startedAt } = checked;
+  if (!integer(acceptance.receivedAt) || acceptance.receivedAt > startedAt ||
+    acceptance.receivedAt < (core.issuedAt as number) || acceptance.receivedAt >= (core.expiresAt as number) ||
+    source.adoption.created_at < (core.issuedAt as number) || source.adoption.created_at >= (core.expiresAt as number) ||
+    Math.abs(acceptance.receivedAt - source.adoption.created_at) > policy.maxEventClockSkewSeconds
+  ) fail("citizen_adoption_acceptance_invalid");
+  const acceptanceCore = {
+    schemaVersion: "citizen_topic_suggestion_adoption_acceptance_receipt_v1",
+    adoptionId, adoptionEventId: source.adoption.id, municipalityId: policy.municipalityId,
+    topicId: source.topicId, participantSuggestionId: source.suggestion.id, adopterPubkey: source.adoption.pubkey,
+    eligibilityReceiptId: receiptId,
+    requestChecksum: digest({ schemaVersion: "citizen_topic_suggestion_adoption_request_v1", adoptionEvent: source.adoption }),
+    eventCreatedAt: source.adoption.created_at, receivedAt: acceptance.receivedAt,
+    policyVersion: policy.policyVersion, status: "accepted", authorityBinding: "civic_eligibility_only",
+  };
+  same(acceptance, { ...acceptanceCore, receiptChecksum: digest(acceptanceCore) });
+  return acceptance;
+}
+
+function inspectStatus(value: unknown, checked: InspectedBundle, policy: CitizenAdoptionEvidencePolicy, requestedAt: number, verifiedAt: number, requestNonce: string) {
+  const status = exact(snapshot(value), ["statusCore", "statusChecksum", "proof"]);
+  const { core, receiptId, payloadChecksum, startedAt } = checked;
+  const proof = issuerProof(policy);
+  const observed = exact(status.statusCore, ["schemaVersion", "receiptId", "payloadChecksum", "policyVersion", "state", "effectiveAt", "observedAt", "audience", "requestNonce"]);
+  if (verifiedAt < requestedAt || requestedAt < startedAt || verifiedAt >= (core.expiresAt as number) ||
+    !integer(observed.observedAt) || !integer(observed.effectiveAt) ||
+    observed.observedAt < requestedAt || observed.observedAt > verifiedAt ||
+    observed.effectiveAt > observed.observedAt || observed.effectiveAt < (core.issuedAt as number) ||
+    verifiedAt - observed.observedAt >= policy.statusMaxAgeSeconds
+  ) fail("citizen_adoption_status_stale");
+  same(observed, { schemaVersion: "municipal_civic_eligibility_status_v1", receiptId, payloadChecksum,
+    policyVersion: policy.policyVersion, state: "active", effectiveAt: observed.effectiveAt, observedAt: observed.observedAt,
+    audience: "stadtstack-case-steward-admission", requestNonce });
+  if (status.statusChecksum !== digest(observed)) fail("citizen_adoption_status_invalid");
+  proof(status.proof, { domain: "municipal-civic-eligibility-status/v1",
+    schemaVersion: "municipal_civic_eligibility_status_v1", statusChecksum: status.statusChecksum });
+  return { status, validUntil: Math.min(core.expiresAt as number, (observed.observedAt as number) + policy.statusMaxAgeSeconds) };
+}
+
+/** Replays recorded cryptographic evidence at its original verification time.
+ * This is not a ledger lookup or a fresh-status capability. Only the writer's
+ * configured verifier may supply evidence for a new admission. */
+export function verifyRecordedCitizenAdoptionEvidence(input: unknown, policyInput: CitizenAdoptionEvidencePolicy): VerifiedCitizenAdoptionEvidence {
+  const parsed = exact(snapshot(input), ["schemaVersion", "bundle", "adoptionAcceptance", "eligibilityStatus", "verifiedAt", "validUntil", "authorityBinding"]);
+  if (parsed.schemaVersion !== "verified_citizen_adoption_evidence_v1" || parsed.authorityBinding !== "none" ||
+    !integer(parsed.verifiedAt) || !integer(parsed.validUntil)) fail("citizen_adoption_record_invalid");
+  const policy = verifyCitizenAdoptionPolicy(policyInput);
+  const checked = inspectBundle(parsed.bundle, policy, parsed.verifiedAt);
+  const adoptionAcceptance = inspectAcceptance(parsed.adoptionAcceptance, checked, policy);
+  const observed = object(object(parsed.eligibilityStatus).statusCore);
+  if (!integer(observed.observedAt) || observed.observedAt < (adoptionAcceptance.receivedAt as number) || typeof observed.requestNonce !== "string" || !HEX.test(observed.requestNonce)) fail("citizen_adoption_record_invalid");
+  // A persisted observation precedes verification; the original network
+  // verifier already checked it against its own randomly generated nonce.
+  const { status, validUntil } = inspectStatus(parsed.eligibilityStatus,
+    { ...checked, startedAt: observed.observedAt }, policy, observed.observedAt, parsed.verifiedAt, observed.requestNonce);
+  if (validUntil !== parsed.validUntil) fail("citizen_adoption_record_invalid");
+  return Object.freeze({ schemaVersion: "verified_citizen_adoption_evidence_v1", bundle: checked.bundle,
+    adoptionAcceptance, eligibilityStatus: status, verifiedAt: parsed.verifiedAt, validUntil, authorityBinding: "none" });
+}
+
+export type CitizenAdoptionVerificationDependencies = Readonly<{
+  policy: CitizenAdoptionEvidencePolicy;
+  acceptance: CitizenAdoptionAcceptanceReader;
+  fetch?: typeof fetch;
+  now?: () => Date;
+  timeoutMs?: number;
+}>;
+
+export function createCitizenAdoptionEvidenceVerifier(dependencies: CitizenAdoptionVerificationDependencies): Readonly<{ verify(bundle: unknown): Promise<VerifiedCitizenAdoptionEvidence> }> {
+  const policy = verifyCitizenAdoptionPolicy(dependencies.policy);
+  const timeoutMs = dependencies.timeoutMs ?? 10_000;
+  if (!integer(timeoutMs) || timeoutMs < 1 || timeoutMs > 10_000 ||
+    typeof dependencies.acceptance?.resolve !== "function" || typeof (dependencies.fetch ?? globalThis.fetch) !== "function" ||
+    (dependencies.now !== undefined && typeof dependencies.now !== "function")) fail("citizen_adoption_policy_invalid");
   const request = dependencies.fetch ?? globalThis.fetch;
   const readAcceptance = dependencies.acceptance.resolve.bind(dependencies.acceptance);
   const now = dependencies.now ?? (() => new Date());
@@ -287,109 +422,35 @@ export function createCitizenAdoptionEvidenceVerifier(dependencies: Readonly<{
     if (!integer(value)) fail("citizen_adoption_time_invalid");
     return value;
   };
-  const key = createPublicKey({ key: Buffer.concat([
-    Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(policy.issuerPublicKey, "hex"),
-  ]), format: "der", type: "spki" });
-  const proof = (value: unknown, message: unknown) => {
-    const parsed = exact(value, ["algorithm", "keyId", "signature"]);
-    if (parsed.algorithm !== "Ed25519" || parsed.keyId !== policy.issuerKeyId || typeof parsed.signature !== "string" ||
-      !/^[A-Za-z0-9_-]{86}$/u.test(parsed.signature)
-    ) fail("citizen_adoption_proof_invalid");
-    const signature = Buffer.from(parsed.signature, "base64url");
-    if (signature.toString("base64url") !== parsed.signature || !verifySignature(null, Buffer.from(canonical(message)), key, signature)) fail("citizen_adoption_proof_invalid");
-  };
-
   const inspect = async (input: unknown, signal: AbortSignal, checkBudget: () => void): Promise<VerifiedCitizenAdoptionEvidence> => {
-    const parsed = exact(snapshot(input), BUNDLE_KEYS);
-    if (parsed.schemaVersion !== "eligible_citizen_adopted_topic_suggestion_v1") fail("citizen_adoption_bundle_invalid");
-    const bundle = parsed as CitizenAdoptionEvidenceBundle;
-    const source = sources(bundle, policy);
-    const receipt = exact(bundle.eligibilityReceipt, RECEIPT_KEYS);
-    const core = exact(receipt.eligibilityCore, CORE_KEYS);
     const startedAt = timestamp();
-    if (!integer(core.issuedAt) || !integer(core.expiresAt) || core.expiresAt - core.issuedAt !== policy.receiptTtlSeconds ||
-      core.issuedAt > startedAt || core.expiresAt <= startedAt || core.issuedAt < source.suggestion.created_at
-    ) fail("citizen_adoption_receipt_expired");
-    same(core, {
-      municipalityId: policy.municipalityId, eligibilityClass: "municipal_civic_participation",
-      subjectPubkey: source.adoption.pubkey, participantSuggestionId: source.suggestion.id, topicId: source.topicId,
-      policyVersion: policy.policyVersion, issuer: policy.issuer, issuedAt: core.issuedAt, expiresAt: core.expiresAt,
-      authorityBinding: "civic_eligibility_only",
-    });
-    const payloadChecksum = digest(core);
-    const receiptId = `urn:stadtstack:municipal-civic-eligibility-receipt:${payloadChecksum}`;
-    const statusRef = `${policy.statusBaseUrl}/${payloadChecksum}`;
-    same({ ...receipt, proof: null }, {
-      schemaVersion: "municipal_civic_eligibility_receipt_v1", eligibilityCore: core,
-      receiptId, payloadChecksum, statusRef, proof: null,
-    });
-    proof(receipt.proof, { domain: "municipal-civic-eligibility-receipt/v1",
-      schemaVersion: "municipal_civic_eligibility_receipt_v1", receiptId, payloadChecksum, statusRef });
-    const adoptionCore = {
-      municipalityId: policy.municipalityId, topicId: source.topicId,
-      participantSuggestionId: source.suggestion.id, participantSuggestionRef: `nostr://event/${source.suggestion.id}`,
-      participantPubkey: source.root.pubkey, sourceDiscussionId: source.root.id,
-      sourceAnswerReceiptId: source.draftCore.sourceAnswerReceiptId, adopterPubkey: source.adoption.pubkey,
-      eligibilityReceiptId: receiptId, eligibilityReceiptChecksum: payloadChecksum,
-      title: source.draftCore.title, summary: source.draftCore.summary,
-    };
-    const adoptionId = `urn:stadtstack:citizen-topic-suggestion-adoption:${digest(adoptionCore)}`;
-    same(content(source.adoption), { schemaVersion: "public_citizen_topic_suggestion_adoption_v1", adoptionId,
-      ...adoptionCore, entryState: "case_steward_review_required", authorityBinding: "civic_eligibility_only", submittedToCivicWorkflow: false });
-    same(source.adoption.tags, [
-      ["schema", "citizen_adopted_topic_suggestion_v1"], ["municipality", policy.municipalityId], ["topic", source.topicId],
-      ["e", source.suggestion.id, "", "adopted-suggestion"], ["e", source.root.id, "", "root"], ["p", source.root.pubkey],
-      ["eligibility-receipt", receiptId], ["credential-class", "municipal-civic-eligibility"],
-    ]);
+    const checked = inspectBundle(input, policy, startedAt);
     checkBudget();
-    let acceptance: Record<string, unknown>;
-    try { acceptance = exact(snapshot(await readAcceptance({ adoptionEventId: source.adoption.id, signal })), ACCEPTANCE_KEYS); }
+    let resolved: unknown;
+    try { resolved = await readAcceptance({ adoptionEventId: checked.source.adoption.id, signal }); }
     catch { fail("citizen_adoption_acceptance_unavailable"); }
     checkBudget();
-    if (!integer(acceptance.receivedAt) || acceptance.receivedAt > startedAt ||
-      acceptance.receivedAt < core.issuedAt || acceptance.receivedAt >= core.expiresAt ||
-      source.adoption.created_at < core.issuedAt || source.adoption.created_at >= core.expiresAt ||
-      Math.abs(acceptance.receivedAt - source.adoption.created_at) > policy.maxEventClockSkewSeconds
-    ) fail("citizen_adoption_acceptance_invalid");
-    const acceptanceCore = {
-      schemaVersion: "citizen_topic_suggestion_adoption_acceptance_receipt_v1",
-      adoptionId, adoptionEventId: source.adoption.id, municipalityId: policy.municipalityId,
-      topicId: source.topicId, participantSuggestionId: source.suggestion.id, adopterPubkey: source.adoption.pubkey,
-      eligibilityReceiptId: receiptId,
-      requestChecksum: digest({ schemaVersion: "citizen_topic_suggestion_adoption_request_v1", adoptionEvent: source.adoption }),
-      eventCreatedAt: source.adoption.created_at, receivedAt: acceptance.receivedAt,
-      policyVersion: policy.policyVersion, status: "accepted", authorityBinding: "civic_eligibility_only",
-    };
-    same(acceptance, { ...acceptanceCore, receiptChecksum: digest(acceptanceCore) });
+    let acceptance: Record<string, unknown>;
+    try { acceptance = exact(snapshot(resolved), ACCEPTANCE_KEYS); }
+    catch { fail("citizen_adoption_acceptance_unavailable"); }
+    acceptance = inspectAcceptance(acceptance, checked, policy);
     const requestNonce = randomBytes(32).toString("hex");
     const requestedAt = timestamp();
-    if (requestedAt < startedAt || requestedAt >= core.expiresAt) fail("citizen_adoption_receipt_expired");
-    let status: Record<string, unknown>;
+    if (requestedAt < startedAt || requestedAt >= (checked.core.expiresAt as number)) fail("citizen_adoption_receipt_expired");
+    let resolvedStatus: unknown;
     try {
-      status = exact(await responseJson(await request(statusRef, {
+      resolvedStatus = await responseJson(await request(checked.statusRef, {
         method: "GET", redirect: "error", credentials: "omit", cache: "no-store", signal,
         headers: { accept: "application/json", "x-stadtstack-status-nonce": requestNonce },
-      }), signal), ["statusCore", "statusChecksum", "proof"]);
+      }), signal);
+      exact(resolvedStatus, ["statusCore", "statusChecksum", "proof"]);
     } catch { fail("citizen_adoption_status_unavailable"); }
     checkBudget();
     const verifiedAt = timestamp();
-    const observed = exact(status.statusCore, ["schemaVersion", "receiptId", "payloadChecksum", "policyVersion", "state", "effectiveAt", "observedAt", "audience", "requestNonce"]);
-    if (verifiedAt < requestedAt || requestedAt < startedAt || verifiedAt >= core.expiresAt ||
-      !integer(observed.observedAt) || !integer(observed.effectiveAt) ||
-      observed.observedAt < requestedAt || observed.observedAt > verifiedAt ||
-      observed.effectiveAt > observed.observedAt || observed.effectiveAt < core.issuedAt ||
-      verifiedAt - observed.observedAt >= policy.statusMaxAgeSeconds
-    ) fail("citizen_adoption_status_stale");
-    same(observed, { schemaVersion: "municipal_civic_eligibility_status_v1", receiptId, payloadChecksum,
-      policyVersion: policy.policyVersion, state: "active", effectiveAt: observed.effectiveAt, observedAt: observed.observedAt,
-      audience: "stadtstack-case-steward-admission", requestNonce });
-    if (status.statusChecksum !== digest(observed)) fail("citizen_adoption_status_invalid");
-    proof(status.proof, { domain: "municipal-civic-eligibility-status/v1",
-      schemaVersion: "municipal_civic_eligibility_status_v1", statusChecksum: status.statusChecksum });
+    const { status, validUntil } = inspectStatus(resolvedStatus, checked, policy, requestedAt, verifiedAt, requestNonce);
     checkBudget();
-    return Object.freeze({ schemaVersion: "verified_citizen_adoption_evidence_v1", bundle,
-      adoptionAcceptance: acceptance, eligibilityStatus: status, verifiedAt,
-      validUntil: Math.min(core.expiresAt, observed.observedAt + policy.statusMaxAgeSeconds), authorityBinding: "none" });
+    return Object.freeze({ schemaVersion: "verified_citizen_adoption_evidence_v1", bundle: checked.bundle,
+      adoptionAcceptance: acceptance, eligibilityStatus: status, verifiedAt, validUntil, authorityBinding: "none" });
   };
 
   return Object.freeze({

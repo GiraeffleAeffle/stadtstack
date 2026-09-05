@@ -3,7 +3,7 @@ import { types as utilTypes } from "node:util";
 
 import {
   verifyPublicCaseBindingReceipt,
-  type PublicCaseBindingReceiptV1,
+  type PublicCaseBindingReceipt,
 } from "./case-binding-projection.ts";
 import { MUNICIPAL_CASE_ID } from "./case-id.ts";
 
@@ -13,8 +13,8 @@ import { MUNICIPAL_CASE_ID } from "./case-id.ts";
  * no credential, admission, or Case-coordination capability.
  */
 export type PublicCaseBindingReader = {
-  get(caseId: string): PublicCaseBindingReceiptV1 | null;
-  getByRootEventId(rootEventId: string): PublicCaseBindingReceiptV1 | null;
+  get(caseId: string): PublicCaseBindingReceipt | null;
+  getByRootEventId(rootEventId: string): PublicCaseBindingReceipt | null;
 };
 
 export type PublicCaseBindingServerConfig = {

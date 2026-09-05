@@ -24,14 +24,33 @@ export type PublicCaseBindingReceiptV1 = {
   openDeskWrite: false;
 };
 
+export type PublicAdoptedCaseBindingReceiptV2 = Omit<PublicCaseBindingReceiptV1, "schemaVersion"> & {
+  schemaVersion: "public_case_binding_receipt_v2";
+  candidateKind: "eligible_citizen_adopted_topic_suggestion_v1";
+  participantSuggestionEventId: string;
+  adopterPubkey: string;
+  eligibilityReceiptId: string;
+  eligibilityReceiptChecksum: string;
+  eligibilityPolicyVersion: string;
+  eligibilityIssuer: string;
+  adoptionAcceptanceReceiptChecksum: string;
+  sourceAnswerReceiptId: string;
+  administrativeEndorsement: false;
+  bindingVote: false;
+  councilDecision: false;
+  treasuryEffect: false;
+  paymentEffect: false;
+};
+export type PublicCaseBindingReceipt = PublicCaseBindingReceiptV1 | PublicAdoptedCaseBindingReceiptV2;
+
 export type CaseBindingProjectionReader = {
-  get(caseId: string): PublicCaseBindingReceiptV1 | null;
-  getByRootEventId(rootEventId: string): PublicCaseBindingReceiptV1 | null;
+  get(caseId: string): PublicCaseBindingReceipt | null;
+  getByRootEventId(rootEventId: string): PublicCaseBindingReceipt | null;
   respond(request: CaseBindingProjectionRequest): CaseBindingProjectionResponse;
 };
 
 export type CaseBindingProjectionWriter = {
-  record(receipt: PublicCaseBindingReceiptV1): void;
+  record(receipt: PublicCaseBindingReceipt): void;
 };
 
 export type InMemoryCaseBindingProjection = {
@@ -100,19 +119,26 @@ function text(value: unknown, code: string, expression: RegExp, maxBytes: number
 
 function clone<T>(value: T): T { return structuredClone(value); }
 
-export function verifyPublicCaseBindingReceipt(value: unknown): PublicCaseBindingReceiptV1 {
+export function verifyPublicCaseBindingReceipt(value: unknown): PublicCaseBindingReceipt {
+  const shape = record(value, "case_binding_receipt_invalid");
+  const version = Object.getOwnPropertyDescriptor(shape, "schemaVersion");
+  if (!version || !("value" in version)) fail("case_binding_receipt_invalid");
+  const adopted = version.value === "public_case_binding_receipt_v2";
   const parsed = exact(value, [
     "schemaVersion", "rootEventId", "topicId", "candidateId", "candidateEventId",
     "sourceAnswerEventId", "caseId", "caseVersion", "caseEventIds", "journalHeadChecksum",
     "admissionEventChecksum", "receiptChecksum", "authorityBinding", "openDeskWrite",
+    ...(adopted ? ["candidateKind", "participantSuggestionEventId", "adopterPubkey", "eligibilityReceiptId",
+      "eligibilityReceiptChecksum", "eligibilityPolicyVersion", "eligibilityIssuer", "adoptionAcceptanceReceiptChecksum",
+      "sourceAnswerReceiptId", "administrativeEndorsement", "bindingVote", "councilDecision", "treasuryEffect", "paymentEffect"] : []),
   ], "case_binding_receipt_invalid");
-  if (parsed.schemaVersion !== "public_case_binding_receipt_v1" ||
+  if ((!adopted && parsed.schemaVersion !== "public_case_binding_receipt_v1") ||
     parsed.authorityBinding !== "none" || parsed.openDeskWrite !== false) {
     fail("case_binding_receipt_invalid");
   }
   const rootEventId = text(parsed.rootEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u, 64);
   const topicId = text(parsed.topicId, "case_binding_receipt_invalid", /^urn:stadtstack:topic:municipality:[a-z0-9-]+:[a-z0-9-]+$/u, 256);
-  const candidateId = text(parsed.candidateId, "case_binding_receipt_invalid", /^urn:stadtstack:signed-topic-suggestion:[0-9a-f]{64}$/u, 128);
+  const candidateId = text(parsed.candidateId, "case_binding_receipt_invalid", adopted ? /^urn:stadtstack:citizen-topic-suggestion-adoption:[0-9a-f]{64}$/u : /^urn:stadtstack:signed-topic-suggestion:[0-9a-f]{64}$/u, 128);
   const candidateEventId = text(parsed.candidateEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u, 64);
   const sourceAnswerEventId = text(parsed.sourceAnswerEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u, 64);
   const caseId = text(parsed.caseId, "case_binding_receipt_invalid", CASE_ID, 256);
@@ -126,18 +152,39 @@ export function verifyPublicCaseBindingReceipt(value: unknown): PublicCaseBindin
   const journalHeadChecksum = text(parsed.journalHeadChecksum, "case_binding_receipt_invalid", SHA256, 71);
   const admissionEventChecksum = text(parsed.admissionEventChecksum, "case_binding_receipt_invalid", SHA256, 71);
   const receiptChecksum = text(parsed.receiptChecksum, "case_binding_receipt_invalid", SHA256, 71);
-  if (candidateId !== `urn:stadtstack:signed-topic-suggestion:${candidateEventId}` ||
+  if ((!adopted && candidateId !== `urn:stadtstack:signed-topic-suggestion:${candidateEventId}`) ||
+    topicId.split(":")[4] !== caseIdMatch[1] ||
     admissionEventChecksum !== journalHeadChecksum) fail("case_binding_receipt_invalid");
   const exactCaseEventIds = [caseEventIds[0]!, caseEventIds[1]!, caseEventIds[2]!] as const;
   const unsigned = {
-    schemaVersion: "public_case_binding_receipt_v1" as const,
+    schemaVersion: adopted ? "public_case_binding_receipt_v2" as const : "public_case_binding_receipt_v1" as const,
     rootEventId, topicId, candidateId, candidateEventId, sourceAnswerEventId, caseId,
     caseVersion, caseEventIds: exactCaseEventIds, journalHeadChecksum,
     admissionEventChecksum, authorityBinding: "none" as const, openDeskWrite: false as const,
   };
-  if (checksum(unsigned) !== receiptChecksum) fail("case_binding_receipt_checksum_invalid");
+  let additions = {};
+  if (adopted) {
+    const hex = /^[0-9a-f]{64}$/u;
+    const eligibilityReceiptChecksum = text(parsed.eligibilityReceiptChecksum, "case_binding_receipt_invalid", hex, 64);
+    const eligibilityReceiptId = text(parsed.eligibilityReceiptId, "case_binding_receipt_invalid", /^urn:stadtstack:municipal-civic-eligibility-receipt:[0-9a-f]{64}$/u, 128);
+    if (eligibilityReceiptId !== `urn:stadtstack:municipal-civic-eligibility-receipt:${eligibilityReceiptChecksum}` ||
+      parsed.candidateKind !== "eligible_citizen_adopted_topic_suggestion_v1" ||
+      ["administrativeEndorsement", "bindingVote", "councilDecision", "treasuryEffect", "paymentEffect"].some((field) => parsed[field] !== false)) fail("case_binding_receipt_invalid");
+    additions = {
+      candidateKind: "eligible_citizen_adopted_topic_suggestion_v1",
+      participantSuggestionEventId: text(parsed.participantSuggestionEventId, "case_binding_receipt_invalid", hex, 64),
+      adopterPubkey: text(parsed.adopterPubkey, "case_binding_receipt_invalid", hex, 64),
+      eligibilityReceiptId, eligibilityReceiptChecksum,
+      eligibilityPolicyVersion: text(parsed.eligibilityPolicyVersion, "case_binding_receipt_invalid", /^[a-z0-9][a-z0-9._-]{2,99}$/u, 100),
+      eligibilityIssuer: text(parsed.eligibilityIssuer, "case_binding_receipt_invalid", /^[^\s\u0000-\u001f\u007f](?:[^\u0000-\u001f\u007f]*[^\s\u0000-\u001f\u007f])?$/u, 512),
+      adoptionAcceptanceReceiptChecksum: text(parsed.adoptionAcceptanceReceiptChecksum, "case_binding_receipt_invalid", hex, 64),
+      sourceAnswerReceiptId: text(parsed.sourceAnswerReceiptId, "case_binding_receipt_invalid", /^urn:stadtstack:mecky-answer:[0-9a-f]{64}$/u, 128),
+      administrativeEndorsement: false, bindingVote: false, councilDecision: false, treasuryEffect: false, paymentEffect: false,
+    };
+  }
+  if (checksum({ ...unsigned, ...additions }) !== receiptChecksum) fail("case_binding_receipt_checksum_invalid");
   const frozenEventIds = Object.freeze([...unsigned.caseEventIds]) as readonly [string, string, string];
-  return Object.freeze({ ...unsigned, caseEventIds: frozenEventIds, receiptChecksum });
+  return Object.freeze({ ...unsigned, ...additions, caseEventIds: frozenEventIds, receiptChecksum }) as PublicCaseBindingReceipt;
 }
 
 export function createPublicCaseBindingReceipt(input: Omit<PublicCaseBindingReceiptV1, "schemaVersion" | "receiptChecksum" | "authorityBinding" | "openDeskWrite">): PublicCaseBindingReceiptV1 {
@@ -147,7 +194,17 @@ export function createPublicCaseBindingReceipt(input: Omit<PublicCaseBindingRece
     authorityBinding: "none" as const,
     openDeskWrite: false as const,
   };
-  return verifyPublicCaseBindingReceipt({ ...unsigned, receiptChecksum: checksum(unsigned) });
+  return verifyPublicCaseBindingReceipt({ ...unsigned, receiptChecksum: checksum(unsigned) }) as PublicCaseBindingReceiptV1;
+}
+
+export function createAdoptedCaseBindingReceipt(input: Omit<PublicAdoptedCaseBindingReceiptV2,
+  "schemaVersion" | "receiptChecksum" | "authorityBinding" | "candidateKind" | "administrativeEndorsement" |
+  "bindingVote" | "councilDecision" | "openDeskWrite" | "treasuryEffect" | "paymentEffect">): PublicAdoptedCaseBindingReceiptV2 {
+  const unsigned = { ...clone(input), schemaVersion: "public_case_binding_receipt_v2",
+    candidateKind: "eligible_citizen_adopted_topic_suggestion_v1", authorityBinding: "none",
+    administrativeEndorsement: false, bindingVote: false, councilDecision: false, openDeskWrite: false,
+    treasuryEffect: false, paymentEffect: false };
+  return verifyPublicCaseBindingReceipt({ ...unsigned, receiptChecksum: checksum(unsigned) }) as PublicAdoptedCaseBindingReceiptV2;
 }
 
 function response(status: CaseBindingProjectionResponse["status"], body: string, extra: Readonly<Record<string, string>> = {}): CaseBindingProjectionResponse {
@@ -169,12 +226,12 @@ function response(status: CaseBindingProjectionResponse["status"], body: string,
  * durable Case admission outbox before serving; this object is not a journal.
  */
 export function createInMemoryCaseBindingProjection(
-  initialReceipts: readonly PublicCaseBindingReceiptV1[] = [],
+  initialReceipts: readonly PublicCaseBindingReceipt[] = [],
 ): InMemoryCaseBindingProjection {
   if (!Array.isArray(initialReceipts) || utilTypes.isProxy(initialReceipts)) fail("case_binding_projection_invalid");
-  const receipts = new Map<string, PublicCaseBindingReceiptV1>();
-  const receiptsByRootEventId = new Map<string, PublicCaseBindingReceiptV1>();
-  const recordReceipt = (value: PublicCaseBindingReceiptV1): void => {
+  const receipts = new Map<string, PublicCaseBindingReceipt>();
+  const receiptsByRootEventId = new Map<string, PublicCaseBindingReceipt>();
+  const recordReceipt = (value: PublicCaseBindingReceipt): void => {
     const receipt = verifyPublicCaseBindingReceipt(value);
     const existingCase = receipts.get(receipt.caseId);
     if (existingCase && canonical(existingCase) !== canonical(receipt)) fail("case_binding_conflict");

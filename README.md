@@ -21,9 +21,9 @@ private operations, or personal data.
   request without submitting it;
 - a human admission event plus one checksum-bound public knowledge projection
   shared by public Mecky and the read-only advisory Mitmachen surface;
-- a city-neutral citizen-adoption evidence verifier for signed sources, issuer
-  receipts, trusted ledger acceptance and nonce-bound current eligibility;
-  [staff admission integration remains pending](docs/adr/0031-citizen-adoption-evidence-before-case-admission.md);
+- [authenticated citizen-adoption Case admission](docs/adr/0031-citizen-adoption-evidence-before-case-admission.md)
+  with issuer verification, atomic nonce consumption, one durable Case journal
+  and a public v2 binding receipt; deployment activation remains pending;
 - an effect-free human-reviewed source preparer that emits checksum-bound local
   news or Ratsinformationssystem projections without crawling or publishing;
 - a credential-free loopback reference transport that serves those immutable
@@ -99,9 +99,10 @@ boundaries are:
 - public, administration, and council companions receive distinct contexts,
   identities, and default-deny tool policies.
 
-Current Röbel integration state and the exact remaining end-to-end gates are
-recorded in the dated
+The initial Röbel tracer is recorded in the historical
 [2026-08-22 staging snapshot](docs/verification/2026-08-22-roebel-staging.md).
+[ADR 0031](docs/adr/0031-citizen-adoption-evidence-before-case-admission.md)
+describes the current adoption implementation and its remaining activation work.
 
 ## Contributing and licensing
 

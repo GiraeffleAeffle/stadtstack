@@ -337,6 +337,9 @@ test("two database connections converge on one same-candidate claim and one outb
 
 test("two independently scheduled Node processes cross a barrier and converge on one atomic claim", async () => {
   const rootDir = temporaryRoot("stadtstack-atomic-process-race-");
+  // Race admission after provisioning the municipal store, not the one-time
+  // PRAGMA transition from a new SQLite file to WAL.
+  createSqliteAtomicTopicCaseAdmission(options(rootDir)).close();
   const gatePath = join(rootDir, "race-go");
   const appendGatePath = join(rootDir, "append-go");
   const candidate = input();
