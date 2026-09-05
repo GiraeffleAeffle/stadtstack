@@ -250,6 +250,41 @@ async function responseJson(response: Response, signal: AbortSignal): Promise<un
   } finally { await reader.cancel().catch(() => {}); }
 }
 
+/** HTTPS transport for the deployment-trusted ledger; its checksum alone is not authority.
+ * The caller supplies the verifier's abort budget, never a URL or credential. */
+export function createCitizenAdoptionAcceptanceReader(config: Readonly<{
+  baseUrl: string;
+  fetch?: typeof fetch;
+}>): CitizenAdoptionAcceptanceReader {
+  const baseUrl = config.baseUrl;
+  let base: URL;
+  try { base = new URL(baseUrl); } catch { fail("citizen_adoption_acceptance_config_invalid"); }
+  const request = config.fetch ?? globalThis.fetch;
+  if (typeof baseUrl !== "string" || baseUrl.length > 2_048 ||
+    base.protocol !== "https:" || base.username || base.password || base.hash || base.search ||
+    base.pathname.endsWith("/") || base.href !== baseUrl || typeof request !== "function"
+  ) fail("citizen_adoption_acceptance_config_invalid");
+  return Object.freeze({
+    async resolve({ adoptionEventId, signal }): Promise<unknown> {
+      if (typeof adoptionEventId !== "string" || !HEX.test(adoptionEventId)) fail("citizen_adoption_acceptance_invalid");
+      signal.throwIfAborted();
+      try {
+        const response = await request(`${baseUrl}/${adoptionEventId}`, {
+          method: "GET", redirect: "error", credentials: "omit", cache: "no-store", signal,
+          headers: { accept: "application/json" },
+        });
+        if (response.status !== 200 || response.redirected) {
+          void response.body?.cancel().catch(() => {});
+          fail("citizen_adoption_acceptance_unavailable");
+        }
+        const receipt = exact(await responseJson(response, signal), ACCEPTANCE_KEYS);
+        if (receipt.adoptionEventId !== adoptionEventId) fail("citizen_adoption_acceptance_invalid");
+        return receipt;
+      } catch { fail("citizen_adoption_acceptance_unavailable"); }
+    },
+  });
+}
+
 export function verifyCitizenAdoptionPolicy(input: unknown): CitizenAdoptionEvidencePolicy {
   const policy = snapshot(input) as CitizenAdoptionEvidencePolicy;
   exact(policy, ["municipalityId", "policyVersion", "issuer", "issuerKeyId", "issuerPublicKey", "allowedAgentPubkeys",

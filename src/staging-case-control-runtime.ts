@@ -1,4 +1,10 @@
 import { types as utilTypes } from "node:util";
+import {
+  createCitizenAdoptionAcceptanceReader,
+  verifyCitizenAdoptionPolicy,
+  type CitizenAdoptionEvidencePolicy,
+  type CitizenAdoptionVerificationDependencies,
+} from "./citizen-adoption-evidence.ts";
 
 import {
   createSqliteAtomicTopicCaseAdmission,
@@ -55,6 +61,12 @@ export type StagingCaseControlListenerPlan = Readonly<{
   port: number;
 }>;
 
+/** JSON deployment pins. No issuer signing key or private holder capability. */
+export type StagingCitizenAdoptionConfig = Readonly<{
+  policy: CitizenAdoptionEvidencePolicy;
+  acceptanceBaseUrl: string;
+}>;
+
 export type StagingCaseControlRuntimeConfig = Readonly<{
   deploymentEnvironment: "staging";
   rootDir: string;
@@ -64,6 +76,7 @@ export type StagingCaseControlRuntimeConfig = Readonly<{
   allowedSignerPubkeys: readonly string[];
   allowedAgentPubkeys: readonly string[];
   requiredDepartmentIds?: readonly string[];
+  citizenAdoption?: StagingCitizenAdoptionConfig;
   credentials: readonly StagingCaseStewardCredential[];
   admissionAllowedHosts: readonly string[];
   outboxAllowedHosts: readonly string[];
@@ -88,6 +101,7 @@ export type OperationsBoundStagingCaseControlApplicationConfig = Readonly<{
   allowedSignerPubkeys: readonly string[];
   allowedAgentPubkeys: readonly string[];
   requiredDepartmentIds?: readonly string[];
+  citizenAdoption?: StagingCitizenAdoptionConfig;
   credentials: readonly StagingCaseStewardCredential[];
   admissionAllowedHosts: readonly string[];
   outboxAllowedHosts: readonly string[];
@@ -125,6 +139,7 @@ type CapturedConfig = Readonly<{
   allowedSignerPubkeys: readonly string[];
   allowedAgentPubkeys: readonly string[];
   requiredDepartmentIds: readonly string[] | undefined;
+  citizenAdoption: CitizenAdoptionVerificationDependencies | undefined;
   credentials: readonly StagingCaseStewardCredential[];
   admissionAllowedHosts: readonly string[];
   outboxAllowedHosts: readonly string[];
@@ -299,7 +314,7 @@ function captureConfig(input: StagingCaseControlRuntimeConfig): CapturedConfig {
   const parsed = allowedRecord(input, [
     "deploymentEnvironment", "rootDir", "municipalityId", "policyVersion", "actorRegistry",
     "allowedSignerPubkeys", "allowedAgentPubkeys", "requiredDepartmentIds", "credentials",
-    "admissionAllowedHosts", "outboxAllowedHosts", "probeAllowedHosts", "listeners", "drainTimeoutMs", "durableState",
+    "admissionAllowedHosts", "outboxAllowedHosts", "probeAllowedHosts", "listeners", "drainTimeoutMs", "durableState", "citizenAdoption",
   ]);
   const expected = [
     "deploymentEnvironment", "rootDir", "municipalityId", "policyVersion", "actorRegistry",
@@ -314,15 +329,26 @@ function captureConfig(input: StagingCaseControlRuntimeConfig): CapturedConfig {
   const actorRegistry = captureActorRegistry(parsed.actorRegistry);
   const requiredDepartmentIds = parsed.requiredDepartmentIds === undefined ? undefined :
     captureStrings(parsed.requiredDepartmentIds, MUNICIPALITY_ID, 63, 8, 8);
-  const allowedSignerPubkeys = captureStrings(parsed.allowedSignerPubkeys, HEX64, 64, 1, 64);
+  const allowedSignerPubkeys = captureStrings(parsed.allowedSignerPubkeys, HEX64, 64, parsed.citizenAdoption === undefined ? 1 : 0, 64);
   const allowedAgentPubkeys = captureStrings(parsed.allowedAgentPubkeys, HEX64, 64, 1, 64);
+  let citizenAdoption: CitizenAdoptionVerificationDependencies | undefined;
+  if (parsed.citizenAdoption !== undefined) {
+    const adoption = exactRecord(parsed.citizenAdoption, ["policy", "acceptanceBaseUrl"]);
+    const policy = verifyCitizenAdoptionPolicy(adoption.policy);
+    if (policy.municipalityId !== municipalityId || policy.policyVersion !== policyVersion ||
+      policy.allowedAgentPubkeys.length !== allowedAgentPubkeys.length ||
+      policy.allowedAgentPubkeys.some((key) => !allowedAgentPubkeys.includes(key))) invalid();
+    citizenAdoption = Object.freeze({ policy, acceptance: createCitizenAdoptionAcceptanceReader({
+      baseUrl: adoption.acceptanceBaseUrl as string,
+    }) });
+  }
   const credentials = captureCredentials(parsed.credentials, municipalityId, actorRegistry);
   const listeners = exactRecord(parsed.listeners, ["probe", "outbox", "admission"]);
   if (!Number.isSafeInteger(parsed.drainTimeoutMs) || (parsed.drainTimeoutMs as number) < 100 ||
     (parsed.drainTimeoutMs as number) > 10_000) invalid();
   return Object.freeze({
     rootDir: parsed.rootDir, municipalityId, policyVersion, actorRegistry, allowedSignerPubkeys,
-    allowedAgentPubkeys, requiredDepartmentIds, credentials,
+    allowedAgentPubkeys, requiredDepartmentIds, credentials, citizenAdoption,
     admissionAllowedHosts: captureHosts(parsed.admissionAllowedHosts),
     outboxAllowedHosts: captureHosts(parsed.outboxAllowedHosts),
     probeAllowedHosts: captureHosts(parsed.probeAllowedHosts),
@@ -342,7 +368,7 @@ function captureOperationsApplication(
   const parsed = allowedRecord(value, [
     "municipalityId", "policyVersion", "actorRegistry", "allowedSignerPubkeys", "allowedAgentPubkeys",
     "requiredDepartmentIds", "credentials", "admissionAllowedHosts", "outboxAllowedHosts",
-    "probeAllowedHosts", "drainTimeoutMs",
+    "probeAllowedHosts", "drainTimeoutMs", "citizenAdoption",
   ]);
   for (const field of [
     "municipalityId", "policyVersion", "actorRegistry", "allowedSignerPubkeys", "allowedAgentPubkeys",
@@ -359,6 +385,9 @@ function captureOperationsApplication(
     allowedAgentPubkeys: parsed.allowedAgentPubkeys as readonly string[],
     ...(parsed.requiredDepartmentIds === undefined ? {} : {
       requiredDepartmentIds: parsed.requiredDepartmentIds as readonly string[],
+    }),
+    ...(parsed.citizenAdoption === undefined ? {} : {
+      citizenAdoption: parsed.citizenAdoption as StagingCitizenAdoptionConfig,
     }),
     credentials: parsed.credentials as readonly StagingCaseStewardCredential[],
     admissionAllowedHosts: parsed.admissionAllowedHosts as readonly string[],
@@ -407,6 +436,7 @@ function composeStagingCaseControlRuntime(
     allowedSignerPubkeys: config.allowedSignerPubkeys,
     allowedAgentPubkeys: config.allowedAgentPubkeys,
     ...(config.requiredDepartmentIds === undefined ? {} : { requiredDepartmentIds: config.requiredDepartmentIds }),
+    ...(config.citizenAdoption === undefined ? {} : { citizenAdoption: config.citizenAdoption }),
     ...(config.durableState === undefined ? {} : { durableState: config.durableState }),
     ...(deploymentClaimToken === undefined ? {} : { deploymentClaimToken }),
     ...(recoveryActivationAuthorization === undefined ? {} : { recoveryActivationAuthorization }),
@@ -442,6 +472,9 @@ function composeStagingCaseControlRuntime(
       allowedAgentPubkeys: config.allowedAgentPubkeys,
       caseStewardAuthenticator: authenticator,
       atomicAdmission: durable.admission,
+      ...(config.citizenAdoption === undefined ? {} : {
+        admissionKind: "eligible_citizen_adopted_topic_suggestion_v1" as const,
+      }),
     });
     const admission = createRoebelCaseStewardControlServer({
       allowedHosts: config.admissionAllowedHosts,

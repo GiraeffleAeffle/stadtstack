@@ -6,6 +6,7 @@ import { setImmediate } from "node:timers/promises";
 import { finalizeEvent, getEventHash, type Event as NostrEvent } from "nostr-tools/pure";
 
 import {
+  createCitizenAdoptionAcceptanceReader,
   createCitizenAdoptionEvidenceVerifier,
   type CitizenAdoptionEvidencePolicy,
 } from "../src/citizen-adoption-evidence.ts";
@@ -367,4 +368,84 @@ test("fails before use for invalid pinned configuration", () => {
     const v = fixture(); Object.assign(v.policy, changes);
     assert.throws(() => harness(v), /citizen_adoption_policy_invalid/u);
   }
+});
+
+
+const acceptanceBaseUrl = "https://issuer.example/api/citizen-adoption/acceptance";
+test("the HTTPS ledger reader fetches only the exact event from its captured endpoint without credentials", async () => {
+  const v = fixture();
+  const controller = new AbortController();
+  const config = { baseUrl: acceptanceBaseUrl, fetch: (async (url, options) => {
+    assert.equal(String(url), `${acceptanceBaseUrl}/${v.bundle.adoptionEvent.id}`);
+    assert.equal(options?.method, "GET");
+    assert.equal(options?.redirect, "error");
+    assert.equal(options?.credentials, "omit");
+    assert.equal(options?.cache, "no-store");
+    assert.equal(options?.signal, controller.signal);
+    assert.deepEqual([...new Headers(options?.headers)], [["accept", "application/json"]]);
+    return response(v.adoptionAcceptance);
+  }) as typeof fetch };
+  const reader = createCitizenAdoptionAcceptanceReader(config);
+  config.baseUrl = "https://substitute.example/acceptance";
+  config.fetch = async () => { throw Error("substituted transport"); };
+  assert.deepEqual(await reader.resolve({ adoptionEventId: v.bundle.adoptionEvent.id, signal: controller.signal }), v.adoptionAcceptance);
+});
+
+test("ledger endpoint and event selectors reject overrides and path traversal before a read", async () => {
+  let calls = 0;
+  const fetch: typeof globalThis.fetch = async () => { calls++; throw Error("unexpected read"); };
+  for (const baseUrl of ["http://issuer.example/acceptance", acceptanceBaseUrl + "/", acceptanceBaseUrl + "?key=secret",
+    acceptanceBaseUrl + "#receipt", "https://user:secret@issuer.example/acceptance", "https://issuer.example:443/acceptance", ""])
+    assert.throws(() => createCitizenAdoptionAcceptanceReader({ baseUrl, fetch }), /acceptance_config_invalid/);
+  const reader = createCitizenAdoptionAcceptanceReader({ baseUrl: acceptanceBaseUrl, fetch });
+  for (const adoptionEventId of ["../latest", "A".repeat(64), "f".repeat(65), ""]) {
+    await assert.rejects(reader.resolve({ adoptionEventId, signal: new AbortController().signal }), /acceptance_invalid/);
+  }
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(reader.resolve({ adoptionEventId: "f".repeat(64), signal: controller.signal }));
+  assert.equal(calls, 0);
+});
+
+for (const [label, invalid] of Object.entries({
+  "missing acceptance": () => new Response("{}", { status: 404 }),
+  "redirect": () => new Response(null, { status: 302, headers: { location: "https://another.example" } }),
+  "non-JSON response": () => new Response("{}", { headers: { "content-type": "text/html" } }),
+  "oversized JSON": () => response({ padding: "x".repeat(16_384) }),
+  "extra fields": () => response({ ...fixture().adoptionAcceptance, trusted: true }),
+  "substitute event": () => response({ ...fixture().adoptionAcceptance, adoptionEventId: "f".repeat(64) }),
+})) {
+  test(`the trusted HTTPS ledger read fails closed on ${label}`, async () => {
+    const v = fixture(); let statusReads = 0;
+    const verifier = createCitizenAdoptionEvidenceVerifier({ policy: v.policy, now: () => new Date(v.verifiedAt * 1000),
+      acceptance: createCitizenAdoptionAcceptanceReader({ baseUrl: acceptanceBaseUrl, fetch: async () => invalid() }),
+      fetch: async () => { statusReads++; throw Error("status must follow a verified acceptance"); },
+    });
+    await assert.rejects(verifier.verify(v.bundle), /acceptance_unavailable/);
+    assert.equal(statusReads, 0);
+  });
+}
+
+test("the real ledger reader shares the verifier budget and aborts a stalled body before status or admission", async (t) => {
+  const v = fixture(); let cancelled = false; let statusReads = 0;
+  // Begin the simulated deadline only after the body actually stalls. Signature
+  // verification on a loaded runner must not race a real 30 ms test budget.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let reading!: () => void;
+  const started = new Promise<void>((resolve) => { reading = resolve; });
+  const verifier = createCitizenAdoptionEvidenceVerifier({ policy: v.policy, now: () => new Date(v.verifiedAt * 1000), timeoutMs: 10_000,
+    acceptance: createCitizenAdoptionAcceptanceReader({ baseUrl: acceptanceBaseUrl, fetch: async (_url, options) => {
+      const stream = new ReadableStream<Uint8Array>({ start(controller) {
+        options!.signal!.addEventListener("abort", () => { cancelled = true; controller.error(Error("aborted")); }, { once: true });
+        reading();
+      } });
+      return new Response(stream, { headers: { "content-type": "application/json" } });
+    } }),
+    fetch: async () => { statusReads++; throw Error("not reached"); },
+  });
+  const pending = verifier.verify(v.bundle);
+  const rejected = assert.rejects(pending, /verification_timeout/);
+  await Promise.race([started, pending]);
+  t.mock.timers.tick(10_000);
+  await rejected;
+  assert.equal(cancelled, true); assert.equal(statusReads, 0);
 });
