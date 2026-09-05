@@ -8,7 +8,7 @@ import {
 } from "nostr-tools/pure";
 
 import type { DiscussionArtifact } from "./adapters/discussion-adapter.ts";
-import { canonicalMunicipalCaseId } from "./case-id.ts";
+import { canonicalMunicipalCaseId, deriveCaseUuidV7 } from "./case-id.ts";
 import type { CitizenSignedTopicSuggestionV1 } from "./citizen-suggestion.ts";
 
 export type TopicCaseIdentityV1 = {
@@ -187,19 +187,6 @@ function normalizeText(value: unknown, max: number, code: string): string {
   return value;
 }
 
-function deriveUuidV7(event: NostrEvent): string {
-  if (!Number.isSafeInteger(event.created_at) || event.created_at < 0) {
-    fail("topic_case_timestamp_invalid");
-  }
-  const timestampMs = event.created_at * 1_000;
-  if (!Number.isSafeInteger(timestampMs) || timestampMs > 0xffffffffffff) {
-    fail("topic_case_timestamp_invalid");
-  }
-  const time = timestampMs.toString(16).padStart(12, "0");
-  const entropy = createHash("sha256").update(event.id, "utf8").digest("hex");
-  const variant = ((Number.parseInt(entropy[3]!, 16) & 0x3) | 0x8).toString(16);
-  return `${time.slice(0, 8)}-${time.slice(8)}-7${entropy.slice(0, 3)}-${variant}${entropy.slice(4, 7)}-${entropy.slice(7, 19)}`;
-}
 
 export function deriveTopicCaseIdentity(
   signedSuggestion: CitizenSignedTopicSuggestionV1,
@@ -210,7 +197,7 @@ export function deriveTopicCaseIdentity(
   if (!SLUG.test(municipalityId) || !match || match[1] !== municipalityId) {
     fail("topic_case_scope_invalid");
   }
-  const caseUuidV7 = deriveUuidV7(signedSuggestion.event as NostrEvent);
+  const caseUuidV7 = deriveCaseUuidV7(signedSuggestion.event as NostrEvent);
   const caseId = canonicalMunicipalCaseId(municipalityId, caseUuidV7);
   if (!caseId) fail("topic_case_scope_invalid");
   return {

@@ -32,6 +32,8 @@ COPY src/case-id.ts ./src/case-id.ts
 COPY src/case-shutdown-seal.ts ./src/case-shutdown-seal.ts
 COPY src/case-state-recovery-evidence.ts ./src/case-state-recovery-evidence.ts
 COPY src/case-store-epoch.ts ./src/case-store-epoch.ts
+COPY src/citizen-adoption-case-admission.ts ./src/citizen-adoption-case-admission.ts
+COPY src/citizen-adoption-evidence.ts ./src/citizen-adoption-evidence.ts
 COPY src/citizen-suggestion.ts ./src/citizen-suggestion.ts
 COPY src/civic-case-coordinator.ts ./src/civic-case-coordinator.ts
 COPY src/credential-free-case-binding-outbox-server.ts ./src/credential-free-case-binding-outbox-server.ts

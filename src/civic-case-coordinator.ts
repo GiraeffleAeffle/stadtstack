@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { verifyCitizenAdoptionPolicy, type CitizenAdoptionEvidencePolicy, type VerifiedCitizenAdoptionEvidence } from "./citizen-adoption-evidence.ts";
+import { verifyCitizenAdoptionCaseAdmission } from "./citizen-adoption-case-admission.ts";
 
 import {
   STADTSTACK_E2E_FIXTURE_TAG,
@@ -102,6 +104,13 @@ export type AdmitSignedTopicSuggestionCommand = CommandEnvelopeBase & {
     sourceAnswer: NostrEvent;
     signedSuggestion: CitizenSignedTopicSuggestionV1;
   };
+};
+
+/** Internal evidence-bearing command; only the durable writer supplies the
+ * configured issuer's live result. HTTP callers submit the signed bundle. */
+export type AdmitCitizenAdoptionCommand = CommandEnvelopeBase & {
+  commandType: "admit_citizen_adoption_v1";
+  payload: { evidence: VerifiedCitizenAdoptionEvidence };
 };
 
 export type AssignDepartmentPackageCommand = CommandEnvelopeBase & {
@@ -225,6 +234,7 @@ export type CommandEnvelope =
   | IntakeDiscussionCommand
   | AdmitSignedSuggestionCommand
   | AdmitSignedTopicSuggestionCommand
+  | AdmitCitizenAdoptionCommand
   | AssignDepartmentPackageCommand
   | RecordDepartmentDraftCommand
   | AttestDepartmentReviewCommand
@@ -321,6 +331,7 @@ export type CaseEventV1 = {
     | "discussion_recorded_v1"
     | "signed_suggestion_admitted_v1"
     | "signed_topic_suggestion_admitted_v1"
+    | "citizen_adoption_admitted_v1"
     | "department_package_assigned_v1"
     | "department_draft_recorded_v1"
     | "department_review_attested_v1"
@@ -470,6 +481,8 @@ export type CivicCaseCoordinatorOptions = {
   allowedSignerPubkeys?: readonly string[];
   /** Public Mecky identities accepted for a topic-to-Case admission. */
   allowedAgentPubkeys?: readonly string[];
+  /** Enables the adoption lane and pins all historical issuer verification. */
+  citizenAdoptionPolicy?: CitizenAdoptionEvidencePolicy;
   fixturePubkey?: string;
   fixtureSignerPubkey?: string;
   /** Issue #4 synthetic fixture: exactly eight unique departments when configured. */
@@ -495,6 +508,7 @@ type InternalCoordinatorOptions = {
   allowedKinds: readonly number[];
   allowedSignerPubkeys?: ReadonlySet<string>;
   allowedAgentPubkeys?: ReadonlySet<string>;
+  citizenAdoptionPolicy?: CitizenAdoptionEvidencePolicy;
   requiredDepartmentIds?: readonly string[];
   requireSignedSuggestionAdmission: boolean;
 };
@@ -536,9 +550,17 @@ type SignedTopicSuggestionAdmissionPayload = {
   authorityBinding: AuthorityBinding;
 };
 
+type CitizenAdoptionAdmissionPayload = {
+  evidence: VerifiedCitizenAdoptionEvidence;
+  admissionChecksum: string;
+  policyVersion: string;
+  authorityBinding: AuthorityBinding;
+};
+
 type AnySignedSuggestionAdmissionPayload =
   | SignedSuggestionAdmissionPayload
-  | SignedTopicSuggestionAdmissionPayload;
+  | SignedTopicSuggestionAdmissionPayload
+  | CitizenAdoptionAdmissionPayload;
 
 type DepartmentPackagePayload = {
   departmentPackage: DepartmentPackageInput;
@@ -619,6 +641,7 @@ type StoredCaseEvent = CaseEventV1 & {
     | DiscussionRecordedPayload
     | SignedSuggestionAdmissionPayload
     | SignedTopicSuggestionAdmissionPayload
+    | CitizenAdoptionAdmissionPayload
     | DepartmentPackagePayload
     | DepartmentDraftPayload
     | DepartmentReviewPayload
@@ -1113,6 +1136,7 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     "allowedKinds",
     "allowedSignerPubkeys",
     "allowedAgentPubkeys",
+    "citizenAdoptionPolicy",
     "fixturePubkey",
     "fixtureSignerPubkey",
     "requiredDepartmentIds",
@@ -1229,6 +1253,11 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     }
     allowedAgentPubkeys = new Set(normalizedAgentPubkeys);
   }
+  const citizenAdoptionPolicy = options.citizenAdoptionPolicy === undefined ? undefined : verifyCitizenAdoptionPolicy(options.citizenAdoptionPolicy);
+  if (citizenAdoptionPolicy && (citizenAdoptionPolicy.municipalityId !== jurisdiction.value ||
+    citizenAdoptionPolicy.policyVersion !== policyVersion || scope ||
+    canonicalJson([...citizenAdoptionPolicy.allowedAgentPubkeys].sort()) !== canonicalJson([...(allowedAgentPubkeys ?? [])].sort()) ||
+    options.requireSignedSuggestionAdmission !== true)) fail("citizen_adoption_policy_invalid");
   return {
     scope,
     jurisdiction,
@@ -1239,6 +1268,7 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     allowedKinds: [...allowedKinds],
     allowedSignerPubkeys,
     allowedAgentPubkeys,
+    citizenAdoptionPolicy,
     requiredDepartmentIds,
     requireSignedSuggestionAdmission: options.requireSignedSuggestionAdmission === true,
   };
@@ -1256,6 +1286,7 @@ function durableOptionsFingerprint(options: InternalCoordinatorOptions): string 
     scope: options.scope ?? null,
     syntheticFixtureOnly: options.syntheticFixtureOnly,
     allowedKinds: options.allowedKinds,
+    ...(options.citizenAdoptionPolicy ? { citizenAdoptionPolicy: options.citizenAdoptionPolicy } : {}),
     allowedSignerPubkeys: options.allowedSignerPubkeys ? [...options.allowedSignerPubkeys].sort() : null,
     allowedAgentPubkeys: options.allowedAgentPubkeys ? [...options.allowedAgentPubkeys].sort() : null,
     requiredDepartmentIds: options.requiredDepartmentIds ?? null,
@@ -1913,6 +1944,8 @@ function replayJournal(
     ) {
       fail("journal_chain_invalid");
     }
+    if (options.citizenAdoptionPolicy && (event.eventType === "signed_suggestion_admitted_v1" ||
+      event.eventType === "signed_topic_suggestion_admitted_v1")) fail("journal_chain_invalid");
     const { payload, eventChecksum, ...eventWithoutChecksum } = event;
     if (sha256(eventWithoutChecksum) !== eventChecksum) fail("event_checksum_invalid");
     if (sha256(payload) !== event.payloadChecksum) fail("payload_checksum_invalid");
@@ -2019,6 +2052,21 @@ function replayJournal(
         ...suggestion,
         title: verified.signedSuggestion.draft.title,
       };
+    } else if (event.eventType === "citizen_adoption_admitted_v1") {
+      if (index !== 2 || !discussion || !suggestion || signedSuggestionAdmission || departments.size ||
+        event.correctionOf !== null || !options.citizenAdoptionPolicy) fail("journal_chain_invalid");
+      ownKeys(payload, new Set(["evidence", "admissionChecksum", "policyVersion", "authorityBinding"]), "payload");
+      const admission = payload as CitizenAdoptionAdmissionPayload;
+      const verified = verifyCitizenAdoptionCaseAdmission(admission.evidence, options.citizenAdoptionPolicy);
+      const admissionChecksum = sha256({ evidence: verified.evidence, caseId: verified.identity.caseId,
+        policyVersion: options.policyVersion, actorBinding: event.actorBinding });
+      if (verified.identity.caseId !== options.caseId || canonicalJson(verified.discussion) !== canonicalJson(discussion) ||
+        admission.policyVersion !== options.policyVersion || admission.authorityBinding !== "none" ||
+        admission.admissionChecksum !== admissionChecksum || event.actorBinding.actorClass !== "case_steward" ||
+        options.actors.get(event.actorBinding.actorId)?.actorClass !== "case_steward") fail("journal_chain_invalid");
+      signedSuggestionAdmission = { evidence: verified.evidence, admissionChecksum, policyVersion: options.policyVersion,
+        authorityBinding: "none", eventId: event.eventId };
+      suggestion = { ...suggestion, title: verified.title };
     } else if (event.eventType === "department_package_assigned_v1") {
       if (index < 2 || !discussion || !suggestion || event.correctionOf !== null) fail("journal_chain_invalid");
       if (options.requireSignedSuggestionAdmission && !signedSuggestionAdmission) fail("journal_chain_invalid");
@@ -2359,6 +2407,17 @@ function suggestionProjection(
     ref: artifact.sourceRef,
   };
   const id = payload?.id ?? `urn:stadtstack:suggestion:${artifact.event.id}`;
+  if (admission && "evidence" in admission) {
+    const { bundle, adoptionAcceptance } = admission.evidence;
+    const adopted = JSON.parse(bundle.adoptionEvent.content) as Record<string, string>;
+    return { schemaVersion: "suggestion_projection_v1", id, discussionId: artifact.id,
+      discussionRef: discussionReference, title: adopted.title!, summary: adopted.summary!, status: "admitted",
+      signerPubkey: bundle.adoptionEvent.pubkey,
+      admission: { candidateId: adoptionAcceptance.adoptionId as string, signedEventId: bundle.adoptionEvent.id,
+        sourceAnswerReceiptId: adopted.sourceAnswerReceiptId!, sourceTopicId: adopted.topicId!,
+        admissionChecksum: admission.admissionChecksum, admittedByActorClass: "case_steward" },
+      authorityBinding: "none", provenance: discussionReference };
+  }
   if (admission) {
     return {
       schemaVersion: "suggestion_projection_v1",
@@ -2655,6 +2714,7 @@ type NormalizedCommand = {
   sourceDiscussion?: NostrEvent;
   sourceAnswer?: NostrEvent;
   signedTopicSuggestion?: CitizenSignedTopicSuggestionV1;
+  citizenAdoptionEvidence?: VerifiedCitizenAdoptionEvidence;
   departmentPackage?: DepartmentPackageInput;
   packageId?: string;
   packageChecksum?: string;
@@ -2677,6 +2737,7 @@ function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
     commandType !== "intake_discussion_v1" &&
     commandType !== "admit_signed_suggestion_v1" &&
     commandType !== "admit_signed_topic_suggestion_v1" &&
+    commandType !== "admit_citizen_adoption_v1" &&
     commandType !== "assign_department_package_v1" &&
     commandType !== "record_department_draft_v1" &&
     commandType !== "attest_department_review_v1" &&
@@ -2719,6 +2780,9 @@ function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
     result.signedTopicSuggestion = clone(
       command.payload.signedSuggestion,
     ) as CitizenSignedTopicSuggestionV1;
+  } else if (commandType === "admit_citizen_adoption_v1") {
+    ownKeys(command.payload, new Set(["evidence"]), "payload");
+    result.citizenAdoptionEvidence = command.payload.evidence as VerifiedCitizenAdoptionEvidence;
   } else if (commandType === "assign_department_package_v1") {
     ownKeys(command.payload, PACKAGE_PAYLOAD_KEYS, "payload");
     result.departmentPackage = normalizeDepartmentPackage(command.payload.departmentPackage);
@@ -2872,6 +2936,12 @@ export function createCivicCaseCoordinator(
             allowedAgentPubkeys: [...(options.allowedAgentPubkeys ?? [])],
           })
         : undefined;
+    if (options.citizenAdoptionPolicy && ["intake_discussion_v1", "admit_signed_suggestion_v1", "admit_signed_topic_suggestion_v1"].includes(normalized.commandType)) fail("citizen_adoption_required");
+    let citizenAdoption: ReturnType<typeof verifyCitizenAdoptionCaseAdmission> | undefined;
+    if (normalized.commandType === "admit_citizen_adoption_v1") {
+      if (!options.citizenAdoptionPolicy || registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
+      citizenAdoption = verifyCitizenAdoptionCaseAdmission(normalized.citizenAdoptionEvidence, options.citizenAdoptionPolicy);
+    }
     const existing = replayJournal(state, options);
     if (normalized.commandType === "admit_signed_suggestion_v1") {
       if (!existing || !normalized.signedSuggestion) fail("signed_suggestion_case_required");
@@ -2896,6 +2966,8 @@ export function createCivicCaseCoordinator(
               signedSuggestion: topicAdmission?.signedSuggestion,
               caseIdentity: topicAdmission?.identity,
             }
+        : normalized.commandType === "admit_citizen_adoption_v1"
+          ? { evidence: citizenAdoption?.evidence, caseIdentity: citizenAdoption?.identity }
         : normalized.commandType === "assign_department_package_v1"
           ? { departmentPackage: normalized.departmentPackage }
           : normalized.commandType === "record_department_draft_v1"
@@ -2954,6 +3026,11 @@ export function createCivicCaseCoordinator(
       ) {
         fail("topic_case_binding_invalid");
       }
+    } else if (normalized.commandType === "admit_citizen_adoption_v1") {
+      if (!citizenAdoption || citizenAdoption.identity.caseId !== options.caseId ||
+        citizenAdoption.identity.municipalityId !== options.jurisdiction.value ||
+        normalized.idempotencyKey !== citizenAdoption.idempotencyKey) fail("citizen_adoption_binding_invalid");
+      if (existing || state.events.length !== 0) fail("topic_case_already_created");
     } else if (normalized.commandType === "assign_department_package_v1") {
       if (registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
       if (!existing || !normalized.departmentPackage) fail("case_not_found");
@@ -3094,6 +3171,20 @@ export function createCivicCaseCoordinator(
       };
       appended.push(appendEvent(nextState, options, normalized.actor, "case_created_v1", payloadCase));
       appended.push(appendEvent(nextState, options, normalized.actor, "discussion_recorded_v1", payloadDiscussion));
+    } else if (normalized.commandType === "admit_citizen_adoption_v1") {
+      if (!citizenAdoption) fail("citizen_adoption_binding_invalid");
+      const evidence = citizenAdoption.evidence;
+      appended.push(appendEvent(nextState, options, normalized.actor, "case_created_v1", {
+        caseId: options.caseId, jurisdiction: options.jurisdiction, authorityBinding: "none",
+      }));
+      appended.push(appendEvent(nextState, options, normalized.actor, "discussion_recorded_v1", {
+        discussion: clone(citizenAdoption.discussion), suggestion: suggestionPayload(citizenAdoption.discussion), authorityBinding: "none",
+      }));
+      appended.push(appendEvent(nextState, options, normalized.actor, "citizen_adoption_admitted_v1", {
+        evidence, admissionChecksum: sha256({ evidence, caseId: options.caseId,
+          policyVersion: normalized.policyVersion, actorBinding: normalized.actor }),
+        policyVersion: normalized.policyVersion, authorityBinding: "none",
+      }));
     } else if (normalized.commandType === "admit_signed_topic_suggestion_v1") {
       if (!topicAdmission) fail("topic_suggestion_invalid");
       const payloadCase: CaseCreatedPayload = {

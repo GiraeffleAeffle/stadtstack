@@ -217,6 +217,8 @@ const CONTROL_ONLY_CASE_RUNTIME_SOURCES = [
   "src/case-shutdown-seal.ts",
   "src/case-state-recovery-evidence.ts",
   "src/case-store-epoch.ts",
+  "src/citizen-adoption-case-admission.ts",
+  "src/citizen-adoption-evidence.ts",
   "src/citizen-suggestion.ts",
   "src/civic-case-coordinator.ts",
   "src/credential-free-case-binding-outbox-server.ts",

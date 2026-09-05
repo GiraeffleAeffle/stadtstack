@@ -1,4 +1,4 @@
-import type { PublicCaseBindingReceiptV1 } from "./case-binding-projection.ts";
+import type { PublicCaseBindingReceipt } from "./case-binding-projection.ts";
 
 /**
  * One immutable public receipt plus its opaque, monotonically increasing
@@ -6,7 +6,7 @@ import type { PublicCaseBindingReceiptV1 } from "./case-binding-projection.ts";
  */
 export type CaseBindingOutboxEntryV1 = Readonly<{
   sequence: number;
-  receipt: PublicCaseBindingReceiptV1;
+  receipt: PublicCaseBindingReceipt;
 }>;
 
 export type CaseBindingOutboxReplayInput = Readonly<{
