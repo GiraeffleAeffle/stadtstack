@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, sign } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -18,6 +18,7 @@ import {
   verifyCaseShutdownSeal,
 } from "../src/adapters/sqlite-atomic-topic-case-admission.ts";
 import { CREDENTIAL_FREE_CASE_BINDING_OUTBOX_PATH } from "../src/credential-free-case-binding-outbox-server.ts";
+import type { CitizenAdoptionEvidenceBundle, CitizenAdoptionEvidencePolicy } from "../src/citizen-adoption-evidence.ts";
 import type { CitizenSignedTopicSuggestionV1 } from "../src/citizen-suggestion.ts";
 
 const MUNICIPALITY_ID = "roebel-mueritz";
@@ -312,5 +313,85 @@ test("durable runtime redacts a failed checkpoint and cannot leave a stale succe
     assert.throws(() => createStagingCaseControlRuntime(config(rootDir, true)), /atomic_admission_owner_locked/u);
   } finally {
     DatabaseSync.prototype.prepare = originalPrepare;
+  }
+});
+
+
+function adoptionVector() {
+  return JSON.parse(readFileSync(new URL("./fixtures/citizen-adoption-roebel-v1.json", import.meta.url), "utf8")) as {
+    verifiedAt: number; policy: CitizenAdoptionEvidencePolicy; bundle: CitizenAdoptionEvidenceBundle;
+    adoptionAcceptance: Record<string, unknown>; signedStatusVector: { statusCore: Record<string, unknown> };
+  };
+}
+function adoptionRuntimeConfig(rootDir: string): StagingCaseControlRuntimeConfig {
+  const v = adoptionVector(); const legacy = config(rootDir, true);
+  return { ...legacy, municipalityId: v.policy.municipalityId, policyVersion: v.policy.policyVersion,
+    allowedSignerPubkeys: [], allowedAgentPubkeys: v.policy.allowedAgentPubkeys,
+    actorRegistry: [{ actorId: "example:steward", actorClass: "case_steward" }],
+    credentials: [{ principal: { actorId: "example:steward", actorClass: "case_steward", municipalityIds: [v.policy.municipalityId] }, token: TOKEN }],
+    citizenAdoption: { policy: v.policy, acceptanceBaseUrl: "https://issuer.example/citizen-adoption/acceptance" },
+  };
+}
+
+test("JSON-configured adoption runtime admits through the trusted ledger, publishes v2, and reopens an expired exact retry offline", async (t) => {
+  const v = adoptionVector(); const rootDir = realpathSync(root());
+  const inputJson = JSON.stringify(adoptionRuntimeConfig(rootDir));
+  t.mock.timers.enable({ apis: ["Date"], now: v.verifiedAt * 1000 });
+  const reads: string[] = []; let online = true;
+  // The issuer is a synthetic HTTPS transport; the admission/outbox listeners
+  // and durable writer are the same runtime interfaces used by the launcher.
+  t.mock.method(globalThis, "fetch", async (url: string | URL | Request, options: RequestInit) => {
+    reads.push(String(url)); if (!online) throw Error("issuer offline");
+    assert.equal(options.redirect, "error"); assert.equal(options.credentials, "omit");
+    if (String(url) === `https://issuer.example/citizen-adoption/acceptance/${v.bundle.adoptionEvent.id}`)
+      return Response.json(v.adoptionAcceptance);
+    assert.equal(String(url), v.bundle.eligibilityReceipt.statusRef);
+    const nonce = new Headers(options.headers).get("x-stadtstack-status-nonce")!;
+    assert.match(nonce, /^[0-9a-f]{64}$/u);
+    const statusCore = { ...v.signedStatusVector.statusCore, requestNonce: nonce };
+    const statusChecksum = digest(statusCore).slice(7);
+    const key = createPrivateKey({ key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.alloc(32, 84)]), format: "der", type: "pkcs8" });
+    return Response.json({ statusCore, statusChecksum, proof: { algorithm: "Ed25519", keyId: v.policy.issuerKeyId,
+      signature: sign(null, Buffer.from(canonical({ domain: "municipal-civic-eligibility-status/v1", schemaVersion: "municipal_civic_eligibility_status_v1", statusChecksum })), key).toString("base64url") } });
+  });
+  const runtime = createStagingCaseControlRuntime(JSON.parse(inputJson));
+  t.after(() => runtime.close()); await runtime.start();
+  const body = JSON.stringify({ schemaVersion: "roebel_case_steward_citizen_adoption_request_v1", bundle: v.bundle });
+  const headers = { host: "127.0.0.1", authorization: `Bearer ${TOKEN}`, "content-type": "application/json", "content-length": String(Buffer.byteLength(body)) };
+  const route = "/v1/nostr/suggestions/admit";
+  assert.equal((await request(runtime.health().ports.admission!, "POST", route, { ...headers, authorization: "Bearer invalid" }, body)).status, 401);
+  assert.equal(reads.length, 0);
+  const admitted = await request(runtime.health().ports.admission!, "POST", route, headers, body);
+  assert.equal(admitted.status, 200, admitted.body);
+  const receipt = JSON.parse(admitted.body);
+  assert.equal(receipt.schemaVersion, "public_case_binding_receipt_v2");
+  assert.equal(receipt.candidateEventId, v.bundle.adoptionEvent.id);
+  assert.equal(reads.length, 2);
+  const outboxPath = `${CREDENTIAL_FREE_CASE_BINDING_OUTBOX_PATH}?afterSequence=0&limit=1`;
+  const page = await request(runtime.health().ports.outbox!, "GET", outboxPath, { host: "127.0.0.1", "content-length": "0" });
+  assert.equal(page.status, 200);
+  assert.deepEqual(JSON.parse(page.body).entries[0].receipt, receipt);
+  for (const hidden of ["requestNonce", "eligibilityStatus", "example:steward", "walletAddress", "issuerPublicKey"]) assert.ok(!page.body.includes(hidden));
+  await runtime.close();
+  assert.ok(existsSync(join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME)));
+  t.mock.timers.setTime((v.verifiedAt + 3600) * 1000); online = false;
+  const reopened = createStagingCaseControlRuntime(JSON.parse(inputJson));
+  t.after(() => reopened.close()); await reopened.start();
+  assert.deepEqual(await request(reopened.health().ports.admission!, "POST", route, headers, body), admitted);
+  assert.equal(reads.length, 2);
+});
+
+test("runtime adoption pins reject request-shaped dependencies and policy mismatch before creating durable state", () => {
+  for (const mutate of [
+    (value: Record<string, unknown>) => { value.acceptance = { resolve: () => null }; },
+    (value: Record<string, unknown>) => { value.acceptanceBaseUrl = "http://issuer.example/acceptance"; },
+    (value: Record<string, unknown>) => { (value.policy as Record<string, unknown>).municipalityId = "another-city"; },
+    (value: Record<string, unknown>) => { (value.policy as Record<string, unknown>).policyVersion = "another-policy"; },
+    (value: Record<string, unknown>) => { (value.policy as Record<string, unknown>).allowedAgentPubkeys = ["f".repeat(64)]; },
+  ]) {
+    const rootDir = join(root(), "not-created"); const input = structuredClone(adoptionRuntimeConfig(rootDir));
+    mutate(input.citizenAdoption as unknown as Record<string, unknown>);
+    assert.throws(() => createStagingCaseControlRuntime(input), /config_invalid/);
+    assert.equal(existsSync(rootDir), false);
   }
 });
