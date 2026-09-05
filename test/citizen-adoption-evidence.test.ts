@@ -425,17 +425,27 @@ for (const [label, invalid] of Object.entries({
   });
 }
 
-test("the real ledger reader shares the verifier budget and aborts a stalled body before status or admission", async () => {
+test("the real ledger reader shares the verifier budget and aborts a stalled body before status or admission", async (t) => {
   const v = fixture(); let cancelled = false; let statusReads = 0;
-  const verifier = createCitizenAdoptionEvidenceVerifier({ policy: v.policy, now: () => new Date(v.verifiedAt * 1000), timeoutMs: 30,
+  // Begin the simulated deadline only after the body actually stalls. Signature
+  // verification on a loaded runner must not race a real 30 ms test budget.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let reading!: () => void;
+  const started = new Promise<void>((resolve) => { reading = resolve; });
+  const verifier = createCitizenAdoptionEvidenceVerifier({ policy: v.policy, now: () => new Date(v.verifiedAt * 1000), timeoutMs: 10_000,
     acceptance: createCitizenAdoptionAcceptanceReader({ baseUrl: acceptanceBaseUrl, fetch: async (_url, options) => {
       const stream = new ReadableStream<Uint8Array>({ start(controller) {
         options!.signal!.addEventListener("abort", () => { cancelled = true; controller.error(Error("aborted")); }, { once: true });
+        reading();
       } });
       return new Response(stream, { headers: { "content-type": "application/json" } });
     } }),
     fetch: async () => { statusReads++; throw Error("not reached"); },
   });
-  await assert.rejects(verifier.verify(v.bundle), /verification_timeout/);
+  const pending = verifier.verify(v.bundle);
+  const rejected = assert.rejects(pending, /verification_timeout/);
+  await Promise.race([started, pending]);
+  t.mock.timers.tick(10_000);
+  await rejected;
   assert.equal(cancelled, true); assert.equal(statusReads, 0);
 });
