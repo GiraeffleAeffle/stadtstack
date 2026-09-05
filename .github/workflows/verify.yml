@@ -20,6 +20,26 @@ jobs:
           node-version: 22.18.0
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Verify the production dependency install
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_deps="$(mktemp -d "$RUNNER_TEMP/case-runtime-deps.XXXXXX")"
+          trap 'rm -rf "$runtime_deps"' EXIT
+          cp package.json package-lock.json "$runtime_deps/"
+          cd "$runtime_deps"
+          npm ci --omit=dev --omit=optional --ignore-scripts
+          test -d node_modules/nostr-tools
+          test ! -d node_modules/typescript
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { finalizeEvent, verifyEvent } from "nostr-tools/pure";
+          const event = finalizeEvent({ kind: 1, created_at: 1, tags: [], content: "Synthetic runtime dependency check" }, new Uint8Array(32).fill(1));
+          assert.equal(verifyEvent(event), true);
+          const changed = JSON.parse(JSON.stringify(event));
+          changed.content = "Tampered";
+          assert.equal(verifyEvent(changed), false);
+          NODE
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
