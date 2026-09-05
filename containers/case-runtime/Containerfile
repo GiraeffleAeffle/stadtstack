@@ -9,7 +9,8 @@
 FROM node:22.18.0-slim@sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e AS dependencies
 WORKDIR /runtime
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts \
+# nostr-tools declares the compiler as an optional peer; Node strips types itself.
+RUN npm ci --omit=dev --omit=optional --ignore-scripts \
   && test -d node_modules/nostr-tools \
   && test ! -d node_modules/typescript
 

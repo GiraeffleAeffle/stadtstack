@@ -328,7 +328,7 @@ test("the closed runtime context has target-specific loopback entrypoints and an
   assert.match(containerfile, /FROM node:22\.18\.0-slim@sha256:[a-f0-9]{64}/u);
   assert.match(containerfile, /org\.opencontainers\.image\.source="\$\{SOURCE_REPOSITORY\}"/u);
   assert.match(containerfile, /org\.opencontainers\.image\.revision="\$\{SOURCE_REVISION\}"/u);
-  assert.match(containerfile, /RUN npm ci --omit=dev --ignore-scripts/u);
+  assert.match(containerfile, /RUN npm ci --omit=dev --omit=optional --ignore-scripts/u);
   assert.match(containerfile, /test -d node_modules\/nostr-tools/u);
   assert.match(containerfile, /test ! -d node_modules\/typescript/u);
   assert.match(containerfile, /COPY --from=dependencies \/runtime\/node_modules \.\/node_modules/u);
