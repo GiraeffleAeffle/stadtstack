@@ -1,0 +1,265 @@
+{
+  "description": "Synthetic interoperability vector. No person, eligibility, Case or municipal record is represented.",
+  "generator": {
+    "repository": "https://github.com/GiraeffleAeffle/Roebel-App",
+    "commit": "3e37194367289cad73397749d41d5123f6ab02dc",
+    "apis": [
+      "buildCivicTopicPromotionEvent",
+      "buildAgentNoteEvent",
+      "buildParticipantTopicSuggestion",
+      "signMunicipalCivicEligibilityReceiptProof",
+      "buildCitizenTopicSuggestionAdoption",
+      "createCitizenAdoptionService.acceptAdoption",
+      "signMunicipalCivicEligibilityStatusProof"
+    ]
+  },
+  "verifiedAt": 1790000300,
+  "policy": {
+    "municipalityId": "example-city",
+    "policyVersion": "example-eligibility-v1",
+    "issuer": "urn:example:eligibility-issuer",
+    "issuerKeyId": "example-issuer-key-v1",
+    "issuerPublicKey": "9f49439e9db095bc4111ed25d35795d831bc55a047f4b1d7f6aee3777bb41220",
+    "allowedAgentPubkeys": [
+      "9c1f585aa80762f9f4458f6806978b7befb46c7b68af82d399630793ff1a2b50"
+    ],
+    "receiptTtlSeconds": 900,
+    "statusBaseUrl": "https://issuer.example/eligibility/status",
+    "statusMaxAgeSeconds": 30,
+    "maxEventClockSkewSeconds": 120
+  },
+  "bundle": {
+    "schemaVersion": "eligible_citizen_adopted_topic_suggestion_v1",
+    "sourceDiscussion": {
+      "pubkey": "baf7689c0a3558fb604589036a8d1e4b685d909f6e0e2c6018a14049ae64ec26",
+      "created_at": 1790000001,
+      "kind": 1,
+      "tags": [
+        [
+          "p",
+          "9c1f585aa80762f9f4458f6806978b7befb46c7b68af82d399630793ff1a2b50"
+        ],
+        [
+          "q",
+          "e2b36a9982fd0bcd735a1f4c9355f66b4f4a8509189964f80f8a8561efa90087",
+          "",
+          "baf7689c0a3558fb604589036a8d1e4b685d909f6e0e2c6018a14049ae64ec26"
+        ],
+        [
+          "source-post",
+          "e2b36a9982fd0bcd735a1f4c9355f66b4f4a8509189964f80f8a8561efa90087"
+        ],
+        [
+          "t",
+          "stadtstack-civic-discussion"
+        ],
+        [
+          "municipality",
+          "example-city"
+        ],
+        [
+          "topic",
+          "urn:stadtstack:topic:municipality:example-city:school-crossing"
+        ],
+        [
+          "topic-title",
+          "Testfall: Sicherer Schulweg"
+        ],
+        [
+          "stance",
+          "root"
+        ],
+        [
+          "argument-root",
+          "self"
+        ]
+      ],
+      "content": "@mecky Bitte erläutere mögliche Querungshilfen für diesen synthetischen Testfall.",
+      "id": "de020a05e371827edbdb9e73cc479e347b0d2bf17c6130e891a6f3cd858ca0b4",
+      "sig": "2a038a856cacdaf1e1869d1167b3fc5a41506bcd643a6c94af7e90e457419f846f5913a8fc473bfe74af1de03b9e62ad12dbf78cbf2c8fb6380408ce5e135db9"
+    },
+    "sourceAnswer": {
+      "pubkey": "9c1f585aa80762f9f4458f6806978b7befb46c7b68af82d399630793ff1a2b50",
+      "created_at": 1790000002,
+      "kind": 1,
+      "tags": [
+        [
+          "netizen_agent",
+          "mecky",
+          "example-city"
+        ],
+        [
+          "e",
+          "de020a05e371827edbdb9e73cc479e347b0d2bf17c6130e891a6f3cd858ca0b4",
+          "",
+          "reply"
+        ],
+        [
+          "p",
+          "baf7689c0a3558fb604589036a8d1e4b685d909f6e0e2c6018a14049ae64ec26"
+        ],
+        [
+          "mecky-receipt",
+          "urn:stadtstack:mecky-answer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "municipality",
+          "example-city"
+        ],
+        [
+          "topic",
+          "urn:stadtstack:topic:municipality:example-city:school-crossing"
+        ],
+        [
+          "evidence",
+          "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "https://example.org/synthetic-school-crossing"
+        ]
+      ],
+      "content": "Synthetische Antwort: Sichtverhältnisse und sichere Querungspunkte gemeinsam prüfen.",
+      "id": "8f1245705fb35b75740aa9bd083f10544d8eafbe35d32be75d5c492fac9bdaa8",
+      "sig": "5ba9cd7480a81593a9b0b0f1f68e022c8a348a87dbda249e86fc16325931ccea632497408c2c690ab5305b8ad519097916dfc0b77bb5cffef181d961aa187fe0"
+    },
+    "participantSuggestionEvent": {
+      "id": "5af1d06a83209218ee3d1228cefd39af14f65ac27f2e636b9ff5c45f11addd0e",
+      "pubkey": "baf7689c0a3558fb604589036a8d1e4b685d909f6e0e2c6018a14049ae64ec26",
+      "created_at": 1790000003,
+      "kind": 1,
+      "tags": [
+        [
+          "schema",
+          "staging_participant_signed_topic_suggestion_v1"
+        ],
+        [
+          "municipality",
+          "example-city"
+        ],
+        [
+          "topic",
+          "urn:stadtstack:topic:municipality:example-city:school-crossing"
+        ],
+        [
+          "e",
+          "de020a05e371827edbdb9e73cc479e347b0d2bf17c6130e891a6f3cd858ca0b4",
+          "",
+          "root"
+        ],
+        [
+          "mecky-receipt",
+          "urn:stadtstack:mecky-answer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "credential-class",
+          "staging-participant"
+        ]
+      ],
+      "content": "{\"authorityBinding\":\"none\",\"draftId\":\"urn:stadtstack:participant-topic-suggestion-draft:b198a4478a823fa6e0a13209d0c2ff0439eb386e1091706e9319d6177b4eab71\",\"entryState\":\"citizen_adoption_required\",\"municipalityId\":\"example-city\",\"participantPubkey\":\"baf7689c0a3558fb604589036a8d1e4b685d909f6e0e2c6018a14049ae64ec26\",\"schemaVersion\":\"public_participant_topic_suggestion_draft_v1\",\"sourceAnswerId\":\"8f1245705fb35b75740aa9bd083f10544d8eafbe35d32be75d5c492fac9bdaa8\",\"sourceAnswerReceiptId\":\"urn:stadtstack:mecky-answer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sourceAnswerRef\":\"nostr://event/8f1245705fb35b75740aa9bd083f10544d8eafbe35d32be75d5c492fac9bdaa8\",\"sourceDiscussionId\":\"de020a05e371827edbdb9e73cc479e347b0d2bf17c6130e891a6f3cd858ca0b4\",\"sourceDiscussionRef\":\"nostr://event/de020a05e371827edbdb9e73cc479e347b0d2bf17c6130e891a6f3cd858ca0b4\",\"submittedToCivicWorkflow\":false,\"summary\":\"Synthetischer Testfall: Querungsmöglichkeiten prüfen.\\nKeine Meldung an eine Behörde.\",\"title\":\"Testfall: Sicherer Schulweg\",\"topicId\":\"urn:stadtstack:topic:municipality:example-city:school-crossing\"}",
+      "sig": "b87badbd765fa4fb1e5ceca0a0e75404398972e70d059b0fde4b7881ece310e8513a72ee1a3623727b47989c9e0c46b44cf0d72b0f0a4d0b3d3802503534e19c"
+    },
+    "eligibilityReceipt": {
+      "schemaVersion": "municipal_civic_eligibility_receipt_v1",
+      "eligibilityCore": {
+        "municipalityId": "example-city",
+        "eligibilityClass": "municipal_civic_participation",
+        "subjectPubkey": "1428f3a3532ff4f1cac70f7292bfad06d1037f800ee8839b56ebba917a22e900",
+        "participantSuggestionId": "5af1d06a83209218ee3d1228cefd39af14f65ac27f2e636b9ff5c45f11addd0e",
+        "topicId": "urn:stadtstack:topic:municipality:example-city:school-crossing",
+        "policyVersion": "example-eligibility-v1",
+        "issuer": "urn:example:eligibility-issuer",
+        "issuedAt": 1790000004,
+        "expiresAt": 1790000904,
+        "authorityBinding": "civic_eligibility_only"
+      },
+      "receiptId": "urn:stadtstack:municipal-civic-eligibility-receipt:bb399f4ea4b63c4007484a69c65f6365474a0e34aebd43a5930fbf75d6849fa6",
+      "payloadChecksum": "bb399f4ea4b63c4007484a69c65f6365474a0e34aebd43a5930fbf75d6849fa6",
+      "statusRef": "https://issuer.example/eligibility/status/bb399f4ea4b63c4007484a69c65f6365474a0e34aebd43a5930fbf75d6849fa6",
+      "proof": {
+        "algorithm": "Ed25519",
+        "keyId": "example-issuer-key-v1",
+        "signature": "nAJHKQqESKOq1oVocFS8NKFUiN_8UBP7J_hYZDbGQMVjcX4X6ddb-vFEBPDg448DQ62C0Hiedg_Myy-IiAZyCQ"
+      }
+    },
+    "adoptionEvent": {
+      "id": "64dee7c3b7d688306daf1a88d4729896e5476f0f8ff792a36ef36f843e3eed88",
+      "pubkey": "1428f3a3532ff4f1cac70f7292bfad06d1037f800ee8839b56ebba917a22e900",
+      "created_at": 1790000005,
+      "kind": 1,
+      "tags": [
+        [
+          "schema",
+          "citizen_adopted_topic_suggestion_v1"
+        ],
+        [
+          "municipality",
+          "example-city"
+        ],
+        [
+          "topic",
+          "urn:stadtstack:topic:municipality:example-city:school-crossing"
+        ],
+        [
+          "e",
+          "5af1d06a83209218ee3d1228cefd39af14f65ac27f2e636b9ff5c45f11addd0e",
+          "",
+          "adopted-suggestion"
+        ],
+        [
+          "e",
+          "de020a05e371827edbdb9e73cc479e347b0d2bf17c6130e891a6f3cd858ca0b4",
+          "",
+          "root"
+        ],
+        [
+          "p",
+          "baf7689c0a3558fb604589036a8d1e4b685d909f6e0e2c6018a14049ae64ec26"
+        ],
+        [
+          "eligibility-receipt",
+          "urn:stadtstack:municipal-civic-eligibility-receipt:bb399f4ea4b63c4007484a69c65f6365474a0e34aebd43a5930fbf75d6849fa6"
+        ],
+        [
+          "credential-class",
+          "municipal-civic-eligibility"
+        ]
+      ],
+      "content": "{\"adopterPubkey\":\"1428f3a3532ff4f1cac70f7292bfad06d1037f800ee8839b56ebba917a22e900\",\"adoptionId\":\"urn:stadtstack:citizen-topic-suggestion-adoption:6529eb49cbaabb793b2ebf3b5615cb640e560fcdae92a96d86261e3317a9c6b2\",\"authorityBinding\":\"civic_eligibility_only\",\"eligibilityReceiptChecksum\":\"bb399f4ea4b63c4007484a69c65f6365474a0e34aebd43a5930fbf75d6849fa6\",\"eligibilityReceiptId\":\"urn:stadtstack:municipal-civic-eligibility-receipt:bb399f4ea4b63c4007484a69c65f6365474a0e34aebd43a5930fbf75d6849fa6\",\"entryState\":\"case_steward_review_required\",\"municipalityId\":\"example-city\",\"participantPubkey\":\"baf7689c0a3558fb604589036a8d1e4b685d909f6e0e2c6018a14049ae64ec26\",\"participantSuggestionId\":\"5af1d06a83209218ee3d1228cefd39af14f65ac27f2e636b9ff5c45f11addd0e\",\"participantSuggestionRef\":\"nostr://event/5af1d06a83209218ee3d1228cefd39af14f65ac27f2e636b9ff5c45f11addd0e\",\"schemaVersion\":\"public_citizen_topic_suggestion_adoption_v1\",\"sourceAnswerReceiptId\":\"urn:stadtstack:mecky-answer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sourceDiscussionId\":\"de020a05e371827edbdb9e73cc479e347b0d2bf17c6130e891a6f3cd858ca0b4\",\"submittedToCivicWorkflow\":false,\"summary\":\"Synthetischer Testfall: Querungsmöglichkeiten prüfen.\\nKeine Meldung an eine Behörde.\",\"title\":\"Testfall: Sicherer Schulweg\",\"topicId\":\"urn:stadtstack:topic:municipality:example-city:school-crossing\"}",
+      "sig": "851dbe28447eed1db14530e86e93cdf5c1df7be087a8642b7389b75e084dbdb06ae71b5c9296ab5d31fc61d1ac1bf535ac4a586e7517b37a30f016f3aa440059"
+    }
+  },
+  "adoptionAcceptance": {
+    "schemaVersion": "citizen_topic_suggestion_adoption_acceptance_receipt_v1",
+    "adoptionId": "urn:stadtstack:citizen-topic-suggestion-adoption:6529eb49cbaabb793b2ebf3b5615cb640e560fcdae92a96d86261e3317a9c6b2",
+    "adoptionEventId": "64dee7c3b7d688306daf1a88d4729896e5476f0f8ff792a36ef36f843e3eed88",
+    "municipalityId": "example-city",
+    "topicId": "urn:stadtstack:topic:municipality:example-city:school-crossing",
+    "participantSuggestionId": "5af1d06a83209218ee3d1228cefd39af14f65ac27f2e636b9ff5c45f11addd0e",
+    "adopterPubkey": "1428f3a3532ff4f1cac70f7292bfad06d1037f800ee8839b56ebba917a22e900",
+    "eligibilityReceiptId": "urn:stadtstack:municipal-civic-eligibility-receipt:bb399f4ea4b63c4007484a69c65f6365474a0e34aebd43a5930fbf75d6849fa6",
+    "requestChecksum": "83fce1da6af70cab5a1efac834ebb928809c4b50842add4ab285e3978cf7785d",
+    "eventCreatedAt": 1790000005,
+    "receivedAt": 1790000006,
+    "policyVersion": "example-eligibility-v1",
+    "status": "accepted",
+    "authorityBinding": "civic_eligibility_only",
+    "receiptChecksum": "4cc3c46e6fbe6a312059b20376ad927ba7d4cb781250ac930aaee2ebe23ed2a6"
+  },
+  "signedStatusVector": {
+    "statusCore": {
+      "schemaVersion": "municipal_civic_eligibility_status_v1",
+      "receiptId": "urn:stadtstack:municipal-civic-eligibility-receipt:bb399f4ea4b63c4007484a69c65f6365474a0e34aebd43a5930fbf75d6849fa6",
+      "payloadChecksum": "bb399f4ea4b63c4007484a69c65f6365474a0e34aebd43a5930fbf75d6849fa6",
+      "policyVersion": "example-eligibility-v1",
+      "state": "active",
+      "effectiveAt": 1790000300,
+      "observedAt": 1790000300,
+      "audience": "stadtstack-case-steward-admission",
+      "requestNonce": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "statusChecksum": "da1827443e373959c58200e33a1721e06e803fe4aa25ba7f78782c65e0091d25",
+    "proof": {
+      "algorithm": "Ed25519",
+      "keyId": "example-issuer-key-v1",
+      "signature": "7RBR3zllFtu8UgN6x_E6FF6htvTb3cNnO6RSD9YVJlFop-R0Q51aYvZsFxYvvKQWwLt4OzvY69Y0YIfHnFrWBw"
+    }
+  }
+}

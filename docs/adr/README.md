@@ -93,6 +93,9 @@ publication, runtime operations, public relay writes, or civic effects.
   close the administration-to-public-context loop through an explicit municipal
   publication candidate and receipt, then expose official OParl-compatible and
   broader reviewed civic-context views without inventing “OParl 2.”
+- [ADR 0031](./0031-citizen-adoption-evidence-before-case-admission.md) —
+  verify citizen adoption, trusted ledger acceptance and fresh eligibility
+  before integrating the staff-authorized atomic Case admission.
 
 ## Historical
 
