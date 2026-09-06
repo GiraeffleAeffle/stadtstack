@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, statfsSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { createServer, request as httpRequest } from "node:http";
 import { join } from "node:path";
 import test, { after } from "node:test";
@@ -97,6 +99,7 @@ function binding(rootDir: string, overrides: Readonly<{
   pvcName?: string;
   pvcUid?: string;
   pvName?: string;
+  realMount?: boolean;
 }> = {}): StagingCaseControlReviewedBindingV1 {
   const unsigned = {
     schemaVersion: "staging_case_control_deployment_binding_v1" as const,
@@ -139,7 +142,19 @@ function binding(rootDir: string, overrides: Readonly<{
       { id: "probe" as const, port: 18088 as const, bindScope: "pod_network" as const },
     ],
   };
+  if (overrides.realMount) {
+    chmodSync(rootDir, 0o700);
+    const actual = statSync(rootDir);
+    unsigned.storage.uid = actual.uid;
+    unsigned.storage.gid = actual.gid;
+    unsigned.storage.filesystemType = `0x${statfsSync(rootDir, { bigint: true }).type.toString(16)}`;
+    unsigned.storage.marker.uid = actual.uid;
+    unsigned.storage.marker.gid = actual.gid;
+  }
   unsigned.storage.marker.checksum = `sha256:${createHash("sha256").update(`${canonical(markerBody(unsigned))}\n`, "utf8").digest("hex")}`;
+  if (overrides.realMount) {
+    writeFileSync(join(rootDir, unsigned.storage.marker.fileName), `${canonical(markerBody(unsigned))}\n`, { mode: 0o600 });
+  }
   return Object.freeze({ ...unsigned, bindingChecksum: checksum(unsigned) }) as StagingCaseControlReviewedBindingV1;
 }
 
@@ -308,6 +323,93 @@ function request(port: number, path: string): Promise<Readonly<{ status: number;
 function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
   return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
+
+test("mounted control entrypoint uses the real storage observer, authenticates staff and seals on shutdown", async () => {
+  const rootDir = root();
+  const reviewedBinding = binding(rootDir, { realMount: true });
+  const files = root();
+  const applicationPath = join(files, "application.json");
+  const bindingPath = join(files, "binding.json");
+  const config = application();
+  writeFileSync(applicationPath, JSON.stringify(config), { mode: 0o600 });
+  writeFileSync(bindingPath, JSON.stringify(reviewedBinding), { mode: 0o600 });
+  const child = spawn(process.execPath, ["--experimental-strip-types", "containers/case-runtime/case-steward-control-entrypoint.mjs"], {
+    env: { PATH: process.env.PATH, NODE_NO_WARNINGS: "1",
+      STADTSTACK_CASE_CONTROL_CONFIG_PATH: applicationPath,
+      STADTSTACK_CASE_CONTROL_REVIEWED_BINDING_PATH: bindingPath,
+      STADTSTACK_CASE_CONTROL_BINDING_SHA256: reviewedBinding.bindingChecksum },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  let diagnostics = "";
+  child.stderr.on("data", (chunk) => { diagnostics += String(chunk); });
+  const exited = once(child, "exit");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("control entrypoint did not become ready")), 8_000);
+      child.once("error", (error) => { clearTimeout(timeout); reject(error); });
+      child.once("exit", () => { clearTimeout(timeout); reject(new Error("control entrypoint exited before readiness")); });
+      child.stdout.on("data", (chunk) => {
+        output += String(chunk);
+        if (output === "stadtstack_case_steward_control_reviewed_control_ready\n") {
+          clearTimeout(timeout); resolve();
+        }
+      });
+    });
+    assert.deepEqual(await request(18088, "/readyz"), { status: 200, body: "ok\n" });
+    const body = JSON.stringify({ schemaVersion: "not-an-admission" });
+    const attempt = (authorization?: string) => new Promise<number>((resolve, reject) => {
+      const req = httpRequest({ host: "127.0.0.1", port: 18085, method: "POST", path: "/v1/nostr/suggestions/admit",
+        headers: { host: "127.0.0.1", "content-type": "application/json", "content-length": Buffer.byteLength(body),
+          ...(authorization ? { authorization } : {}) } }, (res) => { res.resume(); res.on("end", () => resolve(res.statusCode!)); });
+      req.on("error", reject); req.end(body);
+    });
+    assert.equal(await attempt(), 400);
+    assert.equal(await attempt(`Bearer ${Buffer.alloc(32, 12).toString("base64url")}`), 401);
+    assert.equal(await attempt(`Bearer ${config.credentials[0]!.token}`), 400);
+    child.kill("SIGTERM");
+    assert.deepEqual(await exited, [0, null]);
+    assert.equal(diagnostics, "");
+    const seal = verifyCaseShutdownSeal(JSON.parse(readFileSync(join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME), "utf8")));
+    assert.equal(seal.recoveryEvidence.orderedHeads.length, 0);
+    const claim = readCanonicalCaseDurableDeploymentClaim(rootDir);
+    assert.ok(claim);
+    assert.equal(claim.controlDeploymentBindingChecksum, reviewedBinding.bindingChecksum);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) { child.kill("SIGKILL"); await exited; }
+  }
+});
+
+test("mounted control entrypoint rejects partial pins, drift and exposed credentials before database creation", () => {
+  const rootDir = root();
+  const reviewedBinding = binding(rootDir, { realMount: true });
+  const files = root();
+  const applicationPath = join(files, "application.json");
+  const bindingPath = join(files, "binding.json");
+  writeFileSync(applicationPath, JSON.stringify(application()), { mode: 0o600 });
+  writeFileSync(bindingPath, JSON.stringify(reviewedBinding), { mode: 0o600 });
+  const base = { PATH: process.env.PATH, NODE_NO_WARNINGS: "1", STADTSTACK_CASE_CONTROL_CONFIG_PATH: applicationPath,
+    STADTSTACK_CASE_CONTROL_REVIEWED_BINDING_PATH: bindingPath,
+    STADTSTACK_CASE_CONTROL_BINDING_SHA256: reviewedBinding.bindingChecksum };
+  const before = readdirSync(rootDir);
+  const reject = (env: NodeJS.ProcessEnv, entrypoint = "case-steward-control-entrypoint.mjs") => {
+    const result = spawnSync(process.execPath, ["--experimental-strip-types", `containers/case-runtime/${entrypoint}`],
+      { env, encoding: "utf8", timeout: 5_000 });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 78);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /^stadtstack_case_(?:steward_control|public_binding)_start_failed\n$/u);
+    assert.deepEqual(readdirSync(rootDir), before);
+  };
+  const partial: NodeJS.ProcessEnv = { ...base }; delete partial.STADTSTACK_CASE_CONTROL_BINDING_SHA256;
+  reject(partial);
+  reject({ ...base, STADTSTACK_CASE_CONTROL_BINDING_SHA256: `sha256:${"f".repeat(64)}` });
+  reject({ ...base, STADTSTACK_CASE_PUBLIC_CONFIG_PATH: applicationPath }, "case-public-binding-entrypoint.mjs");
+  chmodSync(applicationPath, 0o644); reject(base); chmodSync(applicationPath, 0o600);
+  writeFileSync(applicationPath, JSON.stringify({ ...application(), storageObserver: {} })); reject(base);
+  writeFileSync(applicationPath, JSON.stringify(application()));
+  writeFileSync(join(rootDir, reviewedBinding.storage.marker.fileName), "changed marker"); reject(base);
+});
 
 test("reviewed Operations facts authorize only the exact control Pod-network listeners", async () => {
   const rootDir = root();

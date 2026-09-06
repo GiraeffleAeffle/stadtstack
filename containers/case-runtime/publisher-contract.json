@@ -59,9 +59,9 @@
         ]
       }
     },
-    "activation": "loopback_runtime_pending_operations_activation",
+    "activation": "staging_runtime_pending_operations_activation",
     "componentActivation": {
-      "case-steward-control": "loopback_runtime_pending_operations_activation",
+      "case-steward-control": "reviewed_control_entrypoint_pending_operations_activation",
       "case-public-binding": "loopback_runtime_pending_operations_activation",
       "case-restore-verifier": "blocked_pending_reviewed_recovery_evidence"
     }

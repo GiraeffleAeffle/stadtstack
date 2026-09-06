@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 #
 # This is a source-only Case runtime image. The control and public targets are
-# intentionally limited to the ADR 0022 loopback composition: publishing an
-# image never supplies the Operations binding, a PVC, a Secret, a Service, a
+# default to the ADR 0022 loopback composition. Control also accepts a mounted
+# reviewed binding and an independent deployment pin. Publishing an image
+# never supplies that binding, a PVC, a Secret, a Service, a
 # NetworkPolicy, or authority to expose a civic listener. The restore target
 # remains an explicit inert blocker until its recovery evidence is reviewed.
 
@@ -49,12 +50,12 @@ COPY src/staging-case-runtime-listener-capability.ts ./src/staging-case-runtime-
 COPY src/staging-case-steward-token-authenticator.ts ./src/staging-case-steward-token-authenticator.ts
 COPY src/staging-runtime-probe-server.ts ./src/staging-runtime-probe-server.ts
 COPY src/topic-case-admission.ts ./src/topic-case-admission.ts
-LABEL org.opencontainers.image.title="Stadtstack Case Steward control (loopback reference)" \
+LABEL org.opencontainers.image.title="Stadtstack Case Steward control" \
       org.opencontainers.image.source="${SOURCE_REPOSITORY}" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.licenses="MIT" \
       org.stadtstack.case.component="case-steward-control" \
-      org.stadtstack.case.activation="loopback_runtime_pending_operations_activation"
+      org.stadtstack.case.activation="reviewed_control_entrypoint_pending_operations_activation"
 USER node
 ENTRYPOINT ["node", "--experimental-strip-types", "/runtime/containers/case-runtime/case-steward-control-entrypoint.mjs"]
 
