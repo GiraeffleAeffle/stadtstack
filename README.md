@@ -79,8 +79,8 @@ The three future Case component images have a separate, remote-only publisher
 with a closed `git archive` build context, retry-safe immutable source tags,
 GitHub-OIDC provenance, SPDX SBOM evidence, and anonymous digest-pull
 verification. The images contain only an activation blocker, not Case source
-or dependencies. They are intentionally activation-blocked until the reviewed
-ADR 0023 recovery gate and runtime composition exist; see
+or dependencies. Control and public startup require separately reviewed
+Operations bindings and activation evidence; the restore target remains blocked. See
 [Case image publishing](docs/CASE_IMAGE_PUBLISHING.md).
 
 The reviewed-source runtime has the same remote-only immutable-source evidence
