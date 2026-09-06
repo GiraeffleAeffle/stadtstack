@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
-import { MUNICIPAL_CASE_ID_PREFIX } from "./case-id.ts";
+import { MUNICIPAL_CASE_ID_PREFIX, SYNTHETIC_CASE_ID_PREFIX } from "./case-id.ts";
 
 import type { CaseStateRecoveryEvidenceV1 } from "./case-state-recovery-evidence.ts";
 import { verifyCaseStateRecoveryEvidence } from "./case-state-recovery-evidence.ts";
@@ -111,7 +111,8 @@ export function verifyCaseShutdownSeal(value: unknown): CaseShutdownSealV2 {
     fail("atomic_admission_seal_invalid");
   }
   const recoveryEvidence = verifyCaseStateRecoveryEvidence(parsed.recoveryEvidence);
-  const municipalityCasePrefix = `${MUNICIPAL_CASE_ID_PREFIX}${parsed.municipalityId}:`;
+  const synthetic = recoveryEvidence.orderedHeads[0]?.caseId.startsWith(SYNTHETIC_CASE_ID_PREFIX) ?? false;
+  const municipalityCasePrefix = `${synthetic ? SYNTHETIC_CASE_ID_PREFIX : MUNICIPAL_CASE_ID_PREFIX}${parsed.municipalityId}:`;
   if (recoveryEvidence.orderedHeads.some((head) => !head.caseId.startsWith(municipalityCasePrefix))) {
     fail("atomic_admission_seal_invalid");
   }

@@ -1,4 +1,4 @@
-import { canonicalMunicipalCaseId, deriveCaseUuidV7 } from "./case-id.ts";
+import { canonicalMunicipalCaseId, canonicalSyntheticCaseId, deriveCaseUuidV7 } from "./case-id.ts";
 import { types as utilTypes } from "node:util";
 import type { Event as NostrEvent } from "nostr-tools/pure";
 
@@ -6,9 +6,10 @@ import {
   verifyPublicCaseBindingReceipt,
   type PublicCaseBindingReceiptV1,
   type PublicAdoptedCaseBindingReceiptV2,
+  type PublicSyntheticCaseBindingReceiptV1,
 } from "./case-binding-projection.ts";
 import type { CitizenSignedTopicSuggestionV1 } from "./citizen-suggestion.ts";
-import { readCitizenAdoptionBundle, type CitizenAdoptionEvidenceBundle } from "./citizen-adoption-evidence.ts";
+import { readSyntheticAdoptionBundle, type SyntheticAdoptionEvidenceBundle, readCitizenAdoptionBundle, type CitizenAdoptionEvidenceBundle } from "./citizen-adoption-evidence.ts";
 import type { ActorBinding } from "./civic-case-coordinator.ts";
 import {
   verifyTopicCaseAdmission,
@@ -64,6 +65,11 @@ export type AtomicCitizenAdoptionAdmissionV1 = {
   bundle: CitizenAdoptionEvidenceBundle;
 };
 
+export type AtomicSyntheticAdoptionAdmissionV1 = Omit<AtomicCitizenAdoptionAdmissionV1, "schemaVersion" | "bundle"> & {
+  schemaVersion: "atomic_synthetic_adoption_admission_v1";
+  bundle: SyntheticAdoptionEvidenceBundle;
+};
+
 /**
  * Deployment-owned durable port. Implementations must claim the immutable
  * discussion root, append the Case events, and enqueue the public receipt in
@@ -74,10 +80,11 @@ export type AtomicCaseAdmissionPort = {
   /** Configured on the existing writer; HTTP callers cannot supply status,
    * acceptance, Case identity, nonce or an asserted verification flag. */
   admitCitizenAdoption?(input: AtomicCitizenAdoptionAdmissionV1): Promise<PublicAdoptedCaseBindingReceiptV2>;
+  admitSyntheticAdoption?(input: AtomicSyntheticAdoptionAdmissionV1): Promise<PublicSyntheticCaseBindingReceiptV1>;
 };
 
 export type RoebelCaseStewardControlConfig = {
-  admissionKind?: "eligible_citizen_adopted_topic_suggestion_v1";
+  admissionKind?: "eligible_citizen_adopted_topic_suggestion_v1" | "synthetic_citizen_adoption_case_input_v1";
   municipalityId: string;
   policyVersion: string;
   allowedAgentPubkeys: readonly string[];
@@ -198,7 +205,9 @@ export function createRoebelCaseStewardControlService(
   if (!authenticator || typeof authenticator.authenticate !== "function" ||
     !atomicAdmission || typeof atomicAdmission.admit !== "function") fail("roebel_control_config_invalid");
   const adoptionMode = parsed.admissionKind === "eligible_citizen_adopted_topic_suggestion_v1";
-  if ((Object.hasOwn(parsed, "admissionKind") && !adoptionMode) ||
+  const syntheticMode = parsed.admissionKind === "synthetic_citizen_adoption_case_input_v1";
+  if ((Object.hasOwn(parsed, "admissionKind") && !adoptionMode && !syntheticMode) ||
+    (syntheticMode && typeof atomicAdmission.admitSyntheticAdoption !== "function") ||
     (adoptionMode && typeof atomicAdmission.admitCitizenAdoption !== "function")) fail("roebel_control_config_invalid");
 
   return Object.freeze({
@@ -220,6 +229,36 @@ export function createRoebelCaseStewardControlService(
         steward = principal(authenticated, municipalityId);
       } catch {
         return response(401, "case_steward_required\n");
+      }
+
+      if (syntheticMode) {
+        let bundle: SyntheticAdoptionEvidenceBundle;
+        try {
+          const body = exact(parsedRequest.body, ["schemaVersion", "bundle"], "roebel_admission_body_invalid");
+          if (body.schemaVersion !== "roebel_case_steward_synthetic_adoption_request_v1") fail("roebel_admission_body_invalid");
+          bundle = readSyntheticAdoptionBundle(body.bundle);
+        } catch { return response(400, "admission_body_invalid\n"); }
+        try {
+          const receipt = verifyPublicCaseBindingReceipt(await atomicAdmission.admitSyntheticAdoption!({
+            schemaVersion: "atomic_synthetic_adoption_admission_v1", municipalityId, policyVersion, expectedCaseVersion: 0,
+            actorBinding: { actorId: steward.actorId, actorClass: "case_steward" }, bundle,
+          }));
+          const draft = JSON.parse(bundle.participantSuggestionEvent.content) as Record<string, unknown>;
+          if (receipt.schemaVersion !== "public_synthetic_case_binding_receipt_v1" ||
+            receipt.rootEventId !== bundle.sourceDiscussion.id || receipt.candidateEventId !== bundle.proofEvent.id ||
+            receipt.participantSuggestionEventId !== bundle.participantSuggestionEvent.id ||
+            receipt.sourceAnswerEventId !== bundle.sourceAnswer.id || receipt.sourceAnswerReceiptId !== draft.sourceAnswerReceiptId ||
+            receipt.adopterPubkey !== bundle.proofEvent.pubkey || receipt.topicId !== draft.topicId ||
+            receipt.testPolicyVersion !== policyVersion ||
+            receipt.caseId !== canonicalSyntheticCaseId(municipalityId, deriveCaseUuidV7(bundle.proofEvent))) fail("atomic_admission_receipt_mismatch");
+          return response(200, `${JSON.stringify(receipt)}\n`, { "x-stadtstack-receipt-sha256": receipt.receiptChecksum });
+        } catch (error) {
+          const code = error instanceof Error ? error.message : "";
+          if (["case_binding_root_conflict", "idempotency_conflict", "case_version_conflict"].includes(code)) return response(409, `${code}\n`);
+          if ((code.startsWith("synthetic_adoption_") || code.startsWith("citizen_adoption_")) &&
+            !code.endsWith("_unavailable") && !code.endsWith("_timeout")) return response(400, "admission_invalid\n");
+          return response(500, "admission_unavailable\n");
+        }
       }
 
       if (adoptionMode) {

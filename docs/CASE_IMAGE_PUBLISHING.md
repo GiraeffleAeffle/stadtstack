@@ -54,27 +54,37 @@ binds component, image repository, manifest digest, exact source revision,
 empty-auth checksum, anonymous ORAS resolver identity, and resolved digest; its
 SHA-256 receipt digest covers every field except itself.
 
-These are **not deployable Case runtimes**. The control and public images have
-separate entrypoints which load exactly one mounted JSON configuration file and
-can run only the ADR 0022 loopback reference composition. They reject every
-other `STADTSTACK_CASE_*` input and never print configuration, exceptions, or
-health details. The publisher contract binds each component entrypoint to its
-one exact dynamic TypeScript runtime target, and CI derives the reviewed source
-closure from that target; a typo or public/control target swap fails closed.
-Configuration paths must resolve directly to one non-symlink
-regular file: the entrypoint verifies identity and a 1 MiB size ceiling before
-allocating, opens with no-follow and non-blocking flags, performs a bounded
-descriptor read, then rechecks that the path still names the same regular inode.
-FIFO/device swaps cannot stall startup; replacement, mutation and growth fail
-closed, and the descriptor closes on every outcome. They provide no Operations binding
-source, immutable binding pin, PVC, Service, NetworkPolicy, Kubernetes token,
-or non-loopback listener. A termination request suppresses the ready marker
-even when it races a delayed startup and close makes that startup settle.
-The restore-verifier target still exits with the stable activation-blocked
-status before loading Case code. A published digest is therefore not
-authorization to expose the Case control, public-binding, or restore-verifier
-process; the later ADR 0023/Operations activation gate must provide the
-reviewed recovery and network evidence.
+The control and public images have separate entrypoints. With only their
+`STADTSTACK_CASE_CONTROL_CONFIG_PATH` or `STADTSTACK_CASE_PUBLIC_CONFIG_PATH`
+input they run the ADR 0022 loopback reference composition. Each also supports
+its reviewed Operations factory: add that component's
+`STADTSTACK_CASE_{CONTROL,PUBLIC}_REVIEWED_BINDING_PATH` and independent
+`STADTSTACK_CASE_{CONTROL,PUBLIC}_BINDING_SHA256` input. Both must be supplied;
+a partial or mixed configuration fails instead of falling back to loopback.
+The binding pins staging workload identity and fixed listeners; the control
+factory additionally verifies its retained storage through the filesystem
+observer. The public factory derives only the same-namespace private outbox
+origin and the public/probe listeners.
+
+Each configuration path must directly name a regular, non-symlink file. The
+common reader checks identity and a 1 MiB ceiling, opens with no-follow and
+non-blocking flags, reads through the bounded descriptor and rechecks the same
+inode. FIFO/device swaps, replacement, growth and mutation fail closed. The
+reviewed control application's credential-bearing file must be mode 0600 and
+owned by the runtime UID. A projected Secret symlink therefore needs an
+Operations-reviewed regular-file materialization; it cannot be passed directly
+as this configuration. Neither launcher prints configuration, exceptions or
+health details. Termination suppresses a racing ready marker and settles startup.
+
+The publisher contract pins each entrypoint's exact dynamic runtime target and
+CI derives its source closure. The restore-verifier image still exits with its
+activation-blocked status before loading Case code. Publishing these digests
+creates no storage, Service, NetworkPolicy, staff credential or deployment.
+Operations must separately provide reviewed bindings, immutable pins, retained
+storage/recovery evidence and network configuration before staging activation.
+The control application's `citizenAdoption` and `syntheticAdoption` modes are
+mutually exclusive; [ADR 0032](adr/0032-isolate-synthetic-case-admission.md)
+describes the isolated test protocol and its remaining browser activation work.
 
 The image workflow has no cluster, Flux, runtime Secret, civic-data, or
 treasury credential. It is not a deployment workflow and it makes no GitOps
@@ -86,11 +96,9 @@ therefore excludes tests, docs, local state, temporary material, unrelated
 repository content, and foreign component source even if a future publisher
 attempts to widen its context.
 
-The shared listener mechanics can resolve only the exact opaque bind-plan
-objects registered while the reviewed control preflight derives them. There is
-no raw host/port capability constructor; structural objects and cloned plans
-remain inert, and CI restricts the one internal registration seam to the
-control-preflight module. That guard scans repository-relative identities for
-the complete `src` implementation tree and every published Case runtime
-artifact, so a nested same-basename file or JavaScript entrypoint cannot bypass
-the restriction.
+The shared listener mechanics resolve only opaque bind-plan objects registered
+by the reviewed factories. Raw host/port objects and cloned plans remain inert.
+CI restricts control registration to the control-preflight module and the
+separate, public-port-only registration to the public runtime module. The guard
+scans repository-relative identities throughout `src` and every published Case
+runtime artifact, including nested files and JavaScript entrypoints.

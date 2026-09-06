@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
-import { MUNICIPAL_CASE_ID, UUID_V7 } from "./case-id.ts";
+import { MUNICIPAL_CASE_ID, SYNTHETIC_CASE_ID, UUID_V7 } from "./case-id.ts";
 
 /**
  * A public, post-hoc receipt.  It does not mutate the signed Nostr root and
@@ -41,7 +41,17 @@ export type PublicAdoptedCaseBindingReceiptV2 = Omit<PublicCaseBindingReceiptV1,
   treasuryEffect: false;
   paymentEffect: false;
 };
-export type PublicCaseBindingReceipt = PublicCaseBindingReceiptV1 | PublicAdoptedCaseBindingReceiptV2;
+export type PublicSyntheticCaseBindingReceiptV1 = Omit<PublicAdoptedCaseBindingReceiptV2,
+  "schemaVersion" | "candidateKind" | "eligibilityReceiptId" | "eligibilityReceiptChecksum" | "eligibilityPolicyVersion" | "eligibilityIssuer"> & {
+  schemaVersion: "public_synthetic_case_binding_receipt_v1";
+  candidateKind: "synthetic_citizen_adoption_tracer_v1";
+  testPolicyVersion: string;
+  environment: "staging";
+  testOnly: true;
+  civicCaseCreated: false;
+  syntheticCaseCreated: true;
+};
+export type PublicCaseBindingReceipt = PublicCaseBindingReceiptV1 | PublicAdoptedCaseBindingReceiptV2 | PublicSyntheticCaseBindingReceiptV1;
 
 export type CaseBindingProjectionReader = {
   get(caseId: string): PublicCaseBindingReceipt | null;
@@ -123,26 +133,29 @@ export function verifyPublicCaseBindingReceipt(value: unknown): PublicCaseBindin
   const shape = record(value, "case_binding_receipt_invalid");
   const version = Object.getOwnPropertyDescriptor(shape, "schemaVersion");
   if (!version || !("value" in version)) fail("case_binding_receipt_invalid");
+  const synthetic = version.value === "public_synthetic_case_binding_receipt_v1";
   const adopted = version.value === "public_case_binding_receipt_v2";
   const parsed = exact(value, [
     "schemaVersion", "rootEventId", "topicId", "candidateId", "candidateEventId",
     "sourceAnswerEventId", "caseId", "caseVersion", "caseEventIds", "journalHeadChecksum",
     "admissionEventChecksum", "receiptChecksum", "authorityBinding", "openDeskWrite",
+    ...(synthetic ? ["candidateKind", "participantSuggestionEventId", "adopterPubkey", "testPolicyVersion", "environment", "testOnly", "civicCaseCreated", "syntheticCaseCreated", "adoptionAcceptanceReceiptChecksum", "sourceAnswerReceiptId", "administrativeEndorsement", "bindingVote", "councilDecision", "treasuryEffect", "paymentEffect"] : []),
     ...(adopted ? ["candidateKind", "participantSuggestionEventId", "adopterPubkey", "eligibilityReceiptId",
       "eligibilityReceiptChecksum", "eligibilityPolicyVersion", "eligibilityIssuer", "adoptionAcceptanceReceiptChecksum",
       "sourceAnswerReceiptId", "administrativeEndorsement", "bindingVote", "councilDecision", "treasuryEffect", "paymentEffect"] : []),
   ], "case_binding_receipt_invalid");
-  if ((!adopted && parsed.schemaVersion !== "public_case_binding_receipt_v1") ||
+  if ((!adopted && !synthetic && parsed.schemaVersion !== "public_case_binding_receipt_v1") ||
     parsed.authorityBinding !== "none" || parsed.openDeskWrite !== false) {
     fail("case_binding_receipt_invalid");
   }
   const rootEventId = text(parsed.rootEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u, 64);
   const topicId = text(parsed.topicId, "case_binding_receipt_invalid", /^urn:stadtstack:topic:municipality:[a-z0-9-]+:[a-z0-9-]+$/u, 256);
-  const candidateId = text(parsed.candidateId, "case_binding_receipt_invalid", adopted ? /^urn:stadtstack:citizen-topic-suggestion-adoption:[0-9a-f]{64}$/u : /^urn:stadtstack:signed-topic-suggestion:[0-9a-f]{64}$/u, 128);
+  const candidateId = text(parsed.candidateId, "case_binding_receipt_invalid", synthetic ? /^urn:stadtstack:synthetic-citizen-adoption-tracer:[0-9a-f]{64}$/u : adopted ? /^urn:stadtstack:citizen-topic-suggestion-adoption:[0-9a-f]{64}$/u : /^urn:stadtstack:signed-topic-suggestion:[0-9a-f]{64}$/u, 128);
   const candidateEventId = text(parsed.candidateEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u, 64);
   const sourceAnswerEventId = text(parsed.sourceAnswerEventId, "case_binding_receipt_invalid", /^[0-9a-f]{64}$/u, 64);
-  const caseId = text(parsed.caseId, "case_binding_receipt_invalid", CASE_ID, 256);
-  const caseIdMatch = CASE_ID.exec(caseId);
+  const identityPattern = synthetic ? SYNTHETIC_CASE_ID : CASE_ID;
+  const caseId = text(parsed.caseId, "case_binding_receipt_invalid", identityPattern, 256);
+  const caseIdMatch = identityPattern.exec(caseId);
   if (!caseIdMatch || !UUID_V7.test(caseIdMatch[2]!)) fail("case_binding_receipt_invalid");
   if (parsed.caseVersion !== 3) fail("case_binding_receipt_invalid");
   const caseVersion = 3 as const;
@@ -152,12 +165,12 @@ export function verifyPublicCaseBindingReceipt(value: unknown): PublicCaseBindin
   const journalHeadChecksum = text(parsed.journalHeadChecksum, "case_binding_receipt_invalid", SHA256, 71);
   const admissionEventChecksum = text(parsed.admissionEventChecksum, "case_binding_receipt_invalid", SHA256, 71);
   const receiptChecksum = text(parsed.receiptChecksum, "case_binding_receipt_invalid", SHA256, 71);
-  if ((!adopted && candidateId !== `urn:stadtstack:signed-topic-suggestion:${candidateEventId}`) ||
+  if ((!adopted && !synthetic && candidateId !== `urn:stadtstack:signed-topic-suggestion:${candidateEventId}`) ||
     topicId.split(":")[4] !== caseIdMatch[1] ||
     admissionEventChecksum !== journalHeadChecksum) fail("case_binding_receipt_invalid");
   const exactCaseEventIds = [caseEventIds[0]!, caseEventIds[1]!, caseEventIds[2]!] as const;
   const unsigned = {
-    schemaVersion: adopted ? "public_case_binding_receipt_v2" as const : "public_case_binding_receipt_v1" as const,
+    schemaVersion: synthetic ? "public_synthetic_case_binding_receipt_v1" as const : adopted ? "public_case_binding_receipt_v2" as const : "public_case_binding_receipt_v1" as const,
     rootEventId, topicId, candidateId, candidateEventId, sourceAnswerEventId, caseId,
     caseVersion, caseEventIds: exactCaseEventIds, journalHeadChecksum,
     admissionEventChecksum, authorityBinding: "none" as const, openDeskWrite: false as const,
@@ -182,6 +195,20 @@ export function verifyPublicCaseBindingReceipt(value: unknown): PublicCaseBindin
       administrativeEndorsement: false, bindingVote: false, councilDecision: false, treasuryEffect: false, paymentEffect: false,
     };
   }
+  if (synthetic) {
+    const hex = /^[0-9a-f]{64}$/u;
+    if (parsed.candidateKind !== "synthetic_citizen_adoption_tracer_v1" || parsed.environment !== "staging" ||
+      parsed.testOnly !== true || parsed.civicCaseCreated !== false || parsed.syntheticCaseCreated !== true ||
+      ["administrativeEndorsement", "bindingVote", "councilDecision", "treasuryEffect", "paymentEffect"].some((field) => parsed[field] !== false)) fail("case_binding_receipt_invalid");
+    additions = { candidateKind: "synthetic_citizen_adoption_tracer_v1", environment: "staging", testOnly: true,
+      civicCaseCreated: false, syntheticCaseCreated: true,
+      participantSuggestionEventId: text(parsed.participantSuggestionEventId, "case_binding_receipt_invalid", hex, 64),
+      adopterPubkey: text(parsed.adopterPubkey, "case_binding_receipt_invalid", hex, 64),
+      testPolicyVersion: text(parsed.testPolicyVersion, "case_binding_receipt_invalid", /^[a-z0-9][a-z0-9._-]{2,99}$/u, 100),
+      adoptionAcceptanceReceiptChecksum: text(parsed.adoptionAcceptanceReceiptChecksum, "case_binding_receipt_invalid", hex, 64),
+      sourceAnswerReceiptId: text(parsed.sourceAnswerReceiptId, "case_binding_receipt_invalid", /^urn:stadtstack:mecky-answer:[0-9a-f]{64}$/u, 128),
+      administrativeEndorsement: false, bindingVote: false, councilDecision: false, treasuryEffect: false, paymentEffect: false };
+  }
   if (checksum({ ...unsigned, ...additions }) !== receiptChecksum) fail("case_binding_receipt_checksum_invalid");
   const frozenEventIds = Object.freeze([...unsigned.caseEventIds]) as readonly [string, string, string];
   return Object.freeze({ ...unsigned, ...additions, caseEventIds: frozenEventIds, receiptChecksum }) as PublicCaseBindingReceipt;
@@ -205,6 +232,17 @@ export function createAdoptedCaseBindingReceipt(input: Omit<PublicAdoptedCaseBin
     administrativeEndorsement: false, bindingVote: false, councilDecision: false, openDeskWrite: false,
     treasuryEffect: false, paymentEffect: false };
   return verifyPublicCaseBindingReceipt({ ...unsigned, receiptChecksum: checksum(unsigned) }) as PublicAdoptedCaseBindingReceiptV2;
+}
+
+export function createSyntheticCaseBindingReceipt(input: Omit<PublicSyntheticCaseBindingReceiptV1,
+  "schemaVersion" | "receiptChecksum" | "authorityBinding" | "candidateKind" | "administrativeEndorsement" |
+  "bindingVote" | "councilDecision" | "openDeskWrite" | "treasuryEffect" | "paymentEffect" | "environment" |
+  "testOnly" | "civicCaseCreated" | "syntheticCaseCreated">): PublicSyntheticCaseBindingReceiptV1 {
+  const unsigned = { ...clone(input), schemaVersion: "public_synthetic_case_binding_receipt_v1",
+    candidateKind: "synthetic_citizen_adoption_tracer_v1", authorityBinding: "none", environment: "staging", testOnly: true,
+    civicCaseCreated: false, syntheticCaseCreated: true, administrativeEndorsement: false, bindingVote: false,
+    councilDecision: false, openDeskWrite: false, treasuryEffect: false, paymentEffect: false };
+  return verifyPublicCaseBindingReceipt({ ...unsigned, receiptChecksum: checksum(unsigned) }) as PublicSyntheticCaseBindingReceiptV1;
 }
 
 function response(status: CaseBindingProjectionResponse["status"], body: string, extra: Readonly<Record<string, string>> = {}): CaseBindingProjectionResponse {
@@ -243,7 +281,7 @@ export function createInMemoryCaseBindingProjection(
   };
   const reader = Object.freeze({
     get(caseId: string) {
-      if (typeof caseId !== "string" || !CASE_ID.test(caseId)) return null;
+      if (typeof caseId !== "string" || (!CASE_ID.test(caseId) && !SYNTHETIC_CASE_ID.test(caseId))) return null;
       const receipt = receipts.get(caseId);
       return receipt ? clone(receipt) : null;
     },
@@ -264,7 +302,7 @@ export function createInMemoryCaseBindingProjection(
         const body = `${canonical(receipt)}\n`;
         return response(200, body, { "x-stadtstack-receipt-sha256": receipt.receiptChecksum });
       }
-      const match = /^\/v1\/public\/case-bindings\/(urn:stadtstack:case:municipality:[a-z0-9-]+:[0-9a-f-]{36})$/u.exec(parsed.path);
+      const match = /^\/v1\/public\/case-bindings\/(urn:stadtstack:(?:case|synthetic-case):municipality:[a-z0-9-]+:[0-9a-f-]{36})$/u.exec(parsed.path);
       if (!match) return response(404, "binding_not_found\n");
       const receipt = receipts.get(match[1]!);
       if (!receipt) return response(404, "binding_not_found\n");

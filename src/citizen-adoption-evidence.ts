@@ -149,7 +149,7 @@ function boundedText(value: unknown, limit: number, multiline = false): string {
   return value;
 }
 
-function discussion(root: NostrEvent, policy: CitizenAdoptionEvidencePolicy): string {
+function discussion(root: NostrEvent, policy: Pick<CitizenAdoptionEvidencePolicy, "municipalityId" | "allowedAgentPubkeys">): string {
   const agent = tag(root, "p")?.[1];
   const source = tag(root, "source-post")?.[1];
   const topic = tag(root, "topic")?.[1];
@@ -183,7 +183,7 @@ function discussion(root: NostrEvent, policy: CitizenAdoptionEvidencePolicy): st
   return topic;
 }
 
-function sources(bundle: CitizenAdoptionEvidenceBundle, policy: CitizenAdoptionEvidencePolicy) {
+function sources(bundle: Pick<CitizenAdoptionEvidenceBundle, "sourceDiscussion" | "sourceAnswer" | "participantSuggestionEvent" | "adoptionEvent">, policy: Pick<CitizenAdoptionEvidencePolicy, "municipalityId" | "allowedAgentPubkeys">) {
   const root = event(bundle.sourceDiscussion);
   const answer = event(bundle.sourceAnswer);
   const suggestion = event(bundle.participantSuggestionEvent);
@@ -509,4 +509,194 @@ export function createCitizenAdoptionEvidenceVerifier(dependencies: CitizenAdopt
       } finally { if (timer) clearTimeout(timer); controller.abort(); }
     },
   });
+}
+
+/** A separate staging protocol. It never produces municipal eligibility. */
+export type SyntheticAdoptionEvidencePolicy = Readonly<{
+  municipalityId: string;
+  policyVersion: string;
+  allowedAgentPubkeys: readonly string[];
+  testCitizenNftContract: string;
+  challengeTtlSeconds: 300;
+  maxEventClockSkewSeconds: number;
+  environment: "staging";
+  testOnly: true;
+}>;
+export type SyntheticAdoptionEvidenceBundle = Readonly<{
+  schemaVersion: "synthetic_citizen_adoption_case_input_v1";
+  sourceDiscussion: NostrEvent;
+  sourceAnswer: NostrEvent;
+  participantSuggestionEvent: NostrEvent;
+  proofEvent: NostrEvent;
+}>;
+export type SyntheticAdoptionAcceptanceReader = Readonly<{
+  resolve(input: Readonly<{ participantSuggestionId: string; adopterPubkey: string; signal: AbortSignal }>): Promise<unknown>;
+}>;
+export type VerifiedSyntheticAdoptionEvidence = Readonly<{
+  schemaVersion: "verified_synthetic_adoption_evidence_v1";
+  bundle: SyntheticAdoptionEvidenceBundle;
+  projection: Readonly<Record<string, unknown>>;
+  verifiedAt: number;
+  environment: "staging";
+  testOnly: true;
+  authorityBinding: "none";
+}>;
+export type SyntheticAdoptionVerificationDependencies = Readonly<{
+  policy: SyntheticAdoptionEvidencePolicy;
+  acceptance: SyntheticAdoptionAcceptanceReader;
+  now?: () => Date;
+  timeoutMs?: number;
+}>;
+
+export function verifySyntheticAdoptionPolicy(input: unknown): SyntheticAdoptionEvidencePolicy {
+  const policy = exact(snapshot(input), ["municipalityId", "policyVersion", "allowedAgentPubkeys",
+    "testCitizenNftContract", "challengeTtlSeconds", "maxEventClockSkewSeconds", "environment", "testOnly"]);
+  if (policy.environment !== "staging" || policy.testOnly !== true || policy.challengeTtlSeconds !== 300 ||
+    typeof policy.municipalityId !== "string" || !SLUG.test(policy.municipalityId) ||
+    typeof policy.policyVersion !== "string" || !POLICY.test(policy.policyVersion) ||
+    typeof policy.testCitizenNftContract !== "string" || !/^0x[0-9a-f]{40}$/u.test(policy.testCitizenNftContract) ||
+    policy.testCitizenNftContract === `0x${"0".repeat(40)}` ||
+    !integer(policy.maxEventClockSkewSeconds) || policy.maxEventClockSkewSeconds > 300 ||
+    !Array.isArray(policy.allowedAgentPubkeys) || !policy.allowedAgentPubkeys.length ||
+    policy.allowedAgentPubkeys.some((key) => typeof key !== "string" || !HEX.test(key)) ||
+    new Set(policy.allowedAgentPubkeys).size !== policy.allowedAgentPubkeys.length) fail("synthetic_adoption_policy_invalid");
+  return policy as SyntheticAdoptionEvidencePolicy;
+}
+
+export function readSyntheticAdoptionBundle(input: unknown): SyntheticAdoptionEvidenceBundle {
+  const parsed = exact(snapshot(input), ["schemaVersion", "sourceDiscussion", "sourceAnswer", "participantSuggestionEvent", "proofEvent"]);
+  if (parsed.schemaVersion !== "synthetic_citizen_adoption_case_input_v1") fail("synthetic_adoption_bundle_invalid");
+  return parsed as SyntheticAdoptionEvidenceBundle;
+}
+
+function inspectSyntheticBundle(input: unknown, policy: SyntheticAdoptionEvidencePolicy) {
+  const bundle = readSyntheticAdoptionBundle(input);
+  // Share only signature/source provenance checks with municipal adoption.
+  // The fourth event is a test challenge, never an eligibility adoption.
+  const source = sources({ ...bundle, adoptionEvent: bundle.proofEvent }, policy);
+  const challenge = content(bundle.proofEvent);
+  if (!integer(challenge.issuedAt) || !integer(challenge.expiresAt) ||
+    challenge.expiresAt - challenge.issuedAt !== policy.challengeTtlSeconds ||
+    challenge.issuedAt < source.suggestion.created_at || source.adoption.created_at < challenge.issuedAt ||
+    source.adoption.created_at >= challenge.expiresAt || typeof challenge.challengeId !== "string" ||
+    !/^[0-9a-f]{32}$/u.test(challenge.challengeId)) fail("synthetic_adoption_challenge_invalid");
+  same(challenge, { schemaVersion: "staging_test_citizen_pass_v1",
+    audience: "roebel-staging-synthetic-citizen-adoption", authorityBinding: "none", chainId: 100,
+    challengeId: challenge.challengeId, environment: "staging", expiresAt: challenge.expiresAt, issuedAt: challenge.issuedAt,
+    municipalityId: policy.municipalityId, participantSuggestionId: source.suggestion.id,
+    policyVersion: policy.policyVersion, subjectPubkey: source.adoption.pubkey,
+    testCitizenNftContract: policy.testCitizenNftContract, testOnly: true, topicId: source.topicId });
+  same(source.adoption.tags, [["schema", "staging_test_citizen_pass_proof_v1"], ["challenge", challenge.challengeId],
+    ["e", source.suggestion.id, "", "synthetic-adoption-test"], ["municipality", policy.municipalityId], ["test-only", "true"]]);
+  const tracerCore = {
+    municipalityId: policy.municipalityId, topicId: source.topicId, participantSuggestionId: source.suggestion.id,
+    participantSuggestionRef: `nostr://event/${source.suggestion.id}`, participantPubkey: source.root.pubkey,
+    sourceDiscussionId: source.root.id, sourceAnswerReceiptId: source.draftCore.sourceAnswerReceiptId,
+    adopterPubkey: source.adoption.pubkey, proofEventId: source.adoption.id,
+    title: source.draftCore.title, summary: source.draftCore.summary,
+  };
+  const tracer = { schemaVersion: "synthetic_citizen_adoption_tracer_v1",
+    tracerId: `urn:stadtstack:synthetic-citizen-adoption-tracer:${digest(tracerCore)}`, ...tracerCore,
+    entryState: "synthetic_journey_preview_only", environment: "staging", testOnly: true,
+    authorityBinding: "none", submittedToCivicWorkflow: false };
+  return { bundle, source, challenge, tracer };
+}
+
+function inspectSyntheticProjection(input: unknown, checked: ReturnType<typeof inspectSyntheticBundle>,
+  policy: SyntheticAdoptionEvidencePolicy, verifiedAt: number) {
+  const projection = object(snapshot(input));
+  const acceptance = object(projection.acceptanceReceipt);
+  const { source, challenge, tracer } = checked;
+  if (!integer(verifiedAt) || !integer(acceptance.receivedAt) || acceptance.receivedAt > verifiedAt ||
+    acceptance.receivedAt < (challenge.issuedAt as number) || acceptance.receivedAt >= (challenge.expiresAt as number) ||
+    Math.abs(acceptance.receivedAt - source.adoption.created_at) > policy.maxEventClockSkewSeconds ||
+    typeof acceptance.requestChecksum !== "string" || !HEX.test(acceptance.requestChecksum)) fail("synthetic_adoption_acceptance_invalid");
+  // The request checksum covers private wallet/session transport, which stays
+  // at the ledger. It is opaque here, not reconstructed or treated as a proof.
+  const core = { schemaVersion: "synthetic_citizen_adoption_tracer_acceptance_v1", tracerId: tracer.tracerId,
+    proofEventId: source.adoption.id, municipalityId: policy.municipalityId, topicId: source.topicId,
+    participantSuggestionId: source.suggestion.id, adopterPubkey: source.adoption.pubkey,
+    requestChecksum: acceptance.requestChecksum, eventCreatedAt: source.adoption.created_at, receivedAt: acceptance.receivedAt,
+    policyVersion: policy.policyVersion, status: "accepted_for_synthetic_preview", environment: "staging", testOnly: true, authorityBinding: "none" };
+  same(projection, { schemaVersion: "public_synthetic_citizen_adoption_projection_v1",
+    participantSuggestionId: source.suggestion.id, proofEvent: source.adoption, tracer,
+    acceptanceReceipt: { ...core, receiptChecksum: digest(core) },
+    labels: { citizenship: "Test-Bürger-Pass – keine reale Bürgerberechtigung",
+      civicWorkflow: "Nur synthetische Vorschau – kein CivicCase und keine Verwaltungsbefürwortung",
+      governance: "Keine bindende Abstimmung, kein Beschluss, keine Treasury-Wirkung und keine Zahlung" },
+    entryState: "synthetic_journey_preview_only", environment: "staging", testOnly: true, authorityBinding: "none",
+    submittedToCivicWorkflow: false, civicCaseCreated: false, administrativeEndorsement: false,
+    bindingVote: false, councilDecision: false, treasuryEffect: false, paymentEffect: false });
+  return projection;
+}
+
+/** Replay validates the saved test protocol, not fresh eligibility or admission authority. */
+export function verifyRecordedSyntheticAdoptionEvidence(input: unknown, policyInput: SyntheticAdoptionEvidencePolicy): VerifiedSyntheticAdoptionEvidence {
+  const parsed = exact(snapshot(input), ["schemaVersion", "bundle", "projection", "verifiedAt", "environment", "testOnly", "authorityBinding"]);
+  if (parsed.schemaVersion !== "verified_synthetic_adoption_evidence_v1" || parsed.environment !== "staging" ||
+    parsed.testOnly !== true || parsed.authorityBinding !== "none" || !integer(parsed.verifiedAt)) fail("synthetic_adoption_record_invalid");
+  const policy = verifySyntheticAdoptionPolicy(policyInput);
+  const checked = inspectSyntheticBundle(parsed.bundle, policy);
+  const projection = inspectSyntheticProjection(parsed.projection, checked, policy, parsed.verifiedAt);
+  return Object.freeze({ schemaVersion: "verified_synthetic_adoption_evidence_v1", bundle: checked.bundle,
+    projection, verifiedAt: parsed.verifiedAt, environment: "staging", testOnly: true, authorityBinding: "none" });
+}
+
+/** The ledger reader is deployment-owned; HTTP callers supply only signed events. */
+export function createSyntheticAdoptionEvidenceVerifier(dependencies: SyntheticAdoptionVerificationDependencies) {
+  const policy = verifySyntheticAdoptionPolicy(dependencies.policy);
+  const timeoutMs = dependencies.timeoutMs ?? 10_000;
+  if (!integer(timeoutMs) || timeoutMs < 1 || timeoutMs > 10_000 || typeof dependencies.acceptance?.resolve !== "function" ||
+    (dependencies.now !== undefined && typeof dependencies.now !== "function")) fail("synthetic_adoption_policy_invalid");
+  const resolve = dependencies.acceptance.resolve.bind(dependencies.acceptance);
+  const now = dependencies.now ?? (() => new Date());
+  return Object.freeze({ async verify(input: unknown): Promise<VerifiedSyntheticAdoptionEvidence> {
+    const startedAt = Math.floor(now().getTime() / 1_000);
+    if (!integer(startedAt)) fail("synthetic_adoption_time_invalid");
+    const deadline = performance.now() + timeoutMs;
+    const checked = inspectSyntheticBundle(input, policy);
+    if (performance.now() >= deadline) fail("synthetic_adoption_verification_timeout");
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const projection = await Promise.race([
+        new Promise<never>((_, reject) => { timer = setTimeout(() => {
+          controller.abort(); reject(new Error("synthetic_adoption_verification_timeout"));
+        }, Math.max(0, deadline - performance.now())); }),
+        resolve({ participantSuggestionId: checked.source.suggestion.id, adopterPubkey: checked.source.adoption.pubkey, signal: controller.signal }),
+      ]);
+      const verifiedAt = Math.floor(now().getTime() / 1_000);
+      if (performance.now() >= deadline) fail("synthetic_adoption_verification_timeout");
+      if (!integer(verifiedAt) || verifiedAt < startedAt) fail("synthetic_adoption_time_invalid");
+      const inspected = inspectSyntheticProjection(projection, checked, policy, verifiedAt);
+      if (performance.now() >= deadline) fail("synthetic_adoption_verification_timeout");
+      return Object.freeze({ schemaVersion: "verified_synthetic_adoption_evidence_v1", bundle: checked.bundle,
+        projection: inspected, verifiedAt,
+        environment: "staging", testOnly: true, authorityBinding: "none" });
+    } finally { if (timer) clearTimeout(timer); controller.abort(); }
+  } });
+}
+
+export function createSyntheticAdoptionAcceptanceReader(config: Readonly<{ baseUrl: string; fetch?: typeof fetch }>): SyntheticAdoptionAcceptanceReader {
+  const baseUrl = config.baseUrl;
+  let base: URL;
+  try { base = new URL(baseUrl); } catch { fail("synthetic_adoption_acceptance_config_invalid"); }
+  const request = config.fetch ?? globalThis.fetch;
+  if (typeof baseUrl !== "string" || baseUrl.length > 2_048 || base.protocol !== "https:" || base.username || base.password ||
+    base.hash || base.search || base.pathname.endsWith("/") || base.href !== baseUrl || typeof request !== "function") fail("synthetic_adoption_acceptance_config_invalid");
+  return Object.freeze({ async resolve({ participantSuggestionId, adopterPubkey, signal }) {
+    if (typeof participantSuggestionId !== "string" || typeof adopterPubkey !== "string" || !HEX.test(participantSuggestionId) || !HEX.test(adopterPubkey)) fail("synthetic_adoption_acceptance_invalid");
+    signal.throwIfAborted();
+    try {
+      const response = await request(`${baseUrl}/${participantSuggestionId}/adopter/${adopterPubkey}`, {
+        method: "GET", redirect: "error", credentials: "omit", cache: "no-store", signal, headers: { accept: "application/json" },
+      });
+      if (response.status !== 200 || response.redirected) {
+        void response.body?.cancel().catch(() => {}); fail("synthetic_adoption_acceptance_unavailable");
+      }
+      const projection = object(await responseJson(response, signal));
+      if (projection.participantSuggestionId !== participantSuggestionId || object(projection.tracer).adopterPubkey !== adopterPubkey) fail("synthetic_adoption_acceptance_invalid");
+      return projection;
+    } catch { fail("synthetic_adoption_acceptance_unavailable"); }
+  } });
 }

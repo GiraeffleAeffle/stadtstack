@@ -79,8 +79,8 @@ The three future Case component images have a separate, remote-only publisher
 with a closed `git archive` build context, retry-safe immutable source tags,
 GitHub-OIDC provenance, SPDX SBOM evidence, and anonymous digest-pull
 verification. The images contain only an activation blocker, not Case source
-or dependencies. They are intentionally activation-blocked until the reviewed
-ADR 0023 recovery gate and runtime composition exist; see
+or dependencies. Control and public startup require separately reviewed
+Operations bindings and activation evidence; the restore target remains blocked. See
 [Case image publishing](docs/CASE_IMAGE_PUBLISHING.md).
 
 The reviewed-source runtime has the same remote-only immutable-source evidence
@@ -103,6 +103,8 @@ The initial Röbel tracer is recorded in the historical
 [2026-08-22 staging snapshot](docs/verification/2026-08-22-roebel-staging.md).
 [ADR 0031](docs/adr/0031-citizen-adoption-evidence-before-case-admission.md)
 describes the current adoption implementation and its remaining activation work.
+[ADR 0032](docs/adr/0032-isolate-synthetic-case-admission.md) describes the separate
+staging test admission, its no-authority receipt and remaining browser/activation work.
 
 ## Contributing and licensing
 
