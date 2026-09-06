@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
-import { MUNICIPAL_CASE_ID, UUID_V7 } from "./case-id.ts";
+import { MUNICIPAL_CASE_ID, SYNTHETIC_CASE_ID, UUID_V7 } from "./case-id.ts";
 
 import {
   createInMemoryCaseBindingProjection,
@@ -114,7 +114,7 @@ function deepFreeze<T>(value: T): T {
 
 function validCaseId(value: unknown): value is string {
   if (typeof value !== "string") return false;
-  const match = CASE_ID.exec(value);
+  const match = CASE_ID.exec(value) ?? SYNTHETIC_CASE_ID.exec(value);
   return match !== null && UUID_V7.test(match[2]!);
 }
 

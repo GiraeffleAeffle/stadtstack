@@ -103,6 +103,8 @@ The initial Röbel tracer is recorded in the historical
 [2026-08-22 staging snapshot](docs/verification/2026-08-22-roebel-staging.md).
 [ADR 0031](docs/adr/0031-citizen-adoption-evidence-before-case-admission.md)
 describes the current adoption implementation and its remaining activation work.
+[ADR 0032](docs/adr/0032-isolate-synthetic-case-admission.md) describes the separate
+staging test admission, its no-authority receipt and remaining browser/activation work.
 
 ## Contributing and licensing
 

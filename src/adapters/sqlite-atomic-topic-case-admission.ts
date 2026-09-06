@@ -30,17 +30,19 @@ import {
   type CaseStateRecoveryEvidenceV1,
 } from "../case-state-recovery-evidence.ts";
 
-import { createCitizenAdoptionEvidenceVerifier, verifyCitizenAdoptionPolicy, readCitizenAdoptionBundle,
+import { createSyntheticAdoptionEvidenceVerifier, verifySyntheticAdoptionPolicy, readSyntheticAdoptionBundle,
+  type SyntheticAdoptionVerificationDependencies, type SyntheticAdoptionEvidenceBundle, createCitizenAdoptionEvidenceVerifier, verifyCitizenAdoptionPolicy, readCitizenAdoptionBundle,
   type CitizenAdoptionVerificationDependencies, type CitizenAdoptionEvidenceBundle } from "../citizen-adoption-evidence.ts";
-import { verifyCitizenAdoptionCaseAdmission, citizenAdoptionBindingReceipt,
+import { verifySyntheticAdoptionCaseAdmission, syntheticAdoptionBindingReceipt, type VerifiedSyntheticAdoptionCaseAdmission, verifyCitizenAdoptionCaseAdmission, citizenAdoptionBindingReceipt,
   type VerifiedCitizenAdoptionCaseAdmission } from "../citizen-adoption-case-admission.ts";
-import type { AtomicCitizenAdoptionAdmissionV1 } from "../roebel-control-service.ts";
+import type { AtomicSyntheticAdoptionAdmissionV1, AtomicCitizenAdoptionAdmissionV1 } from "../roebel-control-service.ts";
 import {
   createPublicCaseBindingReceipt,
   verifyPublicCaseBindingReceipt,
   type PublicCaseBindingReceipt,
   type PublicCaseBindingReceiptV1,
   type PublicAdoptedCaseBindingReceiptV2,
+  type PublicSyntheticCaseBindingReceiptV1,
 } from "../case-binding-projection.ts";
 import type {
   SynchronousCredentialFreeCaseBindingOutboxReader,
@@ -104,6 +106,7 @@ import {
   LEGACY_TEST_CASE_ID_PREFIX,
   isLegacyTestCaseId,
   parseMunicipalCaseId,
+  parseSyntheticCaseId,
 } from "../case-id.ts";
 
 const SCHEMA_VERSION = "sqlite_atomic_topic_case_admission_v1";
@@ -154,6 +157,7 @@ type CaseRecoveryActivationMarkerV2 = Readonly<{
 export type SqliteAtomicTopicCaseAdmissionOptions = {
   /** Pins a fresh issuer/ledger reader and exclusively enables citizen adoption. */
   citizenAdoption?: CitizenAdoptionVerificationDependencies;
+  syntheticAdoption?: SyntheticAdoptionVerificationDependencies;
   rootDir: string;
   municipalityId: string;
   policyVersion: string;
@@ -378,8 +382,8 @@ function recoveryAuthorization(value: unknown, code: string): StagingCaseRecover
   return value as StagingCaseRecoveryActivationAuthorization;
 }
 
-function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required<Omit<SqliteAtomicTopicCaseAdmissionOptions, "citizenAdoption" | "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization">> & Pick<SqliteAtomicTopicCaseAdmissionOptions, "citizenAdoption" | "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization"> {
-  const parsed = allowedKeys(input, ["citizenAdoption", "actorRegistry", "allowedAgentPubkeys", "allowedSignerPubkeys", "deploymentClaimToken", "durableState", "failpoint", "municipalityId", "policyVersion", "recoveryActivationAuthorization", "requiredDepartmentIds", "rootDir"], "atomic_admission_options_invalid");
+function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required<Omit<SqliteAtomicTopicCaseAdmissionOptions, "citizenAdoption" | "syntheticAdoption" | "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization">> & Pick<SqliteAtomicTopicCaseAdmissionOptions, "citizenAdoption" | "syntheticAdoption" | "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization"> {
+  const parsed = allowedKeys(input, ["citizenAdoption", "syntheticAdoption", "actorRegistry", "allowedAgentPubkeys", "allowedSignerPubkeys", "deploymentClaimToken", "durableState", "failpoint", "municipalityId", "policyVersion", "recoveryActivationAuthorization", "requiredDepartmentIds", "rootDir"], "atomic_admission_options_invalid");
   if (typeof parsed.municipalityId !== "string" || !MUNICIPALITY_ID.test(parsed.municipalityId) ||
     typeof parsed.policyVersion !== "string" || !/^[A-Za-z0-9:._-]{1,256}$/u.test(parsed.policyVersion) ||
     (parsed.failpoint !== undefined && parsed.failpoint !== "after_root_claim" && parsed.failpoint !== "after_case_events" && parsed.failpoint !== "after_binding_receipt")) fail("atomic_admission_options_invalid");
@@ -394,6 +398,7 @@ function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required
       fail("atomic_admission_options_invalid");
     }
   }
+  if (parsed.citizenAdoption !== undefined && parsed.syntheticAdoption !== undefined) fail("atomic_admission_options_invalid");
   let citizenAdoption: CitizenAdoptionVerificationDependencies | undefined;
   if (parsed.citizenAdoption !== undefined) {
     const deps = allowedKeys(parsed.citizenAdoption, ["policy", "acceptance", "fetch", "now", "timeoutMs"], "atomic_admission_options_invalid");
@@ -403,11 +408,20 @@ function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required
     citizenAdoption = Object.freeze({ ...deps, policy }) as CitizenAdoptionVerificationDependencies;
     createCitizenAdoptionEvidenceVerifier(citizenAdoption); // Validate ports before opening any store.
   }
+  let syntheticAdoption: SyntheticAdoptionVerificationDependencies | undefined;
+  if (parsed.syntheticAdoption !== undefined) {
+    const deps = allowedKeys(parsed.syntheticAdoption, ["policy", "acceptance", "now", "timeoutMs"], "atomic_admission_options_invalid");
+    const policy = verifySyntheticAdoptionPolicy(deps.policy);
+    if (policy.municipalityId !== parsed.municipalityId || policy.policyVersion !== parsed.policyVersion ||
+      canonicalJson([...policy.allowedAgentPubkeys].sort()) !== canonicalJson([...frozenStringSet(parsed.allowedAgentPubkeys, "atomic_admission_options_invalid")].sort())) fail("atomic_admission_options_invalid");
+    syntheticAdoption = Object.freeze({ ...deps, policy }) as SyntheticAdoptionVerificationDependencies;
+    createSyntheticAdoptionEvidenceVerifier(syntheticAdoption);
+  }
   return Object.freeze({
     rootDir: resolvedDurableState ? safeDurableRoot(parsed.rootDir as string) : safeRoot(parsed.rootDir as string), municipalityId: parsed.municipalityId,
     policyVersion: parsed.policyVersion, actorRegistry: actorRegistry(parsed.actorRegistry, "atomic_admission_options_invalid"),
-    allowedSignerPubkeys: frozenStringSet(parsed.allowedSignerPubkeys, "atomic_admission_options_invalid", Boolean(citizenAdoption)),
-    citizenAdoption,
+    allowedSignerPubkeys: frozenStringSet(parsed.allowedSignerPubkeys, "atomic_admission_options_invalid", Boolean(citizenAdoption || syntheticAdoption)),
+    citizenAdoption, syntheticAdoption,
     allowedAgentPubkeys: frozenStringSet(parsed.allowedAgentPubkeys, "atomic_admission_options_invalid"),
     requiredDepartmentIds: requiredDepartments(parsed.requiredDepartmentIds, "atomic_admission_options_invalid"),
     failpoint: parsed.failpoint as SqliteAtomicTopicCaseAdmissionOptions["failpoint"],
@@ -1236,6 +1250,8 @@ export function createSqliteAtomicTopicCaseAdmission(
   input: SqliteAtomicTopicCaseAdmissionOptions,
 ): SqliteAtomicTopicCaseAdmission {
   const config = validateOptions(input);
+  const parseCaseId = config.syntheticAdoption ? parseSyntheticCaseId : parseMunicipalCaseId;
+  const syntheticVerifier = config.syntheticAdoption ? createSyntheticAdoptionEvidenceVerifier(config.syntheticAdoption) : undefined;
   const citizenVerifier = config.citizenAdoption ? createCitizenAdoptionEvidenceVerifier(config.citizenAdoption) : undefined;
   const now = config.citizenAdoption?.now ?? (() => new Date());
   if (config.requiredDepartmentIds) {
@@ -1248,6 +1264,7 @@ export function createSqliteAtomicTopicCaseAdmission(
   const configFingerprint = checksum({
     schemaVersion: SCHEMA_VERSION, municipalityId: config.municipalityId, policyVersion: config.policyVersion,
     ...(config.citizenAdoption ? { citizenAdoptionPolicy: config.citizenAdoption.policy } : {}),
+    ...(config.syntheticAdoption ? { syntheticAdoptionPolicy: config.syntheticAdoption.policy } : {}),
     actorRegistry: [...config.actorRegistry].sort((left, right) => `${left.actorClass}:${left.actorId}`.localeCompare(`${right.actorClass}:${right.actorId}`)),
     requiredDepartmentIds: config.requiredDepartmentIds ? [...config.requiredDepartmentIds].sort() : [],
     allowedSignerPubkeys: [...config.allowedSignerPubkeys].sort(),
@@ -1524,10 +1541,11 @@ export function createSqliteAtomicTopicCaseAdmission(
     createCivicCaseCoordinator({
       jurisdictionValue: config.municipalityId, uuidV7, canonicalCaseId: caseId,
       policyVersion: config.policyVersion, syntheticFixtureOnly: true,
-      requireSignedSuggestionAdmission: true, allowedSignerPubkeys: config.citizenAdoption ? undefined : [...config.allowedSignerPubkeys],
+      requireSignedSuggestionAdmission: true, allowedSignerPubkeys: (config.citizenAdoption || config.syntheticAdoption) ? undefined : [...config.allowedSignerPubkeys],
       allowedAgentPubkeys: [...config.allowedAgentPubkeys], actors: config.actorRegistry,
       requiredDepartmentIds: config.requiredDepartmentIds, journalPort: journal, journalNamespace: journal.namespace,
       ...(config.citizenAdoption ? { citizenAdoptionPolicy: config.citizenAdoption.policy } : {}),
+      ...(config.syntheticAdoption ? { syntheticAdoptionPolicy: config.syntheticAdoption.policy } : {}),
     });
 
   const validateCaseUnit = (meta: CaseMetaRow): PublicCaseBindingReceipt => {
@@ -1569,6 +1587,13 @@ export function createSqliteAtomicTopicCaseAdmission(
         eventIds: events.slice(0, 3).map((event) => event.eventId), journalHeadChecksum: events[2]!.eventChecksum,
       });
       if (canonicalJson(rebuilt) !== canonicalJson(receipt)) fail("atomic_admission_unit_corrupt");
+    } else if (events[2]?.eventType === "synthetic_adoption_admitted_v1") {
+      if (!config.syntheticAdoption || !plain(admissionPayload)) fail("atomic_admission_unit_corrupt");
+      const verified = verifySyntheticAdoptionCaseAdmission(admissionPayload.evidence, config.syntheticAdoption.policy);
+      const rebuilt = syntheticAdoptionBindingReceipt(verified, {
+        eventIds: events.slice(0, 3).map((event) => event.eventId), journalHeadChecksum: events[2]!.eventChecksum,
+      });
+      if (canonicalJson(rebuilt) !== canonicalJson(receipt)) fail("atomic_admission_unit_corrupt");
     } else {
       if (!plain(discussionPayload) || !plain(admissionPayload) ||
         !plain(discussionPayload.discussion) || !plain(admissionPayload.signedSuggestion) ||
@@ -1596,6 +1621,7 @@ export function createSqliteAtomicTopicCaseAdmission(
     }
     const initialKey = receipt.schemaVersion === "public_case_binding_receipt_v2"
       ? `roebel:admit-citizen-adoption:${claim.candidate_event_id}`
+      : receipt.schemaVersion === "public_synthetic_case_binding_receipt_v1" ? `roebel:admit-synthetic-adoption:${claim.candidate_event_id}`
       : `roebel:admit-signed-topic-suggestion:${claim.candidate_event_id}`;
     const initial = idempotency.find((entry) => entry.idempotency_key === initialKey);
     if (!initial || typeof initial.fingerprint !== "string" || initial.fingerprint.length < 1) fail("atomic_admission_unit_corrupt");
@@ -1607,7 +1633,7 @@ export function createSqliteAtomicTopicCaseAdmission(
     const outbox = db.prepare("SELECT receipt_json,receipt_checksum FROM atomic_binding_outbox WHERE case_id=?").get(meta.case_id) as { receipt_json: string; receipt_checksum: string } | undefined;
     if (!outbox || outbox.receipt_checksum !== receipt.receiptChecksum ||
       JSON.stringify(responseReceipt({ receipt_json: outbox.receipt_json })) !== JSON.stringify(receipt)) fail("atomic_admission_unit_corrupt");
-    const parsedCaseId = parseMunicipalCaseId(meta.case_id);
+    const parsedCaseId = parseCaseId(meta.case_id);
     const uuidV7 = parsedCaseId?.municipalityId === config.municipalityId ? parsedCaseId.uuidV7 : "";
     if (!UUID_V7.test(uuidV7) || meta.namespace !== caseNamespace(uuidV7)) fail("atomic_admission_unit_corrupt");
     // Constructor recovery replays the entire journal with the exact pinned
@@ -1763,35 +1789,45 @@ export function createSqliteAtomicTopicCaseAdmission(
     }
   }
 
-  const adoptionRetry = (bundle: CitizenAdoptionEvidenceBundle, actorBinding: ActorBinding): PublicAdoptedCaseBindingReceiptV2 | null => withReadSnapshot(() => {
+  const adoptionRetry = (bundle: CitizenAdoptionEvidenceBundle | SyntheticAdoptionEvidenceBundle, actorBinding: ActorBinding): PublicAdoptedCaseBindingReceiptV2 | PublicSyntheticCaseBindingReceiptV1 | null => withReadSnapshot(() => {
     const claim = db.prepare("SELECT candidate_event_id,case_id FROM atomic_root_claims WHERE municipality_id=? AND root_event_id=?")
       .get(config.municipalityId, bundle.sourceDiscussion?.id ?? "") as { candidate_event_id: string; case_id: string } | undefined;
     if (!claim) return null;
-    if (claim.candidate_event_id !== bundle.adoptionEvent?.id) fail("case_binding_root_conflict");
+    if (claim.candidate_event_id !== ("proofEvent" in bundle ? bundle.proofEvent?.id : bundle.adoptionEvent?.id)) fail("case_binding_root_conflict");
     const meta = readCaseMeta(claim.case_id);
     if (!meta) fail("atomic_admission_unit_corrupt");
     const receipt = validateCaseUnit(meta);
     const row = db.prepare("SELECT actor_json,payload_json FROM atomic_case_events WHERE case_id=? AND case_version=3")
       .get(meta.case_id) as { actor_json: string; payload_json: string };
     const recorded = parseJson(row.payload_json, "atomic_admission_unit_corrupt") as { evidence?: { bundle?: unknown } };
-    if (receipt.schemaVersion !== "public_case_binding_receipt_v2" || canonicalJson(recorded.evidence?.bundle) !== canonicalJson(bundle) ||
+    if (receipt.schemaVersion !== (config.syntheticAdoption ? "public_synthetic_case_binding_receipt_v1" : "public_case_binding_receipt_v2") || canonicalJson(recorded.evidence?.bundle) !== canonicalJson(bundle) ||
       row.actor_json !== canonicalJson(actorBinding)) fail("idempotency_conflict");
     return receipt;
   });
 
-  const admit = async (callerInput: AtomicTopicCaseAdmissionV1 | AtomicCitizenAdoptionAdmissionV1): Promise<PublicCaseBindingReceipt> => {
+  const admit = async (callerInput: AtomicTopicCaseAdmissionV1 | AtomicCitizenAdoptionAdmissionV1 | AtomicSyntheticAdoptionAdmissionV1): Promise<PublicCaseBindingReceipt> => {
     ensureOpen();
     const shape = allowedKeys(callerInput, ["actorBinding", "caseId", "expectedCaseVersion", "idempotencyKey", "municipalityId", "policyVersion", "rootEventId", "schemaVersion", "sourceDiscussion", "verifiedAdmission", "bundle"], "atomic_admission_input_invalid");
+    const simulating = shape.schemaVersion === "atomic_synthetic_adoption_admission_v1";
     const adopting = shape.schemaVersion === "atomic_citizen_adoption_admission_v1";
-    const raw = ownKeys(shape, adopting ? ["schemaVersion", "municipalityId", "policyVersion", "actorBinding", "expectedCaseVersion", "bundle"] :
+    const raw = ownKeys(shape, (adopting || simulating) ? ["schemaVersion", "municipalityId", "policyVersion", "actorBinding", "expectedCaseVersion", "bundle"] :
       ["actorBinding", "caseId", "expectedCaseVersion", "idempotencyKey", "municipalityId", "policyVersion", "rootEventId", "schemaVersion", "sourceDiscussion", "verifiedAdmission"], "atomic_admission_input_invalid");
     const authenticatedActor = actor(raw.actorBinding, "atomic_admission_input_invalid");
-    if ((!adopting && raw.schemaVersion !== "atomic_topic_case_admission_v1") || raw.municipalityId !== config.municipalityId ||
+    if ((!adopting && !simulating && raw.schemaVersion !== "atomic_topic_case_admission_v1") || raw.municipalityId !== config.municipalityId ||
       raw.policyVersion !== config.policyVersion || raw.expectedCaseVersion !== 0 || !registryHas(config.actorRegistry, authenticatedActor) ||
-      adopting !== Boolean(citizenVerifier)) fail("atomic_admission_input_invalid");
-    let verified: VerifiedTopicCaseAdmissionV1 | VerifiedCitizenAdoptionCaseAdmission;
-    let bundle: CitizenAdoptionEvidenceBundle | undefined;
-    if (adopting) {
+      adopting !== Boolean(citizenVerifier) || simulating !== Boolean(syntheticVerifier)) fail("atomic_admission_input_invalid");
+    let verified: VerifiedTopicCaseAdmissionV1 | VerifiedCitizenAdoptionCaseAdmission | VerifiedSyntheticAdoptionCaseAdmission;
+    let bundle: CitizenAdoptionEvidenceBundle | SyntheticAdoptionEvidenceBundle | undefined;
+    if (simulating) {
+      bundle = readSyntheticAdoptionBundle(raw.bundle);
+      const existing = adoptionRetry(bundle, authenticatedActor);
+      if (existing) return clone(existing);
+      const evidence = await syntheticVerifier!.verify(bundle);
+      ensureOpen();
+      verified = verifySyntheticAdoptionCaseAdmission(evidence, config.syntheticAdoption!.policy);
+      const raced = adoptionRetry(bundle, authenticatedActor);
+      if (raced) return clone(raced);
+    } else if (adopting) {
       bundle = readCitizenAdoptionBundle(raw.bundle);
       const existing = adoptionRetry(bundle, authenticatedActor);
       if (existing) return clone(existing);
@@ -1817,13 +1853,15 @@ export function createSqliteAtomicTopicCaseAdmission(
         raw.idempotencyKey !== `roebel:admit-signed-topic-suggestion:${direct.signedSuggestion.event.id}`) fail("atomic_admission_binding_invalid");
       verified = direct;
     }
-    const adopted = "evidence" in verified ? verified : undefined;
+    const adopted = "requestNonce" in verified ? verified : undefined;
+    const synthetic = !adopted && "evidence" in verified ? verified as VerifiedSyntheticAdoptionCaseAdmission : undefined;
+    const admission = adopted ?? synthetic;
     const direct = "signedSuggestion" in verified ? verified : undefined;
-    const candidateEventId = adopted ? adopted.candidateEventId : direct!.signedSuggestion.event.id;
-    const idempotencyKey = adopted ? adopted.idempotencyKey : `roebel:admit-signed-topic-suggestion:${candidateEventId}`;
+    const candidateEventId = admission ? admission.candidateEventId : direct!.signedSuggestion.event.id;
+    const idempotencyKey = admission ? admission.idempotencyKey : `roebel:admit-signed-topic-suggestion:${candidateEventId}`;
     const sourceDiscussion = bundle?.sourceDiscussion ?? raw.sourceDiscussion as AtomicTopicCaseAdmissionV1["sourceDiscussion"];
     const namespace = caseNamespace(verified.identity.caseUuidV7);
-    let pending: { verified: VerifiedTopicCaseAdmissionV1 | VerifiedCitizenAdoptionCaseAdmission; rootEventId: string; caseId: string } | null = {
+    let pending: { verified: VerifiedTopicCaseAdmissionV1 | VerifiedCitizenAdoptionCaseAdmission | VerifiedSyntheticAdoptionCaseAdmission; rootEventId: string; caseId: string } | null = {
       verified, rootEventId: verified.discussion.id, caseId: verified.identity.caseId,
     };
     const journal: CoordinatorJournalPort = {
@@ -1871,7 +1909,7 @@ export function createSqliteAtomicTopicCaseAdmission(
             .run(pending.caseId, append.idempotencyKey, append.fingerprint, JSON.stringify(append.receipt));
           db.prepare("UPDATE atomic_case_meta SET case_version=?,head_checksum=? WHERE case_id=?").run(append.receipt.caseVersion, append.receipt.journalHeadChecksum, pending.caseId);
           if (config.failpoint === "after_case_events") fail("atomic_admission_failpoint");
-          const receipt = adopted ? citizenAdoptionBindingReceipt(adopted, append.receipt) : createPublicCaseBindingReceipt({
+          const receipt = synthetic ? syntheticAdoptionBindingReceipt(synthetic, append.receipt) : adopted ? citizenAdoptionBindingReceipt(adopted, append.receipt) : createPublicCaseBindingReceipt({
             rootEventId: pending.rootEventId, topicId: pending.verified.identity.topicId,
             candidateId: pending.verified.identity.candidateId, candidateEventId: candidateEventId,
             sourceAnswerEventId: pending.verified.sourceAnswer.id, caseId: pending.caseId, caseVersion: 3,
@@ -1898,7 +1936,7 @@ export function createSqliteAtomicTopicCaseAdmission(
       const envelope = { schemaVersion: "command_envelope_v1" as const, caseId: verified.identity.caseId,
         actorBinding: authenticatedActor, expectedCaseVersion: 0, idempotencyKey,
         visibility: "private_case" as const, policyVersion: config.policyVersion };
-      coordinator.handle(adopted ? { ...envelope, commandType: "admit_citizen_adoption_v1", payload: { evidence: adopted.evidence } } :
+      coordinator.handle(synthetic ? { ...envelope, commandType: "admit_synthetic_adoption_v1", payload: { evidence: synthetic.evidence } } : adopted ? { ...envelope, commandType: "admit_citizen_adoption_v1", payload: { evidence: adopted.evidence } } :
         { ...envelope, commandType: "admit_signed_topic_suggestion_v1", payload: {
           sourceDiscussion, sourceAnswer: direct!.sourceAnswer, signedSuggestion: direct!.signedSuggestion } });
       const result = withReadSnapshot(() => {
@@ -1969,7 +2007,7 @@ export function createSqliteAtomicTopicCaseAdmission(
 
   const openCaseCoordinator = (caseId: string): CivicCaseCoordinator => {
     ensureOpen();
-    const parsedCaseId = parseMunicipalCaseId(caseId);
+    const parsedCaseId = parseCaseId(caseId);
     if (!parsedCaseId || parsedCaseId.municipalityId !== config.municipalityId) fail("atomic_admission_case_not_admitted");
     return withReadSnapshot(() => {
       const meta = readCaseMeta(caseId);
@@ -2084,9 +2122,12 @@ export function createSqliteAtomicTopicCaseAdmission(
   return Object.freeze({
     admission: Object.freeze({
       async admit(value: AtomicTopicCaseAdmissionV1) {
-        if (config.citizenAdoption) fail("atomic_admission_input_invalid");
+        if (config.citizenAdoption || config.syntheticAdoption) fail("atomic_admission_input_invalid");
         return await admit(value) as PublicCaseBindingReceiptV1;
       },
+      ...(config.syntheticAdoption ? { async admitSyntheticAdoption(value: AtomicSyntheticAdoptionAdmissionV1) {
+        return await admit(value) as PublicSyntheticCaseBindingReceiptV1;
+      } } : {}),
       ...(config.citizenAdoption ? { async admitCitizenAdoption(value: AtomicCitizenAdoptionAdmissionV1) {
         return await admit(value) as PublicAdoptedCaseBindingReceiptV2;
       } } : {}),

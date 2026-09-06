@@ -7,10 +7,12 @@ import { createHash } from "node:crypto";
  */
 export const MUNICIPAL_CASE_ID_PREFIX = "urn:stadtstack:case:municipality:";
 export const LEGACY_TEST_CASE_ID_PREFIX = "urn:stadtstack:case:test:";
+export const SYNTHETIC_CASE_ID_PREFIX = "urn:stadtstack:synthetic-case:municipality:";
 
 export const MUNICIPALITY_ID = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 export const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 export const MUNICIPAL_CASE_ID = /^urn:stadtstack:case:municipality:([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?):([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
+export const SYNTHETIC_CASE_ID = new RegExp(MUNICIPAL_CASE_ID.source.replace("stadtstack:case:", "stadtstack:synthetic-case:"), "u");
 
 export type MunicipalCaseIdentity = Readonly<{
   municipalityId: string;
@@ -28,6 +30,18 @@ export function parseMunicipalCaseId(caseId: unknown): MunicipalCaseIdentity | n
   const match = MUNICIPAL_CASE_ID.exec(caseId);
   if (!match) return null;
   return Object.freeze({ municipalityId: match[1]!, uuidV7: match[2]!, caseId });
+}
+
+/** Explicit rehearsal identity; never accepted by the municipal parser. */
+export function canonicalSyntheticCaseId(municipalityId: string, uuidV7: string): string | null {
+  if (!MUNICIPALITY_ID.test(municipalityId) || !UUID_V7.test(uuidV7)) return null;
+  return `${SYNTHETIC_CASE_ID_PREFIX}${municipalityId}:${uuidV7}`;
+}
+
+export function parseSyntheticCaseId(caseId: unknown): MunicipalCaseIdentity | null {
+  if (typeof caseId !== "string") return null;
+  const match = SYNTHETIC_CASE_ID.exec(caseId);
+  return match ? Object.freeze({ municipalityId: match[1]!, uuidV7: match[2]!, caseId }) : null;
 }
 
 /** Legacy IDs are never rewritten: a durable store containing one is unsafe

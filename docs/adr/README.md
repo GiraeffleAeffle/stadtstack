@@ -71,6 +71,13 @@ publication, runtime operations, public relay writes, or civic effects.
   use one municipality-scoped durable Case ID and block activation of legacy
   staging-identity stores rather than rewriting checksum-bound evidence.
 
+- [ADR 0031](./0031-citizen-adoption-evidence-before-case-admission.md) —
+  verify citizen adoption, trusted ledger acceptance and fresh eligibility
+  in the staff-authorized atomic Case admission and replay its original receipt.
+- [ADR 0032](./0032-isolate-synthetic-case-admission.md) —
+  admit test Citizen Pass tracers into a separate synthetic Case namespace
+  through the existing journal, with explicit test-only receipts.
+
 ## Proposed extensions
 
 - [ADR 0025](./0025-consent-scoped-kair-session-bundles.md) — keep Meld/Kair
@@ -93,9 +100,6 @@ publication, runtime operations, public relay writes, or civic effects.
   close the administration-to-public-context loop through an explicit municipal
   publication candidate and receipt, then expose official OParl-compatible and
   broader reviewed civic-context views without inventing “OParl 2.”
-- [ADR 0031](./0031-citizen-adoption-evidence-before-case-admission.md) —
-  verify citizen adoption, trusted ledger acceptance and fresh eligibility
-  in the staff-authorized atomic Case admission and replay its original receipt.
 
 ## Historical
 

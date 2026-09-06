@@ -509,3 +509,10 @@ An explicit municipality-owned change such as formal submission, publication, or
 it is never inferred from discussion, suggestion, review, forecast, or
 advisory participation.
 _Avoid_: workflow stage, assistant action
+
+
+**Synthetic Case rehearsal**:
+A staff-admitted staging simulation of a saved test Citizen Pass adoption.
+It has a separate Case identity and visibly test-only receipt, and proves no
+residence, municipal eligibility, administrative endorsement or civic decision.
+_Avoid_: municipal Case, citizen eligibility, legacy test Case

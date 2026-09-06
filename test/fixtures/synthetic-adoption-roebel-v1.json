@@ -1,0 +1,279 @@
+{
+  "description": "Synthetic interoperability vector. No person, wallet ownership, civic eligibility or municipal Case is represented.",
+  "generator": {
+    "repository": "https://github.com/GiraeffleAeffle/Roebel-App",
+    "commit": "449497c2badb1670d1e994f7068e998ee93c704d",
+    "apis": [
+      "buildCivicTopicPromotionEvent",
+      "buildAgentNoteEvent",
+      "buildParticipantTopicSuggestion",
+      "createSyntheticCitizenAdoptionService.issueChallenge",
+      "createSyntheticCitizenAdoptionService.acceptTracer",
+      "createSyntheticCitizenAdoptionService.readPublicTracer"
+    ]
+  },
+  "verifiedAt": 1790086700,
+  "policy": {
+    "municipalityId": "example-city",
+    "policyVersion": "example-test-citizen-pass-v1",
+    "testCitizenNftContract": "0x3333333333333333333333333333333333333333",
+    "allowedAgentPubkeys": [
+      "dbcfa1c73674cba4aa1b6992ebdc6a77008d38f6c6ec068c3c862b9ff6d287f2"
+    ],
+    "challengeTtlSeconds": 300,
+    "maxEventClockSkewSeconds": 120,
+    "environment": "staging",
+    "testOnly": true
+  },
+  "bundle": {
+    "schemaVersion": "synthetic_citizen_adoption_case_input_v1",
+    "sourceDiscussion": {
+      "pubkey": "1492bc6a132ac91cb8b9f57d2b809dd2bdb8e1a294d3edbb6c6f7fc03bf11cac",
+      "created_at": 1790000296,
+      "kind": 1,
+      "tags": [
+        [
+          "p",
+          "dbcfa1c73674cba4aa1b6992ebdc6a77008d38f6c6ec068c3c862b9ff6d287f2"
+        ],
+        [
+          "q",
+          "0330ebc0eda5da0a82b889f3af9ef25a2d68aefa01ab931a8c7cd334d6f54a69",
+          "",
+          "1492bc6a132ac91cb8b9f57d2b809dd2bdb8e1a294d3edbb6c6f7fc03bf11cac"
+        ],
+        [
+          "source-post",
+          "0330ebc0eda5da0a82b889f3af9ef25a2d68aefa01ab931a8c7cd334d6f54a69"
+        ],
+        [
+          "t",
+          "stadtstack-civic-discussion"
+        ],
+        [
+          "municipality",
+          "example-city"
+        ],
+        [
+          "topic",
+          "urn:stadtstack:topic:municipality:example-city:synthetic-road-safety"
+        ],
+        [
+          "topic-title",
+          "Synthetic road safety"
+        ],
+        [
+          "stance",
+          "root"
+        ],
+        [
+          "argument-root",
+          "self"
+        ]
+      ],
+      "content": "@Mecky Welche Optionen können wir in diesem Test prüfen?",
+      "id": "062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4",
+      "sig": "6f04dc248812d5245ba2bca60c98a5f262c44354aebf5e7f8fdc6e7260957dbe2638286e9cd72bbc81eda27706c169a4402646d22a667dbbabd566ba6e3d9ce5"
+    },
+    "sourceAnswer": {
+      "pubkey": "dbcfa1c73674cba4aa1b6992ebdc6a77008d38f6c6ec068c3c862b9ff6d287f2",
+      "created_at": 1790000297,
+      "kind": 1,
+      "tags": [
+        [
+          "netizen_agent",
+          "mecky",
+          "example"
+        ],
+        [
+          "e",
+          "062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4",
+          "",
+          "reply"
+        ],
+        [
+          "p",
+          "1492bc6a132ac91cb8b9f57d2b809dd2bdb8e1a294d3edbb6c6f7fc03bf11cac"
+        ],
+        [
+          "mecky-receipt",
+          "urn:stadtstack:mecky-answer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "municipality",
+          "example-city"
+        ],
+        [
+          "topic",
+          "urn:stadtstack:topic:municipality:example-city:synthetic-road-safety"
+        ],
+        [
+          "evidence",
+          "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "https://civic.example/reviewed-source"
+        ]
+      ],
+      "content": "Fictional, cited answer for protocol interoperability.",
+      "id": "f43a555e86f81d9e5168de866287b19a3911751deb3a78d361ad265c1b4eb8dc",
+      "sig": "b0a4e88d4086fe446680819e7a68d9ce94915414ffac4e3d1333e79adee8faebf6c693d5869780c77ca3c239b2a153eabcbec3f81459d10b2fb0f82992745cae"
+    },
+    "participantSuggestionEvent": {
+      "id": "9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655",
+      "pubkey": "1492bc6a132ac91cb8b9f57d2b809dd2bdb8e1a294d3edbb6c6f7fc03bf11cac",
+      "created_at": 1790000298,
+      "kind": 1,
+      "tags": [
+        [
+          "schema",
+          "staging_participant_signed_topic_suggestion_v1"
+        ],
+        [
+          "municipality",
+          "example-city"
+        ],
+        [
+          "topic",
+          "urn:stadtstack:topic:municipality:example-city:synthetic-road-safety"
+        ],
+        [
+          "e",
+          "062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4",
+          "",
+          "root"
+        ],
+        [
+          "mecky-receipt",
+          "urn:stadtstack:mecky-answer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "credential-class",
+          "staging-participant"
+        ]
+      ],
+      "content": "{\"authorityBinding\":\"none\",\"draftId\":\"urn:stadtstack:participant-topic-suggestion-draft:fe17ffc17e131c81e80176573331c068a6878369407c651e0e15e63cc6de20e0\",\"entryState\":\"citizen_adoption_required\",\"municipalityId\":\"example-city\",\"participantPubkey\":\"1492bc6a132ac91cb8b9f57d2b809dd2bdb8e1a294d3edbb6c6f7fc03bf11cac\",\"schemaVersion\":\"public_participant_topic_suggestion_draft_v1\",\"sourceAnswerId\":\"f43a555e86f81d9e5168de866287b19a3911751deb3a78d361ad265c1b4eb8dc\",\"sourceAnswerReceiptId\":\"urn:stadtstack:mecky-answer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sourceAnswerRef\":\"nostr://event/f43a555e86f81d9e5168de866287b19a3911751deb3a78d361ad265c1b4eb8dc\",\"sourceDiscussionId\":\"062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4\",\"sourceDiscussionRef\":\"nostr://event/062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4\",\"submittedToCivicWorkflow\":false,\"summary\":\"A fictional suggestion for an isolated staff rehearsal.\",\"title\":\"Test road-safety review\",\"topicId\":\"urn:stadtstack:topic:municipality:example-city:synthetic-road-safety\"}",
+      "sig": "b76fcf6f37ead79bc6f60582502b04905d2017c5b26095aef9e463713b85787bb21a999d92dc4372161ab27a39d6a202d3d25202f4b19cdb8d62056df05641aa"
+    },
+    "proofEvent": {
+      "pubkey": "1cf37eb561f80022293855860f47122025c0929a05f6f08c503ed7f2325cafd5",
+      "created_at": 1790000300,
+      "kind": 1,
+      "tags": [
+        [
+          "schema",
+          "staging_test_citizen_pass_proof_v1"
+        ],
+        [
+          "challenge",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "e",
+          "9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655",
+          "",
+          "synthetic-adoption-test"
+        ],
+        [
+          "municipality",
+          "example-city"
+        ],
+        [
+          "test-only",
+          "true"
+        ]
+      ],
+      "content": "{\"audience\":\"roebel-staging-synthetic-citizen-adoption\",\"authorityBinding\":\"none\",\"chainId\":100,\"challengeId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"environment\":\"staging\",\"expiresAt\":1790000600,\"issuedAt\":1790000300,\"municipalityId\":\"example-city\",\"participantSuggestionId\":\"9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655\",\"policyVersion\":\"example-test-citizen-pass-v1\",\"schemaVersion\":\"staging_test_citizen_pass_v1\",\"subjectPubkey\":\"1cf37eb561f80022293855860f47122025c0929a05f6f08c503ed7f2325cafd5\",\"testCitizenNftContract\":\"0x3333333333333333333333333333333333333333\",\"testOnly\":true,\"topicId\":\"urn:stadtstack:topic:municipality:example-city:synthetic-road-safety\"}",
+      "id": "7521173273bd8b65f150227ee9d4214e5e6a5c2bcfeb91295dd56caaacbf628f",
+      "sig": "11e08155f942df4a6ad1a25e2da331a71efd0114e32f56b7677b225f0d7a30f6e25b6bf40c82ca0505e195e77b9053d8a79dda71612e45933dee683541a2182b"
+    }
+  },
+  "projection": {
+    "schemaVersion": "public_synthetic_citizen_adoption_projection_v1",
+    "participantSuggestionId": "9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655",
+    "proofEvent": {
+      "pubkey": "1cf37eb561f80022293855860f47122025c0929a05f6f08c503ed7f2325cafd5",
+      "created_at": 1790000300,
+      "kind": 1,
+      "tags": [
+        [
+          "schema",
+          "staging_test_citizen_pass_proof_v1"
+        ],
+        [
+          "challenge",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "e",
+          "9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655",
+          "",
+          "synthetic-adoption-test"
+        ],
+        [
+          "municipality",
+          "example-city"
+        ],
+        [
+          "test-only",
+          "true"
+        ]
+      ],
+      "content": "{\"audience\":\"roebel-staging-synthetic-citizen-adoption\",\"authorityBinding\":\"none\",\"chainId\":100,\"challengeId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"environment\":\"staging\",\"expiresAt\":1790000600,\"issuedAt\":1790000300,\"municipalityId\":\"example-city\",\"participantSuggestionId\":\"9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655\",\"policyVersion\":\"example-test-citizen-pass-v1\",\"schemaVersion\":\"staging_test_citizen_pass_v1\",\"subjectPubkey\":\"1cf37eb561f80022293855860f47122025c0929a05f6f08c503ed7f2325cafd5\",\"testCitizenNftContract\":\"0x3333333333333333333333333333333333333333\",\"testOnly\":true,\"topicId\":\"urn:stadtstack:topic:municipality:example-city:synthetic-road-safety\"}",
+      "id": "7521173273bd8b65f150227ee9d4214e5e6a5c2bcfeb91295dd56caaacbf628f",
+      "sig": "11e08155f942df4a6ad1a25e2da331a71efd0114e32f56b7677b225f0d7a30f6e25b6bf40c82ca0505e195e77b9053d8a79dda71612e45933dee683541a2182b"
+    },
+    "tracer": {
+      "schemaVersion": "synthetic_citizen_adoption_tracer_v1",
+      "tracerId": "urn:stadtstack:synthetic-citizen-adoption-tracer:9e653eeddd76bde3aa2861edee2c9b4056244dbb983a42e9d411492d299df8e8",
+      "municipalityId": "example-city",
+      "topicId": "urn:stadtstack:topic:municipality:example-city:synthetic-road-safety",
+      "participantSuggestionId": "9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655",
+      "participantSuggestionRef": "nostr://event/9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655",
+      "participantPubkey": "1492bc6a132ac91cb8b9f57d2b809dd2bdb8e1a294d3edbb6c6f7fc03bf11cac",
+      "sourceDiscussionId": "062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4",
+      "sourceAnswerReceiptId": "urn:stadtstack:mecky-answer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "adopterPubkey": "1cf37eb561f80022293855860f47122025c0929a05f6f08c503ed7f2325cafd5",
+      "proofEventId": "7521173273bd8b65f150227ee9d4214e5e6a5c2bcfeb91295dd56caaacbf628f",
+      "title": "Test road-safety review",
+      "summary": "A fictional suggestion for an isolated staff rehearsal.",
+      "entryState": "synthetic_journey_preview_only",
+      "environment": "staging",
+      "testOnly": true,
+      "authorityBinding": "none",
+      "submittedToCivicWorkflow": false
+    },
+    "acceptanceReceipt": {
+      "schemaVersion": "synthetic_citizen_adoption_tracer_acceptance_v1",
+      "tracerId": "urn:stadtstack:synthetic-citizen-adoption-tracer:9e653eeddd76bde3aa2861edee2c9b4056244dbb983a42e9d411492d299df8e8",
+      "proofEventId": "7521173273bd8b65f150227ee9d4214e5e6a5c2bcfeb91295dd56caaacbf628f",
+      "municipalityId": "example-city",
+      "topicId": "urn:stadtstack:topic:municipality:example-city:synthetic-road-safety",
+      "participantSuggestionId": "9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655",
+      "adopterPubkey": "1cf37eb561f80022293855860f47122025c0929a05f6f08c503ed7f2325cafd5",
+      "requestChecksum": "286b2fbc9d1a73cc51fed4936caf6b745b56861ca17d6630c4b2fa2e8df61505",
+      "eventCreatedAt": 1790000300,
+      "receivedAt": 1790000300,
+      "policyVersion": "example-test-citizen-pass-v1",
+      "status": "accepted_for_synthetic_preview",
+      "environment": "staging",
+      "testOnly": true,
+      "authorityBinding": "none",
+      "receiptChecksum": "f866a12e5faf88b45fcba84c6377169c9f005033b5a6002513adf809dd863daf"
+    },
+    "labels": {
+      "citizenship": "Test-Bürger-Pass – keine reale Bürgerberechtigung",
+      "civicWorkflow": "Nur synthetische Vorschau – kein CivicCase und keine Verwaltungsbefürwortung",
+      "governance": "Keine bindende Abstimmung, kein Beschluss, keine Treasury-Wirkung und keine Zahlung"
+    },
+    "entryState": "synthetic_journey_preview_only",
+    "environment": "staging",
+    "testOnly": true,
+    "authorityBinding": "none",
+    "submittedToCivicWorkflow": false,
+    "civicCaseCreated": false,
+    "administrativeEndorsement": false,
+    "bindingVote": false,
+    "councilDecision": false,
+    "treasuryEffect": false,
+    "paymentEffect": false
+  }
+}
