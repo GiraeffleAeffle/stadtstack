@@ -1,8 +1,8 @@
 import { types as utilTypes } from "node:util";
 
 /**
- * An opaque listener capability resolved by the private process lifecycle
- * after it has verified a control bind plan. The token intentionally carries
+ * An opaque listener capability resolved by the process lifecycle after
+ * reviewed control or public composition has verified a bind plan. The token carries
  * no host or port fields, so a serialized or structurally cloned value cannot
  * become a deployment listener.
  */
@@ -16,11 +16,14 @@ type ResolvedDeploymentListener = Readonly<{
   port: number;
 }>;
 
-type DeploymentListenerId = "admission" | "private-outbox" | "probe";
-const DEPLOYMENT_PORTS: Readonly<Record<DeploymentListenerId, number>> = Object.freeze({
+const CONTROL_PORTS: Readonly<Record<string, number>> = Object.freeze({
   admission: 18_085,
   "private-outbox": 18_087,
   probe: 18_088,
+});
+const PUBLIC_PORTS: Readonly<Record<string, number>> = Object.freeze({
+  public: 18_086,
+  "public-probe": 18_089,
 });
 
 const capabilityFacts = new WeakMap<object, ResolvedDeploymentListener>();
@@ -29,7 +32,7 @@ function invalid(): never {
   throw new Error("staging_case_runtime_listener_capability_invalid");
 }
 
-function captureDeploymentListener(value: unknown): ResolvedDeploymentListener {
+function captureDeploymentListener(value: unknown, ports: Readonly<Record<string, number>>): ResolvedDeploymentListener {
   if (
     !value ||
     typeof value !== "object" ||
@@ -60,11 +63,11 @@ function captureDeploymentListener(value: unknown): ResolvedDeploymentListener {
   const id = listener.id;
   const port = listener.port;
   if (
-    (id !== "admission" && id !== "private-outbox" && id !== "probe") ||
+    typeof id !== "string" || !Object.hasOwn(ports, id) ||
     listener.host !== "0.0.0.0" ||
     typeof port !== "number" ||
     !Number.isSafeInteger(port) ||
-    port !== DEPLOYMENT_PORTS[id as DeploymentListenerId]
+    port !== ports[id]
   ) {
     invalid();
   }
@@ -85,6 +88,18 @@ export function registerStagingCaseRuntimeDeploymentListenerCapability(
   capability: unknown,
   listener: unknown,
 ): void {
+  register(capability, listener, "staging_case_control_listener_bind_plan_v1", CONTROL_PORTS);
+}
+
+/** @internal Only the reviewed public runtime may register these two public ports. */
+export function registerStagingPublicCaseBindingListenerCapability(
+  capability: unknown,
+  listener: unknown,
+): void {
+  register(capability, listener, "staging_public_case_binding_listener_bind_plan_v1", PUBLIC_PORTS);
+}
+
+function register(capability: unknown, listener: unknown, schema: string, ports: Readonly<Record<string, number>>): void {
   if (
     !capability ||
     typeof capability !== "object" ||
@@ -96,12 +111,12 @@ export function registerStagingCaseRuntimeDeploymentListenerCapability(
     Reflect.ownKeys(capability)[0] !== "schemaVersion" ||
     Object.getOwnPropertyDescriptor(capability, "schemaVersion")?.enumerable !== true ||
     Object.getOwnPropertyDescriptor(capability, "schemaVersion")?.value !==
-      "staging_case_control_listener_bind_plan_v1" ||
+      schema ||
     capabilityFacts.has(capability)
   ) {
     invalid();
   }
-  capabilityFacts.set(capability, captureDeploymentListener(listener));
+  capabilityFacts.set(capability, captureDeploymentListener(listener, ports));
 }
 
 /** Resolves only an exact plan registered by preflight; clones and arbitrary objects fail closed. */

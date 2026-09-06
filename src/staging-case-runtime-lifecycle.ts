@@ -12,10 +12,10 @@ import {
 } from "./staging-case-runtime-listener-capability.ts";
 
 /**
- * The lifecycle is a listener-mechanics seam, not a server factory. Control
- * deployment bind plans stay in the private process lifecycle; this module
+ * The lifecycle is a listener-mechanics seam, not a server factory. Deployment
+ * bind plans stay in their owning control or public composition; this module
  * receives either a loopback tuple or an opaque capability minted after the
- * private lifecycle's bind-plan proof. It contains no Operations capability or
+ * owning composition's bind-plan proof. It contains no Operations capability or
  * deployment proof verifier.
  */
 export const STAGING_CASE_RUNTIME_PHASES = [

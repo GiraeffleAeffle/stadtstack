@@ -197,7 +197,7 @@ function publishedCaseRuntimeImplementationPaths(): readonly string[] {
   return Object.freeze([...paths].sort());
 }
 
-test("the supported Interface boundary restricts internal proof imports to control composition", () => {
+test("the supported Interface boundary restricts control proofs and public listener registration to their owners", () => {
   const boundaries = new Map<string, Readonly<{ definition: string; consumers: ReadonlySet<string> }>>([
     ["consumeStagingCaseControlDeploymentProofForRuntime", { definition: "src/staging-case-control-preflight.ts", consumers: new Set(["src/staging-case-control-runtime.ts", "src/case-durable-deployment-claim.ts"]) }],
     ["createStagingCaseControlDeploymentProofFromReviewedSources", { definition: "src/staging-case-control-preflight.ts", consumers: new Set(["src/staging-case-control-runtime.ts"]) }],
@@ -207,6 +207,9 @@ test("the supported Interface boundary restricts internal proof imports to contr
     ]) }],
     ["registerStagingCaseRuntimeDeploymentListenerCapability", { definition: "src/staging-case-runtime-listener-capability.ts", consumers: new Set([
       "src/staging-case-control-preflight.ts",
+    ]) }],
+    ["registerStagingPublicCaseBindingListenerCapability", { definition: "src/staging-case-runtime-listener-capability.ts", consumers: new Set([
+      "src/staging-public-case-binding-runtime.ts",
     ]) }],
     ["createCaseDurableDeploymentClaimToken", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/staging-case-control-runtime.ts"]) }],
     ["consumeCaseDurableDeploymentClaimToken", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts", "src/staging-case-recovery-activation-authority.ts"]) }],
@@ -253,6 +256,10 @@ test("the supported Interface boundary restricts internal proof imports to contr
       "registerStagingCaseRuntimeDeploymentListenerCapability();",
     ),
     /must not import registerStagingCaseRuntimeDeploymentListenerCapability/u,
+  );
+  assert.throws(
+    () => assertSource("src/forged/staging-public-case-binding-runtime.ts", "registerStagingPublicCaseBindingListenerCapability();"),
+    /must not import registerStagingPublicCaseBindingListenerCapability/u,
   );
 });
 
