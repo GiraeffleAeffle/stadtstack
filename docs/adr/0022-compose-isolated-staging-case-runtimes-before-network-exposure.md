@@ -1,6 +1,6 @@
 # ADR 0022: Compose isolated staging Case runtimes before network exposure
 
-- **Status:** accepted; loopback reference and reviewed control image entrypoint implemented; deployment blocked on the Operations gate
+- **Status:** accepted; loopback reference and reviewed control/public image entrypoints implemented; deployment blocked on the Operations gate
 - **Date:** 2026-08-23
 
 ## Context
@@ -115,8 +115,29 @@ The deployment must keep the reviewed binding source and immutable checksum
 under independent review; matching values in caller-controlled files do not
 establish that review. The mounted launcher does not contact Kubernetes,
 provision storage, issue a staff token, assign a production role or activate a
-restore. The public image remains loopback-only and rejects all control
-configuration; its reviewed cluster composition is a separate follow-on.
+restore.
+
+The public image has its own reviewed composition. With only
+`STADTSTACK_CASE_PUBLIC_CONFIG_PATH` it retains the loopback reference mode.
+Setting either `STADTSTACK_CASE_PUBLIC_REVIEWED_BINDING_PATH` or
+`STADTSTACK_CASE_PUBLIC_BINDING_SHA256` requires both. The application file
+contains only the public/probe Host allowlists and bounded polling/drain
+intervals. A separate `staging_public_case_binding_deployment_binding_v1`
+record binds staging, municipality, namespace, workload and tokenless
+ServiceAccount, immutable image digest, Operations topology checksum, the
+same-namespace private outbox Service on `18087`, and public/probe listeners
+on `18086`/`18089`. Its `bindingChecksum` covers the canonical record excluding
+that field and must match the independently supplied deployment pin.
+
+The public composition derives the exact outbox origin as
+`http://<service>.<namespace>.svc.cluster.local:18087/`; it accepts no arbitrary
+URL, credential, storage path, control proof or listener override. Its two
+opaque listener capabilities can represent only public discovery and its
+probe. The existing replay, projection, readiness and shutdown Implementation
+is shared with the reference runtime, and the public image's source closure
+still excludes control and storage. Kubernetes DNS/network enforcement and
+matching the running image to the reviewed digest remain Operations duties.
+Matching self-supplied JSON and checksum values alone is not deployment review.
 
 One project testing account may be explicitly assigned both staging operator
 and steward responsibilities. The deployment still supplies a distinct scoped
@@ -141,13 +162,15 @@ deployment bind Adapter for `0.0.0.0`. Self-asserting a network-policy name or
 digest in application configuration is not sufficient proof.
 
 The generic lifecycle cannot mint a Pod-network listener from a raw tuple. The
-control preflight registers only the exact opaque bind-plan objects derived
-from its module-proven deployment proof; the process lifecycle verifies and
-passes that same object to the shared listener mechanics. Structural values,
-clones and raw `0.0.0.0` host/port objects remain inert. CI restricts the
-internal registration seam to the control-preflight module across the complete
-published Case runtime source/artifact set, using repository-relative paths so
-nested same-basename files cannot inherit an allowed import identity.
+control preflight registers only exact opaque bind-plan objects derived from
+its module-proven deployment proof; the control process lifecycle verifies
+and passes that same object to the shared listener mechanics. The public
+composition has a distinct internal registration function that accepts only
+its own schema and two public ports. Structural values, clones and raw
+`0.0.0.0` host/port objects remain inert. CI limits each registration function
+to its respective owning Module across the complete published runtime source
+and artifact set, using repository-relative paths so nested same-basename
+files cannot inherit an allowed import identity.
 
 The existing Operations topology keeps public binding on port `18086`; the
 least disruptive later extension adds the private outbox Service on `18087`

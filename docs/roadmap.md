@@ -138,8 +138,13 @@ are not application inputs, while the reference factories remain loopback-only.
 The control image now reaches that reviewed factory through a private mounted
 application file, a separately read binding file and an independent deployment
 checksum. Its real filesystem observer checks the mount and bounded marker
-before creating SQLite or the fixed control listeners. The public image still
-needs its reviewed cluster composition. Staging role assignments may name a
+before creating SQLite or the fixed control listeners. The public image now
+has its own separately pinned binding: it derives the same-namespace private
+outbox destination and the fixed public/probe ports while reusing the existing
+verified replay and readiness lifecycle. It still has no staff credential or
+storage capability. Both images need exact Operations activation configuration
+and the isolated synthetic Case intake before the testing journey can advance.
+Staging role assignments may name a
 project testing account; they do not establish production staff authority or
 change the separate synthetic eligibility contract. No live Case deployment
 is implied by this source delivery.

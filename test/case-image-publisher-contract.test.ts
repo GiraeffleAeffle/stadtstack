@@ -73,7 +73,7 @@ test("the three Case images use distinct GHCR repositories and remain pre-activa
   assert.equal(contract.publication.activation, "staging_runtime_pending_operations_activation");
   assert.deepEqual(contract.publication.componentActivation, {
     "case-steward-control": "reviewed_control_entrypoint_pending_operations_activation",
-    "case-public-binding": "loopback_runtime_pending_operations_activation",
+    "case-public-binding": "reviewed_public_entrypoint_pending_operations_activation",
     "case-restore-verifier": "blocked_pending_reviewed_recovery_evidence",
   });
   assert.deepEqual(contract.components.map(({ component }) => component), [

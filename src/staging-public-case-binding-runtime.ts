@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
 import { createCaseBindingOutboxProjector } from "./case-binding-outbox-projector.ts";
@@ -6,8 +7,13 @@ import { createPublicCaseBindingServer } from "./public-case-binding-server.ts";
 import {
   createStagingCaseRuntimeLifecycle,
   type StagingCaseRuntimeLifecycle,
+  type StagingCaseRuntimeListener,
   type StagingCaseRuntimePhase,
 } from "./staging-case-runtime-lifecycle.ts";
+import {
+  registerStagingPublicCaseBindingListenerCapability,
+  type StagingCaseRuntimeDeploymentListenerCapability,
+} from "./staging-case-runtime-listener-capability.ts";
 import { createStagingRuntimeProbeServer } from "./staging-runtime-probe-server.ts";
 
 /**
@@ -24,6 +30,33 @@ export type StagingPublicCaseBindingRuntimeConfig = Readonly<{
   probeListener: Readonly<{ host: "127.0.0.1"; port: number }>;
   reconcileIntervalMs: number;
   drainTimeoutMs: number;
+}>;
+
+/** Public presentation/polling policy; transport and listener choices are absent. */
+export type OperationsBoundStagingPublicCaseBindingApplicationConfig = Pick<StagingPublicCaseBindingRuntimeConfig,
+  "publicAllowedHosts" | "probeAllowedHosts" | "reconcileIntervalMs" | "drainTimeoutMs">;
+
+export type StagingPublicCaseBindingDeploymentBindingV1 = Readonly<{
+  schemaVersion: "staging_public_case_binding_deployment_binding_v1";
+  deploymentEnvironment: "staging";
+  municipalityId: string;
+  namespace: string;
+  workloadName: string;
+  workload: Readonly<{ serviceAccountName: string; automountServiceAccountToken: false; imagePullSecrets: readonly [] }>;
+  releaseDigest: string;
+  operationsTopologyChecksum: string;
+  outbox: Readonly<{ serviceName: string; namespace: string; port: 18087 }>;
+  listeners: readonly [
+    Readonly<{ id: "public"; port: 18086; bindScope: "pod_network" }>,
+    Readonly<{ id: "public-probe"; port: 18089; bindScope: "pod_network" }>,
+  ];
+  bindingChecksum: string;
+}>;
+
+export type OperationsBoundStagingPublicCaseBindingRuntimeConfig = Readonly<{
+  reviewedBindingSource: Readonly<{ read(): unknown }>;
+  bindingPinSource: Readonly<{ read(): unknown }>;
+  application: OperationsBoundStagingPublicCaseBindingApplicationConfig;
 }>;
 
 export type StagingPublicCaseBindingRuntimeHealth = Readonly<{
@@ -56,8 +89,8 @@ type CapturedConfig = Readonly<{
   outboxOrigin: string;
   publicAllowedHosts: readonly string[];
   probeAllowedHosts: readonly string[];
-  publicListener: Listener;
-  probeListener: Listener;
+  publicListener: StagingCaseRuntimeListener;
+  probeListener: StagingCaseRuntimeListener;
   reconcileIntervalMs: number;
   drainTimeoutMs: number;
 }>;
@@ -146,21 +179,96 @@ function captureConfig(value: StagingPublicCaseBindingRuntimeConfig): CapturedCo
     "reconcileIntervalMs",
     "drainTimeoutMs",
   ], "staging_public_case_binding_runtime_config_invalid");
-  if (!Number.isSafeInteger(config.reconcileIntervalMs) || (config.reconcileIntervalMs as number) < 100 ||
-    (config.reconcileIntervalMs as number) > 3_600_000 ||
-    !Number.isSafeInteger(config.drainTimeoutMs) || (config.drainTimeoutMs as number) < 100 ||
-    (config.drainTimeoutMs as number) > 10_000) fail("staging_public_case_binding_runtime_config_invalid");
   const publicListener = captureListener(config.publicListener, "staging_public_case_binding_runtime_config_invalid");
   const probeListener = captureListener(config.probeListener, "staging_public_case_binding_runtime_config_invalid");
   if (publicListener.port !== 0 && publicListener.port === probeListener.port) fail("staging_public_case_binding_runtime_config_invalid");
   return Object.freeze({
+    ...captureApplication({ publicAllowedHosts: config.publicAllowedHosts, probeAllowedHosts: config.probeAllowedHosts,
+      reconcileIntervalMs: config.reconcileIntervalMs, drainTimeoutMs: config.drainTimeoutMs }),
     outboxOrigin: captureLoopbackOutboxOrigin(config.outboxOrigin, "staging_public_case_binding_runtime_config_invalid"),
-    publicAllowedHosts: exactHostArray(config.publicAllowedHosts, "staging_public_case_binding_runtime_config_invalid"),
-    probeAllowedHosts: exactHostArray(config.probeAllowedHosts, "staging_public_case_binding_runtime_config_invalid"),
     publicListener,
     probeListener,
+  });
+}
+
+function captureApplication(value: unknown): OperationsBoundStagingPublicCaseBindingApplicationConfig {
+  const config = exactObject(value, ["publicAllowedHosts", "probeAllowedHosts", "reconcileIntervalMs", "drainTimeoutMs"],
+    "staging_public_case_binding_runtime_config_invalid");
+  if (!Number.isSafeInteger(config.reconcileIntervalMs) || (config.reconcileIntervalMs as number) < 100 ||
+    (config.reconcileIntervalMs as number) > 3_600_000 ||
+    !Number.isSafeInteger(config.drainTimeoutMs) || (config.drainTimeoutMs as number) < 100 ||
+    (config.drainTimeoutMs as number) > 10_000) fail("staging_public_case_binding_runtime_config_invalid");
+  return Object.freeze({
+    publicAllowedHosts: exactHostArray(config.publicAllowedHosts, "staging_public_case_binding_runtime_config_invalid"),
+    probeAllowedHosts: exactHostArray(config.probeAllowedHosts, "staging_public_case_binding_runtime_config_invalid"),
     reconcileIntervalMs: config.reconcileIntervalMs as number,
     drainTimeoutMs: config.drainTimeoutMs as number,
+  });
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function captureReviewedConfig(value: OperationsBoundStagingPublicCaseBindingRuntimeConfig): CapturedConfig {
+  const code = "staging_public_case_binding_deployment_invalid";
+  const input = exactObject(value, ["reviewedBindingSource", "bindingPinSource", "application"], code);
+  const application = captureApplication(input.application);
+  const source = exactObject(input.reviewedBindingSource, ["read"], code);
+  const pinSource = exactObject(input.bindingPinSource, ["read"], code);
+  if (source === pinSource || typeof source.read !== "function" || typeof pinSource.read !== "function" ||
+    source.read === pinSource.read) fail(code);
+  let raw: unknown;
+  let pin: unknown;
+  try { raw = source.read(); pin = pinSource.read(); } catch { fail(code); }
+  const binding = exactObject(raw, ["schemaVersion", "deploymentEnvironment", "municipalityId", "namespace", "workloadName",
+    "workload", "releaseDigest", "operationsTopologyChecksum", "outbox", "listeners", "bindingChecksum"], code);
+  const label = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+  const sha256 = /^sha256:[0-9a-f]{64}$/u;
+  for (const field of ["municipalityId", "namespace", "workloadName"] as const) {
+    if (typeof binding[field] !== "string" || !label.test(binding[field])) fail(code);
+  }
+  for (const field of ["releaseDigest", "operationsTopologyChecksum", "bindingChecksum"] as const) {
+    if (typeof binding[field] !== "string" || !sha256.test(binding[field])) fail(code);
+  }
+  if (binding.schemaVersion !== "staging_public_case_binding_deployment_binding_v1" ||
+    binding.deploymentEnvironment !== "staging" || pin !== binding.bindingChecksum) fail(code);
+  const workload = exactObject(binding.workload, ["serviceAccountName", "automountServiceAccountToken", "imagePullSecrets"], code);
+  if (workload.serviceAccountName !== binding.workloadName || workload.automountServiceAccountToken !== false) fail(code);
+  const array = (value: unknown, length: number): readonly unknown[] => {
+    if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
+      value.length !== length || Reflect.ownKeys(value).length !== length + 1) fail(code);
+    for (let i = 0; i < length; i += 1) {
+      const field = Object.getOwnPropertyDescriptor(value, String(i));
+      if (!field || field.get || field.set || !field.enumerable) fail(code);
+    }
+    return value;
+  };
+  array(workload.imagePullSecrets, 0);
+  const outbox = exactObject(binding.outbox, ["namespace", "serviceName", "port"], code);
+  if (outbox.namespace !== binding.namespace || typeof outbox.serviceName !== "string" || !label.test(outbox.serviceName) ||
+    outbox.serviceName === binding.workloadName || outbox.port !== 18_087) fail(code);
+  const listeners = array(binding.listeners, 2);
+  for (const [index, id, port] of [[0, "public", 18_086], [1, "public-probe", 18_089]] as const) {
+    const listener = exactObject(listeners[index], ["id", "port", "bindScope"], code);
+    if (listener.id !== id || listener.port !== port || listener.bindScope !== "pod_network") fail(code);
+  }
+  const { bindingChecksum, ...payload } = binding;
+  // All nested values above have exact, bounded data shapes before canonicalization.
+  if (`sha256:${createHash("sha256").update(canonical(payload), "utf8").digest("hex")}` !== bindingChecksum) fail(code);
+  const listener = (id: "public" | "public-probe", port: 18086 | 18089): StagingCaseRuntimeDeploymentListenerCapability => {
+    const plan = Object.freeze({ schemaVersion: "staging_public_case_binding_listener_bind_plan_v1" });
+    registerStagingPublicCaseBindingListenerCapability(plan, { id, host: "0.0.0.0", port });
+    return plan as unknown as StagingCaseRuntimeDeploymentListenerCapability;
+  };
+  return Object.freeze({ ...application,
+    outboxOrigin: `http://${outbox.serviceName}.${outbox.namespace}.svc.cluster.local:18087/`,
+    publicListener: listener("public", 18_086), probeListener: listener("public-probe", 18_089),
   });
 }
 
@@ -174,7 +282,17 @@ function startFailed(): Error { return new Error("staging_public_case_binding_ru
 export function createStagingPublicCaseBindingRuntime(
   input: StagingPublicCaseBindingRuntimeConfig,
 ): StagingPublicCaseBindingRuntime {
-  const config = captureConfig(input);
+  return composePublicRuntime(captureConfig(input));
+}
+
+/** The independent deployment pin authorizes only public discovery and private read-only replay. */
+export function createOperationsBoundStagingPublicCaseBindingRuntime(
+  input: OperationsBoundStagingPublicCaseBindingRuntimeConfig,
+): StagingPublicCaseBindingRuntime {
+  return composePublicRuntime(captureReviewedConfig(input));
+}
+
+function composePublicRuntime(config: CapturedConfig): StagingPublicCaseBindingRuntime {
   const outboxAbort = new AbortController();
   const outbox = createCredentialFreeCaseBindingOutboxHttpClient(
     { origin: config.outboxOrigin },

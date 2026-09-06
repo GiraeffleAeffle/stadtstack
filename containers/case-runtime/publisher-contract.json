@@ -62,7 +62,7 @@
     "activation": "staging_runtime_pending_operations_activation",
     "componentActivation": {
       "case-steward-control": "reviewed_control_entrypoint_pending_operations_activation",
-      "case-public-binding": "loopback_runtime_pending_operations_activation",
+      "case-public-binding": "reviewed_public_entrypoint_pending_operations_activation",
       "case-restore-verifier": "blocked_pending_reviewed_recovery_evidence"
     }
   },
