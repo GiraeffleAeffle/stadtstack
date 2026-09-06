@@ -1,6 +1,6 @@
 # ADR 0022: Compose isolated staging Case runtimes before network exposure
 
-- **Status:** accepted; loopback reference and source-only image entrypoints implemented; deployment blocked on the Operations gate
+- **Status:** accepted; loopback reference and reviewed control image entrypoint implemented; deployment blocked on the Operations gate
 - **Date:** 2026-08-23
 
 ## Context
@@ -91,6 +91,40 @@ Service or Ingress is created for a probe; a later Pod probe addresses its
 container port directly.
 
 ### Network-exposure gate
+
+The control image now connects its existing reviewed Operations factory to
+mounted configuration. With only `STADTSTACK_CASE_CONTROL_CONFIG_PATH`, it
+retains the loopback reference mode. Setting either of the following requires
+both; partial configuration never falls back:
+
+- `STADTSTACK_CASE_CONTROL_REVIEWED_BINDING_PATH`: a bounded regular JSON file
+  containing the reviewed control deployment binding;
+- `STADTSTACK_CASE_CONTROL_BINDING_SHA256`: the independently pinned checksum
+  from the reviewed immutable deployment configuration.
+
+In that mode the application file contains only the existing Operations
+application inputs, including the scoped staging staff credentials. It must
+be a regular mode-0600 file owned by the runtime user. Storage paths, observed
+mount facts, listener addresses, release identity and verification callbacks
+cannot be supplied through it. The existing local filesystem observer checks
+the binding and marker before the single SQLite owner or fixed control
+listeners are composed. Marker reads are bounded to 64 KiB and reject
+symlinks, FIFOs, devices and replacement races before interpretation.
+
+The deployment must keep the reviewed binding source and immutable checksum
+under independent review; matching values in caller-controlled files do not
+establish that review. The mounted launcher does not contact Kubernetes,
+provision storage, issue a staff token, assign a production role or activate a
+restore. The public image remains loopback-only and rejects all control
+configuration; its reviewed cluster composition is a separate follow-on.
+
+One project testing account may be explicitly assigned both staging operator
+and steward responsibilities. The deployment still supplies a distinct scoped
+steward credential; the public account login is not that credential. Such an
+assignment neither changes the eligibility verifier nor converts a synthetic
+test-pass receipt into real municipal eligibility. Production staff identities
+must use ADR 0021's verified issuer/audience and subject-to-role mapping; an
+administrative dashboard session alone cannot supply it.
 
 The reference composition remains loopback-only until Operations has a
 closed-world, independently reviewed contract for all three civic Services:

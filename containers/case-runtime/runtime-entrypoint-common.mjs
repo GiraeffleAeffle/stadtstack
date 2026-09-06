@@ -14,9 +14,11 @@ function fail() {
   throw new Error("case_runtime_configuration_invalid");
 }
 
-function exactConfigurationPath(name) {
+function exactConfigurationPath(name, additionalEnvironment) {
   const caseEnvironment = Object.keys(process.env).filter((key) => key.startsWith(PREFIX));
-  if (caseEnvironment.length !== 1 || caseEnvironment[0] !== name) fail();
+  const allowed = [name, ...additionalEnvironment];
+  if (caseEnvironment.length !== allowed.length ||
+    caseEnvironment.some((key) => !allowed.includes(key))) fail();
   const path = process.env[name];
   if (typeof path !== "string" || path.length === 0 || path.trim() !== path || !path.startsWith("/")) fail();
   return path;
@@ -26,7 +28,7 @@ function sameFile(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
-function readBoundedRegularFile(path) {
+function readBoundedRegularFile(path, privateFile) {
   let descriptor;
   let bytes;
   let failed = false;
@@ -41,6 +43,8 @@ function readBoundedRegularFile(path) {
     const beforeRead = fstatSync(descriptor, { bigint: true });
     if (!beforeRead.isFile() || !sameFile(beforeOpen, beforeRead) ||
       beforeRead.size < 1n || beforeRead.size > BigInt(MAX_CONFIG_BYTES)) fail();
+    if (privateFile && ((beforeRead.mode & 0o777n) !== 0o600n ||
+      typeof process.getuid !== "function" || beforeRead.uid !== BigInt(process.getuid()))) fail();
 
     bytes = Buffer.alloc(Number(beforeRead.size));
     let offset = 0;
@@ -77,18 +81,22 @@ function readBoundedRegularFile(path) {
   return bytes;
 }
 
-function readConfiguration(name) {
-  const bytes = readBoundedRegularFile(exactConfigurationPath(name));
+export function readRuntimeJsonFile(path, { privateFile = false } = {}) {
+  if (typeof path !== "string" || path.length === 0 || path.trim() !== path ||
+    !path.startsWith("/")) fail();
+  const bytes = readBoundedRegularFile(path, privateFile);
   try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
   catch { fail(); }
 }
 
 /**
- * Starts exactly one loopback reference runtime from one mounted JSON file.
+ * Starts one runtime from a bounded mounted JSON file. Each launcher fixes its
+ * complete environment allowlist and supplies its own composition function.
  * It intentionally never prints a path, config value, exception, or health
  * object: credentials and storage facts may be present in control config.
  */
-export async function startLoopbackCaseRuntime({ component, configurationEnvironment, create }) {
+export async function startCaseRuntime({ component, configurationEnvironment, create,
+  additionalEnvironment = [], runtimeMode = "loopback", privateConfiguration = false }) {
   let runtime;
   let terminationRequested = false;
   let closeFailed = false;
@@ -105,7 +113,8 @@ export async function startLoopbackCaseRuntime({ component, configurationEnviron
     return closePromise;
   };
   try {
-    runtime = await create(readConfiguration(configurationEnvironment));
+    const path = exactConfigurationPath(configurationEnvironment, additionalEnvironment);
+    runtime = await create(readRuntimeJsonFile(path, { privateFile: privateConfiguration }));
     process.once("SIGTERM", () => { void requestClose(0); });
     process.once("SIGINT", () => { void requestClose(0); });
     try { await runtime.start(); }
@@ -116,7 +125,7 @@ export async function startLoopbackCaseRuntime({ component, configurationEnviron
       await closePromise;
       return;
     }
-    process.stdout.write(`stadtstack_case_${component}_loopback_ready\n`);
+    process.stdout.write(`stadtstack_case_${component}_${runtimeMode}_ready\n`);
   } catch {
     process.stderr.write(`stadtstack_case_${component}_start_failed\n`);
     process.exitCode = 78;

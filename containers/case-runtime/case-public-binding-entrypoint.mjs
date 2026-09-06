@@ -1,6 +1,6 @@
-import { startLoopbackCaseRuntime } from "./runtime-entrypoint-common.mjs";
+import { startCaseRuntime } from "./runtime-entrypoint-common.mjs";
 
-void startLoopbackCaseRuntime({
+void startCaseRuntime({
   component: "public_binding",
   configurationEnvironment: "STADTSTACK_CASE_PUBLIC_CONFIG_PATH",
   async create(configuration) {

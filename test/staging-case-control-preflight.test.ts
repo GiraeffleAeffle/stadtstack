@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, statfsSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -458,7 +459,17 @@ test("the tokenless Node observer verifies a real private mount and fails closed
       reviewedBinding: value as unknown as StagingCaseControlReviewedBindingV1,
       expectedBindingChecksum: value.bindingChecksum as string,
       storageObserver: observer,
-    }), /staging_case_control_preflight_observation_mismatch/u);
+    }), /staging_case_control_preflight_observation_unavailable/u);
+
+    unlinkSync(markerPath);
+    writeFileSync(markerPath, Buffer.alloc(65_537), { mode: 0o600 });
+    assert.throws(() => observer.observe({ rootDir: canonicalRoot, markerFileName: typed.storage.marker.fileName }),
+      /staging_case_control_preflight_observation_unavailable/u);
+    unlinkSync(markerPath);
+    const fifo = spawnSync("mkfifo", [markerPath], { encoding: "utf8" });
+    assert.equal(fifo.status, 0);
+    assert.throws(() => observer.observe({ rootDir: canonicalRoot, markerFileName: typed.storage.marker.fileName }),
+      /staging_case_control_preflight_observation_unavailable/u);
 
     unlinkSync(markerPath);
     writeFileSync(markerPath, Buffer.from([0xff]));

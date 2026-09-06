@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync, statfsSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, statfsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { types as utilTypes } from "node:util";
 
@@ -559,10 +559,44 @@ export function createNodeStagingCaseControlStorageObserver(): StagingCaseContro
     const markerPath = join(rootDir, target.markerFileName);
     const root = lstatSync(rootDir, { bigint: true });
     const marker = lstatSync(markerPath, { bigint: true });
+    // Reject non-files before reading. O_NOFOLLOW/O_NONBLOCK and descriptor
+    // checks also bound a replacement race with a symlink, device or FIFO.
+    if (!root.isDirectory() || root.isSymbolicLink() || !marker.isFile() || marker.isSymbolicLink() ||
+      marker.size < 1n || marker.size > 65_536n ||
+      typeof constants.O_NOFOLLOW !== "number" || typeof constants.O_NONBLOCK !== "number") {
+      fail("staging_case_control_preflight_observation_unavailable");
+    }
     const canonicalRoot = realpathSync(rootDir);
     const canonicalMarker = realpathSync(markerPath);
     const fs = statfsSync(rootDir, { bigint: true });
-    const markerBytes = readFileSync(markerPath);
+    const descriptor = openSync(markerPath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    let markerBytes: Buffer;
+    try {
+      const before = fstatSync(descriptor, { bigint: true });
+      if (!before.isFile() || before.dev !== marker.dev || before.ino !== marker.ino ||
+        before.size !== marker.size || before.mtimeNs !== marker.mtimeNs || before.ctimeNs !== marker.ctimeNs) {
+        fail("staging_case_control_preflight_observation_unavailable");
+      }
+      markerBytes = Buffer.alloc(Number(before.size));
+      let offset = 0;
+      while (offset < markerBytes.byteLength) {
+        const count = readSync(descriptor, markerBytes, offset, markerBytes.byteLength - offset, offset);
+        if (count < 1) fail("staging_case_control_preflight_observation_unavailable");
+        offset += count;
+      }
+      if (readSync(descriptor, Buffer.alloc(1), 0, 1, offset) !== 0) {
+        fail("staging_case_control_preflight_observation_unavailable");
+      }
+      const after = fstatSync(descriptor, { bigint: true });
+      const pathAfter = lstatSync(markerPath, { bigint: true });
+      if (after.size !== before.size || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs ||
+        !pathAfter.isFile() || pathAfter.isSymbolicLink() || pathAfter.dev !== after.dev || pathAfter.ino !== after.ino ||
+        pathAfter.size !== after.size || pathAfter.mtimeNs !== after.mtimeNs || pathAfter.ctimeNs !== after.ctimeNs) {
+        fail("staging_case_control_preflight_observation_unavailable");
+      }
+    } finally {
+      closeSync(descriptor);
+    }
     const markerText = new TextDecoder("utf-8", { fatal: true }).decode(markerBytes);
     return Object.freeze({
       rootDir: canonicalRoot,

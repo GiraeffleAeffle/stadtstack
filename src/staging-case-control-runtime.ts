@@ -32,6 +32,7 @@ import {
   assertStagingCaseControlListenerBindPlan,
   consumeStagingCaseControlDeploymentProofForRuntime,
   createStagingCaseControlDeploymentProofFromReviewedSources,
+  createNodeStagingCaseControlStorageObserver,
   createStagingCaseControlListenerBindPlans,
   type StagingCaseControlBindingPinSource,
   type StagingCaseControlDeploymentRuntimeFacts,
@@ -112,7 +113,8 @@ export type OperationsBoundStagingCaseControlApplicationConfig = Readonly<{
 export type OperationsBoundStagingCaseControlRuntimeConfig = Readonly<{
   reviewedBindingSource: StagingCaseControlReviewedBindingSource;
   bindingPinSource: StagingCaseControlBindingPinSource;
-  storageObserver: StagingCaseControlStorageObserver;
+  /** Defaults to the local filesystem observer used by the mounted entrypoint. */
+  storageObserver?: StagingCaseControlStorageObserver;
   application: OperationsBoundStagingCaseControlApplicationConfig;
 }>;
 
@@ -545,11 +547,16 @@ export function createStagingCaseControlRuntime(
 export function createOperationsBoundStagingCaseControlRuntime(
   input: OperationsBoundStagingCaseControlRuntimeConfig,
 ): StagingCaseControlRuntime {
-  const parsed = exactRecord(input, ["reviewedBindingSource", "bindingPinSource", "storageObserver", "application"]);
+  if (!input || typeof input !== "object" || utilTypes.isProxy(input)) invalid();
+  const fields = ["reviewedBindingSource", "bindingPinSource", "application"];
+  if (Object.hasOwn(input, "storageObserver")) fields.push("storageObserver");
+  const parsed = exactRecord(input, fields);
   const proof = createStagingCaseControlDeploymentProofFromReviewedSources({
     reviewedBindingSource: parsed.reviewedBindingSource as StagingCaseControlReviewedBindingSource,
     bindingPinSource: parsed.bindingPinSource as StagingCaseControlBindingPinSource,
-    storageObserver: parsed.storageObserver as StagingCaseControlStorageObserver,
+    storageObserver: Object.hasOwn(parsed, "storageObserver")
+      ? parsed.storageObserver as StagingCaseControlStorageObserver
+      : createNodeStagingCaseControlStorageObserver(),
   });
   const deployment = consumeStagingCaseControlDeploymentProofForRuntime(proof);
   const config = captureOperationsApplication(parsed.application, deployment);

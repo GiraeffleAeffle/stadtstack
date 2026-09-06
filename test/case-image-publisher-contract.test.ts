@@ -70,9 +70,9 @@ test("the three Case images use distinct GHCR repositories and remain pre-activa
       covers: ["schemaVersion", "canonicalEncoding", "component", "imageRepository", "manifestDigest", "sourceRevision", "authContext", "authConfigCanonicalSha256", "resolverIdentity", "resolvedManifestDigest"],
     },
   });
-  assert.equal(contract.publication.activation, "loopback_runtime_pending_operations_activation");
+  assert.equal(contract.publication.activation, "staging_runtime_pending_operations_activation");
   assert.deepEqual(contract.publication.componentActivation, {
-    "case-steward-control": "loopback_runtime_pending_operations_activation",
+    "case-steward-control": "reviewed_control_entrypoint_pending_operations_activation",
     "case-public-binding": "loopback_runtime_pending_operations_activation",
     "case-restore-verifier": "blocked_pending_reviewed_recovery_evidence",
   });
@@ -599,8 +599,8 @@ if (mode === "atomic-rename-after-open" || mode === "grow-after-open") {
 }
 syncBuiltinESMExports();
 
-const { startLoopbackCaseRuntime } = await import(${JSON.stringify(common)});
-void startLoopbackCaseRuntime({
+const { startCaseRuntime } = await import(${JSON.stringify(common)});
+void startCaseRuntime({
   component: "fixture",
   configurationEnvironment: "STADTSTACK_CASE_FIXTURE_CONFIG_PATH",
   async create(value) {
@@ -694,13 +694,13 @@ test("public and control launchers never announce readiness after termination st
   writeFileSync(configuration, '{"ok":true}', "utf8");
   writeFileSync(harness, `
 import { setImmediate as waitImmediate } from "node:timers/promises";
-import { startLoopbackCaseRuntime } from ${JSON.stringify(common)};
+import { startCaseRuntime } from ${JSON.stringify(common)};
 
 const [component, configurationEnvironment] = process.argv.slice(2);
 let releaseStart;
 const startBarrier = new Promise((resolve) => { releaseStart = resolve; });
 const keepAlive = setInterval(() => {}, 1_000);
-await startLoopbackCaseRuntime({
+await startCaseRuntime({
   component,
   configurationEnvironment,
   async create(value) {
