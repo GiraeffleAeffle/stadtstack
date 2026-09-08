@@ -66,8 +66,10 @@ checksum and test policy to the three journal events. It has exact
 It carries no eligibility receipt or issuer claim. The existing credential-free
 outbox and public GET routes deliver this distinct schema. The municipal parser,
 real adoption HTTP mode and civic continuation reject it. The synthetic
-coordinator currently rejects every command after admission; extending the
-rehearsal into department work remains separate work.
+coordinator rejects every command after admission by default.
+[ADR 0033](./0033-connected-workspace-identity-and-synthetic-review.md) adds an
+explicitly pinned, separate department-review rehearsal; it does not broaden the
+municipal lane or alter existing store configuration.
 
 Offline tests use a new fixture generated through Röbel's public signing and
 synthetic adoption APIs. They exercise source signatures, historical challenge
