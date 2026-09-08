@@ -18,6 +18,7 @@ import {
   consumeStagingCaseControlDeploymentProofForRuntime,
   verifyStagingCaseControlReviewedBinding,
   type StagingCaseControlReviewedBindingV1,
+  type StagingCaseControlReviewedBinding,
   type StagingCaseControlStorageObservation,
 } from "../src/staging-case-control-preflight.ts";
 import {
@@ -39,7 +40,7 @@ function checksum(value: unknown): string {
   return `sha256:${createHash("sha256").update(canonical(value), "utf8").digest("hex")}`;
 }
 
-function bindingChecksumBody(binding: Omit<StagingCaseControlReviewedBindingV1, "bindingChecksum">): Record<string, unknown> {
+function bindingChecksumBody(binding: Omit<StagingCaseControlReviewedBinding, "bindingChecksum">): Record<string, unknown> {
   return {
     schemaVersion: binding.schemaVersion,
     deploymentEnvironment: binding.deploymentEnvironment,
@@ -54,7 +55,7 @@ function bindingChecksumBody(binding: Omit<StagingCaseControlReviewedBindingV1, 
   };
 }
 
-function markerBody(binding: Omit<StagingCaseControlReviewedBindingV1, "bindingChecksum">): Record<string, unknown> {
+function markerBody(binding: Omit<StagingCaseControlReviewedBinding, "bindingChecksum">): Record<string, unknown> {
   return {
     schemaVersion: "staging_case_control_storage_marker_v1",
     deploymentEnvironment: binding.deploymentEnvironment,
@@ -134,7 +135,7 @@ function binding(): StagingCaseControlReviewedBindingV1 {
   return Object.freeze({ ...unsigned, bindingChecksum: checksum(bindingChecksumBody(unsigned)) }) as StagingCaseControlReviewedBindingV1;
 }
 
-function observation(value: StagingCaseControlReviewedBindingV1, availableBytes = BigInt(value.storage.minAvailableBytes)): StagingCaseControlStorageObservation {
+function observation(value: StagingCaseControlReviewedBinding, availableBytes = BigInt(value.storage.minAvailableBytes)): StagingCaseControlStorageObservation {
   return Object.freeze({
     rootDir: value.storage.rootDir,
     rootKind: "directory" as const,
@@ -154,7 +155,7 @@ function observation(value: StagingCaseControlReviewedBindingV1, availableBytes 
   });
 }
 
-function preflight(value = binding(), observed = observation(value), expectedBindingChecksum = value.bindingChecksum) {
+function preflight(value: StagingCaseControlReviewedBinding = binding(), observed = observation(value), expectedBindingChecksum = value.bindingChecksum) {
   return createStagingCaseControlDeploymentProof({
     reviewedBinding: value,
     expectedBindingChecksum,
@@ -398,7 +399,7 @@ test("reviewed binding and independent pin sources are distinct, read once, and 
 
   const modified = structuredClone(value) as unknown as Record<string, unknown>;
   modified.workloadName = "other-control";
-  modified.bindingChecksum = checksum(bindingChecksumBody(modified as unknown as Omit<StagingCaseControlReviewedBindingV1, "bindingChecksum">));
+  modified.bindingChecksum = checksum(bindingChecksumBody(modified as unknown as Omit<StagingCaseControlReviewedBinding, "bindingChecksum">));
   assert.throws(() => createStagingCaseControlDeploymentProofFromReviewedSources({
     reviewedBindingSource: Object.freeze({ read: () => modified }),
     bindingPinSource: Object.freeze({ read: () => value.bindingChecksum }),
@@ -446,7 +447,7 @@ test("the tokenless Node observer verifies a real private mount and fails closed
     const typed = value as unknown as StagingCaseControlReviewedBindingV1;
     const markerText = `${canonical(markerBody(typed))}\n`;
     marker.checksum = `sha256:${createHash("sha256").update(markerText, "utf8").digest("hex")}`;
-    value.bindingChecksum = checksum(bindingChecksumBody(value as unknown as Omit<StagingCaseControlReviewedBindingV1, "bindingChecksum">));
+    value.bindingChecksum = checksum(bindingChecksumBody(value as unknown as Omit<StagingCaseControlReviewedBinding, "bindingChecksum">));
     const markerPath = join(canonicalRoot, typed.storage.marker.fileName);
     writeFileSync(markerPath, markerText, { mode: 0o600 });
     chmodSync(markerPath, 0o600);
@@ -546,4 +547,28 @@ test("observation adapter failures, proxies, accessors, and surplus fields fail 
   assert.throws(() => preflight(value, accessor as unknown as StagingCaseControlStorageObservation), /staging_case_control_preflight_observation_invalid/u);
   assert.throws(() => preflight(value, new Proxy(observed, {})), /staging_case_control_preflight_observation_invalid/u);
   assert.throws(() => preflight(value, { ...observed, extra: true } as unknown as StagingCaseControlStorageObservation), /staging_case_control_preflight_observation_invalid/u);
+});
+
+
+test("version 2 alone authorizes the separately pinned review listener", () => {
+  const old = binding();
+  const unsigned = { ...old, schemaVersion: "staging_case_control_deployment_binding_v2" as const,
+    listeners: [...old.listeners, { id: "administration-review" as const, port: 18090 as const, bindScope: "pod_network" as const }] };
+  const reviewed = { ...unsigned, bindingChecksum: checksum(bindingChecksumBody(unsigned)) };
+  assert.deepEqual(verifyStagingCaseControlReviewedBinding(reviewed), reviewed);
+  const proof = preflight(reviewed);
+  const facts = consumeStagingCaseControlDeploymentProofForRuntime(proof);
+  assert.throws(() => { (facts.listeners[3] as { port: number }).port = 18085; }, TypeError);
+  const plans = createStagingCaseControlListenerBindPlans(proof);
+  assert.equal(plans.length, 4);
+  assert.deepEqual(assertStagingCaseControlListenerBindPlan(plans[3]), { id: "administration-review", host: "0.0.0.0", port: 18090 });
+  assert.throws(() => preflight(reviewed, observation(reviewed), old.bindingChecksum), /binding_pin_mismatch/);
+  for (const bad of [
+    { ...reviewed, schemaVersion: old.schemaVersion },
+    { ...reviewed, listeners: old.listeners },
+    { ...reviewed, listeners: [...old.listeners, { ...unsigned.listeners[3], port: 18089 }] },
+  ]) {
+    assert.throws(() => verifyStagingCaseControlReviewedBinding({ ...bad, bindingChecksum: checksum(bindingChecksumBody(bad as StagingCaseControlReviewedBinding)) }), /binding_invalid/);
+  }
+  assert.equal(createStagingCaseControlListenerBindPlans(preflight(old)).length, 3);
 });

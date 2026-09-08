@@ -13,13 +13,13 @@ import { registerStagingCaseRuntimeDeploymentListenerCapability } from "./stagin
  */
 
 export type StagingCaseControlListenerIdentity = Readonly<{
-  id: "admission" | "private-outbox" | "probe";
-  port: 18085 | 18087 | 18088;
+  id: "admission" | "private-outbox" | "probe" | "administration-review";
+  port: 18085 | 18087 | 18088 | 18090;
   bindScope: "pod_network";
 }>;
 
-export type StagingCaseControlReviewedBindingV1 = Readonly<{
-  schemaVersion: "staging_case_control_deployment_binding_v1";
+export type StagingCaseControlReviewedBinding = Readonly<{
+  schemaVersion: "staging_case_control_deployment_binding_v1" | "staging_case_control_deployment_binding_v2";
   deploymentEnvironment: "staging";
   municipalityId: string;
   workloadName: string;
@@ -60,6 +60,16 @@ export type StagingCaseControlReviewedBindingV1 = Readonly<{
   listeners: readonly StagingCaseControlListenerIdentity[];
   bindingChecksum: string;
 }>;
+
+/** Version 1 retains exactly the original three listeners. Version 2 adds
+ * the separate administrative review listener and requires matching application
+ * configuration; neither version changes storage ownership or admission. */
+export type StagingCaseControlReviewedBindingV1 = Omit<StagingCaseControlReviewedBinding, "schemaVersion"> & {
+  schemaVersion: "staging_case_control_deployment_binding_v1";
+};
+export type StagingCaseControlReviewedBindingV2 = Omit<StagingCaseControlReviewedBinding, "schemaVersion"> & {
+  schemaVersion: "staging_case_control_deployment_binding_v2";
+};
 
 /** A local-only observation adapter; test fakes never need a filesystem. */
 export type StagingCaseControlStorageObserver = Readonly<{
@@ -107,7 +117,7 @@ export type StagingCaseControlDeploymentRuntimeFacts = Readonly<{
 }>;
 
 export type StagingCaseControlDeploymentPreflightInput = Readonly<{
-  reviewedBinding: StagingCaseControlReviewedBindingV1;
+  reviewedBinding: StagingCaseControlReviewedBinding;
   /** Independently pinned by the reviewed deployment configuration. */
   expectedBindingChecksum: string;
   storageObserver: StagingCaseControlStorageObserver;
@@ -131,9 +141,9 @@ export type StagingCaseControlListenerBindPlan = Readonly<{
 
 /** The only resolved form: it comes from a module-proven bind plan. */
 export type VerifiedStagingCaseControlPodNetworkBind = Readonly<{
-  readonly id: "admission" | "private-outbox" | "probe";
+  readonly id: "admission" | "private-outbox" | "probe" | "administration-review";
   readonly host: "0.0.0.0";
-  readonly port: 18085 | 18087 | 18088;
+  readonly port: 18085 | 18087 | 18088 | 18090;
 }>;
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
@@ -227,7 +237,7 @@ function fsMagic(value: unknown, code: string): string {
   return string(value, FS_MAGIC, 18, code);
 }
 
-function parseStorage(value: unknown): StagingCaseControlReviewedBindingV1["storage"] {
+function parseStorage(value: unknown): StagingCaseControlReviewedBinding["storage"] {
   const record = exactRecord(value, [
     "rootDir", "pvcNamespace", "pvcName", "pvcUid", "pvName", "storageClass", "accessMode", "volumeMode",
     "requestedBytes", "uid", "gid", "mode", "filesystemType", "minAvailableBytes", "marker",
@@ -271,7 +281,7 @@ const EXPECTED_LISTENERS: readonly StagingCaseControlListenerIdentity[] = Object
   Object.freeze({ id: "probe", port: 18088, bindScope: "pod_network" }),
 ]);
 
-function parseDeployment(value: unknown): StagingCaseControlReviewedBindingV1["deployment"] {
+function parseDeployment(value: unknown): StagingCaseControlReviewedBinding["deployment"] {
   const record = exactRecord(value, ["replicas", "strategy", "noOverlappingPods"], "staging_case_control_preflight_binding_invalid");
   if (record.replicas !== 1 || record.strategy !== "Recreate" || record.noOverlappingPods !== true) {
     fail("staging_case_control_preflight_binding_invalid");
@@ -279,7 +289,7 @@ function parseDeployment(value: unknown): StagingCaseControlReviewedBindingV1["d
   return Object.freeze({ replicas: 1, strategy: "Recreate" as const, noOverlappingPods: true });
 }
 
-function parseWorkload(value: unknown): StagingCaseControlReviewedBindingV1["workload"] {
+function parseWorkload(value: unknown): StagingCaseControlReviewedBinding["workload"] {
   const record = exactRecord(value, ["serviceAccountName", "automountServiceAccountToken"], "staging_case_control_preflight_binding_invalid");
   if (record.automountServiceAccountToken !== false) fail("staging_case_control_preflight_binding_invalid");
   return Object.freeze({
@@ -288,18 +298,20 @@ function parseWorkload(value: unknown): StagingCaseControlReviewedBindingV1["wor
   });
 }
 
-function parseListeners(value: unknown): readonly StagingCaseControlListenerIdentity[] {
-  const raw = exactArray(value, EXPECTED_LISTENERS.length, "staging_case_control_preflight_binding_invalid");
+function parseListeners(value: unknown, review: boolean): readonly StagingCaseControlListenerIdentity[] {
+  const expectedListeners: readonly StagingCaseControlListenerIdentity[] = review
+    ? [...EXPECTED_LISTENERS, { id: "administration-review", port: 18090, bindScope: "pod_network" }] : EXPECTED_LISTENERS;
+  const raw = exactArray(value, expectedListeners.length, "staging_case_control_preflight_binding_invalid");
   const listeners = raw.map((entry, index) => {
     const record = exactRecord(entry, ["id", "port", "bindScope"], "staging_case_control_preflight_binding_invalid");
-    const expected = EXPECTED_LISTENERS[index]!;
+    const expected = expectedListeners[index]!;
     if (record.id !== expected.id || record.port !== expected.port || record.bindScope !== expected.bindScope) fail("staging_case_control_preflight_binding_invalid");
-    return expected;
+    return Object.freeze({ ...expected });
   });
   return Object.freeze(listeners);
 }
 
-function bindingBody(binding: Omit<StagingCaseControlReviewedBindingV1, "bindingChecksum">): Record<string, unknown> {
+function bindingBody(binding: Omit<StagingCaseControlReviewedBinding, "bindingChecksum">): Record<string, unknown> {
   return {
     schemaVersion: binding.schemaVersion,
     deploymentEnvironment: binding.deploymentEnvironment,
@@ -315,17 +327,17 @@ function bindingBody(binding: Omit<StagingCaseControlReviewedBindingV1, "binding
 }
 
 /** Validates the closed-world Operations fact record and its canonical digest. */
-export function verifyStagingCaseControlReviewedBinding(value: unknown): StagingCaseControlReviewedBindingV1 {
+export function verifyStagingCaseControlReviewedBinding(value: unknown): StagingCaseControlReviewedBinding {
   const record = exactRecord(value, [
     "schemaVersion", "deploymentEnvironment", "municipalityId", "releaseDigest", "operationsTopologyChecksum",
     "workloadName", "workload", "deployment", "storage", "listeners", "bindingChecksum",
   ], "staging_case_control_preflight_binding_invalid");
-  if (record.schemaVersion !== "staging_case_control_deployment_binding_v1" || record.deploymentEnvironment !== "staging" ||
+  if ((record.schemaVersion !== "staging_case_control_deployment_binding_v1" && record.schemaVersion !== "staging_case_control_deployment_binding_v2") || record.deploymentEnvironment !== "staging" ||
     typeof record.releaseDigest !== "string" || !SHA256.test(record.releaseDigest) ||
     typeof record.operationsTopologyChecksum !== "string" || !SHA256.test(record.operationsTopologyChecksum) ||
     typeof record.bindingChecksum !== "string" || !SHA256.test(record.bindingChecksum)) fail("staging_case_control_preflight_binding_invalid");
   const parsed = Object.freeze({
-    schemaVersion: "staging_case_control_deployment_binding_v1" as const,
+    schemaVersion: record.schemaVersion,
     deploymentEnvironment: "staging" as const,
     municipalityId: string(record.municipalityId, MUNICIPALITY, 63, "staging_case_control_preflight_binding_invalid"),
     workloadName: identifier(record.workloadName, "staging_case_control_preflight_binding_invalid"),
@@ -334,14 +346,14 @@ export function verifyStagingCaseControlReviewedBinding(value: unknown): Staging
     operationsTopologyChecksum: record.operationsTopologyChecksum,
     deployment: parseDeployment(record.deployment),
     storage: parseStorage(record.storage),
-    listeners: parseListeners(record.listeners),
+    listeners: parseListeners(record.listeners, record.schemaVersion === "staging_case_control_deployment_binding_v2"),
     bindingChecksum: record.bindingChecksum,
   });
   if (checksum(bindingBody(parsed)) !== parsed.bindingChecksum) fail("staging_case_control_preflight_binding_checksum_invalid");
   return parsed;
 }
 
-function markerBody(binding: StagingCaseControlReviewedBindingV1): Record<string, unknown> {
+function markerBody(binding: StagingCaseControlReviewedBinding): Record<string, unknown> {
   return {
     schemaVersion: "staging_case_control_storage_marker_v1",
     deploymentEnvironment: binding.deploymentEnvironment,
@@ -410,7 +422,7 @@ function captureObservation(value: unknown): StagingCaseControlStorageObservatio
   });
 }
 
-function verifyObservation(binding: StagingCaseControlReviewedBindingV1, observed: StagingCaseControlStorageObservation): void {
+function verifyObservation(binding: StagingCaseControlReviewedBinding, observed: StagingCaseControlStorageObservation): void {
   const expectedMarkerPath = join(binding.storage.rootDir, binding.storage.marker.fileName);
   if (observed.rootDir !== binding.storage.rootDir || observed.markerPath !== expectedMarkerPath ||
     observed.rootKind !== "directory" || observed.rootIsSymbolicLink || observed.markerKind !== "file" || observed.markerIsSymbolicLink ||
@@ -508,14 +520,14 @@ export function createStagingCaseControlDeploymentProofFromReviewedSources(
   try { reviewedBinding = reviewedBindingSource.read(); } catch { fail("staging_case_control_preflight_binding_source_unavailable"); }
   try { expectedBindingChecksum = bindingPinSource.read(); } catch { fail("staging_case_control_preflight_pin_source_unavailable"); }
   return createStagingCaseControlDeploymentProof({
-    reviewedBinding: reviewedBinding as StagingCaseControlReviewedBindingV1,
+    reviewedBinding: reviewedBinding as StagingCaseControlReviewedBinding,
     expectedBindingChecksum: expectedBindingChecksum as string,
     storageObserver: record.storageObserver as StagingCaseControlStorageObserver,
   });
 }
 
 /**
- * Derives three independent listener capabilities from a verified proof. The
+ * Derives the version-pinned listener capabilities from a verified proof. The
  * value intentionally has no host or port: code may only resolve it through
  * the assertion below, which checks module-private provenance first.
  */

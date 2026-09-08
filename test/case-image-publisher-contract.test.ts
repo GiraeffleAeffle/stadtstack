@@ -211,6 +211,14 @@ const SHARED_CASE_RUNTIME_SOURCES = [
   "src/staging-runtime-probe-server.ts",
 ] as const;
 const CONTROL_ONLY_CASE_RUNTIME_SOURCES = [
+  "src/adapters/administration-workspace-adapter.ts",
+  "src/adapters/citizen-brief-readiness-adapter.ts",
+  "src/administration-review-server.ts",
+  "src/administration-review-service.ts",
+  "src/durable-case-continuation.ts",
+  "src/public-knowledge.ts",
+  "src/staging-administration-authenticator.ts",
+
   "src/adapters/discussion-adapter.ts",
   "src/adapters/sqlite-atomic-topic-case-admission.ts",
   "src/case-durable-deployment-claim.ts",

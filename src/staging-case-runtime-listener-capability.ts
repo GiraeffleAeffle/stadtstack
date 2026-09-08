@@ -20,6 +20,7 @@ const CONTROL_PORTS: Readonly<Record<string, number>> = Object.freeze({
   admission: 18_085,
   "private-outbox": 18_087,
   probe: 18_088,
+  "administration-review": 18_090,
 });
 const PUBLIC_PORTS: Readonly<Record<string, number>> = Object.freeze({
   public: 18_086,

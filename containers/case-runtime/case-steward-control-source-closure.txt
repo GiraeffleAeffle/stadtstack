@@ -1,5 +1,9 @@
+src/adapters/administration-workspace-adapter.ts
+src/adapters/citizen-brief-readiness-adapter.ts
 src/adapters/discussion-adapter.ts
 src/adapters/sqlite-atomic-topic-case-admission.ts
+src/administration-review-server.ts
+src/administration-review-service.ts
 src/case-binding-outbox-wire.ts
 src/case-binding-outbox.ts
 src/case-binding-projection.ts
@@ -13,8 +17,11 @@ src/citizen-adoption-evidence.ts
 src/citizen-suggestion.ts
 src/civic-case-coordinator.ts
 src/credential-free-case-binding-outbox-server.ts
+src/durable-case-continuation.ts
+src/public-knowledge.ts
 src/roebel-case-steward-control-server.ts
 src/roebel-control-service.ts
+src/staging-administration-authenticator.ts
 src/staging-case-control-preflight.ts
 src/staging-case-control-runtime.ts
 src/staging-case-process-lifecycle.ts

@@ -1,4 +1,9 @@
 import { types as utilTypes } from "node:util";
+import { parseSyntheticCaseId } from "./case-id.ts";
+import { createAdministrationReviewServer } from "./administration-review-server.ts";
+import { createAdministrationReviewService } from "./administration-review-service.ts";
+import { createStagingAdministrationAuthenticator, type StagingAdministrationGrant } from "./staging-administration-authenticator.ts";
+import { createDurableCaseContinuation, type DurableCaseContinuationConfig } from "./durable-case-continuation.ts";
 import {
   createSyntheticAdoptionAcceptanceReader,
   verifySyntheticAdoptionPolicy,
@@ -57,7 +62,7 @@ import {
   type StagingCaseRecoveryActivationAuthorization,
 } from "./staging-case-recovery-activation-authority.ts";
 import { createStagingRuntimeProbeServer } from "./staging-runtime-probe-server.ts";
-import type { ActorRegistration } from "./civic-case-coordinator.ts";
+import type { ActorRegistration, ActorBinding } from "./civic-case-coordinator.ts";
 
 /** One intentionally loopback-only listener.  A later Operations-reviewed
  * deployment adapter is the only place allowed to choose a non-loopback bind. */
@@ -77,6 +82,20 @@ export type StagingSyntheticAdoptionConfig = Readonly<{
   acceptanceBaseUrl: string;
 }>;
 
+/** Server-owned review grants remain separate from initial admission tokens.
+ * The pinned registry selects exactly one reader/steward and one contributor
+ * and reviewer per required department. No role is selected by a request. */
+export type StagingAdministrationReviewRuntimeConfig = Readonly<{
+  caseId: string;
+  grants: readonly StagingAdministrationGrant[];
+  allowedHosts: readonly string[];
+}>;
+
+type CapturedAdministrationReview = StagingAdministrationReviewRuntimeConfig & Readonly<{
+  actors: DurableCaseContinuationConfig["actors"];
+  departments: DurableCaseContinuationConfig["departments"];
+}>;
+
 export type StagingCaseControlRuntimeConfig = Readonly<{
   deploymentEnvironment: "staging";
   rootDir: string;
@@ -88,6 +107,7 @@ export type StagingCaseControlRuntimeConfig = Readonly<{
   requiredDepartmentIds?: readonly string[];
   citizenAdoption?: StagingCitizenAdoptionConfig;
   syntheticAdoption?: StagingSyntheticAdoptionConfig;
+  administrationReview?: StagingAdministrationReviewRuntimeConfig;
   credentials: readonly StagingCaseStewardCredential[];
   admissionAllowedHosts: readonly string[];
   outboxAllowedHosts: readonly string[];
@@ -96,6 +116,7 @@ export type StagingCaseControlRuntimeConfig = Readonly<{
     probe: StagingCaseControlListenerPlan;
     outbox: StagingCaseControlListenerPlan;
     admission: StagingCaseControlListenerPlan;
+    administrationReview?: StagingCaseControlListenerPlan;
   }>;
   drainTimeoutMs: number;
   /** Opt-in production-path ownership. When present, graceful process release
@@ -114,6 +135,7 @@ export type OperationsBoundStagingCaseControlApplicationConfig = Readonly<{
   requiredDepartmentIds?: readonly string[];
   citizenAdoption?: StagingCitizenAdoptionConfig;
   syntheticAdoption?: StagingSyntheticAdoptionConfig;
+  administrationReview?: StagingAdministrationReviewRuntimeConfig;
   credentials: readonly StagingCaseStewardCredential[];
   admissionAllowedHosts: readonly string[];
   outboxAllowedHosts: readonly string[];
@@ -154,6 +176,7 @@ type CapturedConfig = Readonly<{
   requiredDepartmentIds: readonly string[] | undefined;
   citizenAdoption: CitizenAdoptionVerificationDependencies | undefined;
   syntheticAdoption: SyntheticAdoptionVerificationDependencies | undefined;
+  administrationReview: CapturedAdministrationReview | undefined;
   credentials: readonly StagingCaseStewardCredential[];
   admissionAllowedHosts: readonly string[];
   outboxAllowedHosts: readonly string[];
@@ -162,6 +185,7 @@ type CapturedConfig = Readonly<{
     probe: StagingCaseControlListenerPlan;
     outbox: StagingCaseControlListenerPlan;
     admission: StagingCaseControlListenerPlan;
+    administrationReview?: StagingCaseControlListenerPlan;
   }>;
   drainTimeoutMs: number;
   durableState: DurableSingleWriterState | undefined;
@@ -171,6 +195,7 @@ type DeploymentListenerPlans = Readonly<{
   probe: StagingCaseControlListenerBindPlan;
   outbox: StagingCaseControlListenerBindPlan;
   admission: StagingCaseControlListenerBindPlan;
+  administrationReview?: StagingCaseControlListenerBindPlan;
 }>;
 
 const ACTOR_ID = /^[A-Za-z0-9:._-]{1,256}$/u;
@@ -324,11 +349,41 @@ function captureRecoveryGateInput(value: unknown): StagingCaseRecoveryGateInput 
   });
 }
 
+function captureAdministrationReview(
+  value: unknown, municipalityId: string, registry: readonly ActorRegistration[],
+  requiredDepartments: readonly string[] | undefined, admissionCredentials: readonly StagingCaseStewardCredential[],
+): CapturedAdministrationReview {
+  const parsed = exactRecord(value, ["caseId", "grants", "allowedHosts"]);
+  const identity = parseSyntheticCaseId(parsed.caseId);
+  if (!identity || identity.municipalityId !== municipalityId || !requiredDepartments) invalid();
+  const oneActor = (actorClass: ActorBinding["actorClass"], departmentId?: string): ActorBinding => {
+    const found = registry.filter((entry) => entry.actorClass === actorClass && entry.departmentId === departmentId);
+    if (found.length !== 1) invalid();
+    return Object.freeze({ actorId: found[0]!.actorId, actorClass });
+  };
+  const actors = Object.freeze({ caseSteward: oneActor("case_steward"), administrationReader: oneActor("administration"), publicReader: oneActor("public") });
+  const departments = Object.freeze(requiredDepartments.map((departmentId) => Object.freeze({
+    departmentId, agent: oneActor("department_agent", departmentId), reviewer: oneActor("department_reviewer", departmentId),
+  })));
+  const grants = Object.freeze(exactArray(parsed.grants, 1, 64).map((value) => {
+    const grant = exactRecord(value, ["token", "caseId", "actor", "notBefore", "expiresAt"]);
+    const principal = exactRecord(grant.actor, ["actorId", "actorClass"]);
+    if (grant.caseId !== parsed.caseId || !registry.some((entry) => entry.actorId === principal.actorId && entry.actorClass === principal.actorClass) ||
+      admissionCredentials.some((credential) => credential.token === grant.token)) invalid();
+    return Object.freeze({ token: grant.token as string, caseId: grant.caseId as string,
+      actor: Object.freeze({ actorId: principal.actorId as string, actorClass: principal.actorClass as ActorBinding["actorClass"] }),
+      notBefore: grant.notBefore as number, expiresAt: grant.expiresAt as number });
+  }));
+  // Validate all grant syntax and token uniqueness before the durable owner is opened.
+  createStagingAdministrationAuthenticator({ deploymentEnvironment: "staging", grants });
+  return Object.freeze({ caseId: parsed.caseId as string, grants, allowedHosts: captureHosts(parsed.allowedHosts), actors, departments });
+}
+
 function captureConfig(input: StagingCaseControlRuntimeConfig): CapturedConfig {
   const parsed = allowedRecord(input, [
     "deploymentEnvironment", "rootDir", "municipalityId", "policyVersion", "actorRegistry",
     "allowedSignerPubkeys", "allowedAgentPubkeys", "requiredDepartmentIds", "credentials",
-    "admissionAllowedHosts", "outboxAllowedHosts", "probeAllowedHosts", "listeners", "drainTimeoutMs", "durableState", "citizenAdoption", "syntheticAdoption",
+    "admissionAllowedHosts", "outboxAllowedHosts", "probeAllowedHosts", "listeners", "drainTimeoutMs", "durableState", "citizenAdoption", "syntheticAdoption", "administrationReview",
   ]);
   const expected = [
     "deploymentEnvironment", "rootDir", "municipalityId", "policyVersion", "actorRegistry",
@@ -367,18 +422,22 @@ function captureConfig(input: StagingCaseControlRuntimeConfig): CapturedConfig {
     syntheticAdoption = Object.freeze({ policy, acceptance: createSyntheticAdoptionAcceptanceReader({ baseUrl: adoption.acceptanceBaseUrl as string }) });
   }
   const credentials = captureCredentials(parsed.credentials, municipalityId, actorRegistry);
-  const listeners = exactRecord(parsed.listeners, ["probe", "outbox", "admission"]);
+  const administrationReview = parsed.administrationReview === undefined ? undefined
+    : captureAdministrationReview(parsed.administrationReview, municipalityId, actorRegistry, requiredDepartmentIds, credentials);
+  if (administrationReview && !syntheticAdoption) invalid();
+  const listeners = exactRecord(parsed.listeners, ["probe", "outbox", "admission", ...(administrationReview ? ["administrationReview"] : [])]);
   if (!Number.isSafeInteger(parsed.drainTimeoutMs) || (parsed.drainTimeoutMs as number) < 100 ||
     (parsed.drainTimeoutMs as number) > 10_000) invalid();
   return Object.freeze({
     rootDir: parsed.rootDir, municipalityId, policyVersion, actorRegistry, allowedSignerPubkeys,
-    allowedAgentPubkeys, requiredDepartmentIds, credentials, citizenAdoption, syntheticAdoption,
+    allowedAgentPubkeys, requiredDepartmentIds, credentials, citizenAdoption, syntheticAdoption, administrationReview,
     admissionAllowedHosts: captureHosts(parsed.admissionAllowedHosts),
     outboxAllowedHosts: captureHosts(parsed.outboxAllowedHosts),
     probeAllowedHosts: captureHosts(parsed.probeAllowedHosts),
     listeners: Object.freeze({
       probe: captureListener(listeners.probe), outbox: captureListener(listeners.outbox),
       admission: captureListener(listeners.admission),
+      ...(administrationReview ? { administrationReview: captureListener(listeners.administrationReview) } : {}),
     }),
     drainTimeoutMs: parsed.drainTimeoutMs as number,
     durableState: captureDurableState(parsed.durableState),
@@ -392,13 +451,14 @@ function captureOperationsApplication(
   const parsed = allowedRecord(value, [
     "municipalityId", "policyVersion", "actorRegistry", "allowedSignerPubkeys", "allowedAgentPubkeys",
     "requiredDepartmentIds", "credentials", "admissionAllowedHosts", "outboxAllowedHosts",
-    "probeAllowedHosts", "drainTimeoutMs", "citizenAdoption", "syntheticAdoption",
+    "probeAllowedHosts", "drainTimeoutMs", "citizenAdoption", "syntheticAdoption", "administrationReview",
   ]);
   for (const field of [
     "municipalityId", "policyVersion", "actorRegistry", "allowedSignerPubkeys", "allowedAgentPubkeys",
     "credentials", "admissionAllowedHosts", "outboxAllowedHosts", "probeAllowedHosts", "drainTimeoutMs",
   ]) if (!(field in parsed)) invalid();
-  if (parsed.municipalityId !== deployment.municipalityId) invalid();
+  if (parsed.municipalityId !== deployment.municipalityId ||
+    deployment.listeners.some((entry) => entry.id === "administration-review") !== (parsed.administrationReview !== undefined)) invalid();
   return captureConfig({
     deploymentEnvironment: "staging",
     rootDir: deployment.durableRootDir,
@@ -416,6 +476,7 @@ function captureOperationsApplication(
     ...(parsed.syntheticAdoption === undefined ? {} : {
       syntheticAdoption: parsed.syntheticAdoption as StagingSyntheticAdoptionConfig,
     }),
+    ...(parsed.administrationReview === undefined ? {} : { administrationReview: parsed.administrationReview as StagingAdministrationReviewRuntimeConfig }),
     credentials: parsed.credentials as readonly StagingCaseStewardCredential[],
     admissionAllowedHosts: parsed.admissionAllowedHosts as readonly string[],
     outboxAllowedHosts: parsed.outboxAllowedHosts as readonly string[],
@@ -426,6 +487,7 @@ function captureOperationsApplication(
       probe: { host: "127.0.0.1", port: 0 },
       outbox: { host: "127.0.0.1", port: 0 },
       admission: { host: "127.0.0.1", port: 0 },
+      ...(parsed.administrationReview === undefined ? {} : { administrationReview: { host: "127.0.0.1" as const, port: 0 } }),
     },
     drainTimeoutMs: parsed.drainTimeoutMs as number,
     durableState: Object.freeze({
@@ -442,7 +504,9 @@ function deploymentPlans(proofValue: unknown): DeploymentListenerPlans {
     if (!plan) invalid();
     return plan;
   };
+  const review = plans.find((plan) => assertStagingCaseControlListenerBindPlan(plan).id === "administration-review");
   return Object.freeze({
+    ...(review ? { administrationReview: review } : {}),
     probe: find("probe"),
     outbox: find("private-outbox"),
     admission: find("admission"),
@@ -465,6 +529,7 @@ function composeStagingCaseControlRuntime(
     ...(config.requiredDepartmentIds === undefined ? {} : { requiredDepartmentIds: config.requiredDepartmentIds }),
     ...(config.citizenAdoption === undefined ? {} : { citizenAdoption: config.citizenAdoption }),
     ...(config.syntheticAdoption === undefined ? {} : { syntheticAdoption: config.syntheticAdoption }),
+    ...(config.administrationReview ? { syntheticDepartmentReview: true } : {}),
     ...(config.durableState === undefined ? {} : { durableState: config.durableState }),
     ...(deploymentClaimToken === undefined ? {} : { deploymentClaimToken }),
     ...(recoveryActivationAuthorization === undefined ? {} : { recoveryActivationAuthorization }),
@@ -505,6 +570,20 @@ function composeStagingCaseControlRuntime(
         admissionKind: "eligible_citizen_adopted_topic_suggestion_v1" as const,
       }),
     });
+    const reviewConfig = config.administrationReview;
+    let reviewServer: ReturnType<typeof createAdministrationReviewServer> | undefined;
+    if (reviewConfig) {
+      // Fail before any bind if the configured Case does not already exist.
+      durable.caseCoordinators.open(reviewConfig.caseId);
+      const continuation = createDurableCaseContinuation({
+        caseKind: "synthetic_case", municipalityId: config.municipalityId, policyVersion: config.policyVersion,
+        caseCoordinators: durable.caseCoordinators,
+        roleAuthenticator: createStagingAdministrationAuthenticator({ deploymentEnvironment: "staging", grants: reviewConfig.grants }),
+        actors: reviewConfig.actors, departments: reviewConfig.departments,
+      });
+      reviewServer = createAdministrationReviewServer({ allowedHosts: reviewConfig.allowedHosts,
+        service: createAdministrationReviewService({ deploymentEnvironment: "staging", caseId: reviewConfig.caseId, continuation }) });
+    }
     const admission = createRoebelCaseStewardControlServer({
       allowedHosts: config.admissionAllowedHosts,
       control,
@@ -528,10 +607,12 @@ function composeStagingCaseControlRuntime(
         { id: "probe", server: probe.server, bindPlan: deployedListeners.probe },
         { id: "outbox", server: outbox.server, bindPlan: deployedListeners.outbox },
         { id: "admission", server: admission.server, bindPlan: deployedListeners.admission },
+        ...(reviewServer && deployedListeners.administrationReview ? [{ id: "administration-review" as const, server: reviewServer, bindPlan: deployedListeners.administrationReview }] : []),
       ] : [
         { id: "probe", server: probe.server, host: config.listeners.probe.host, port: config.listeners.probe.port },
         { id: "outbox", server: outbox.server, host: config.listeners.outbox.host, port: config.listeners.outbox.port },
         { id: "admission", server: admission.server, host: config.listeners.admission.host, port: config.listeners.admission.port },
+        ...(reviewServer && config.listeners.administrationReview ? [{ id: "administration-review", server: reviewServer, host: config.listeners.administrationReview.host, port: config.listeners.administrationReview.port }] : []),
       ],
       release,
       drainTimeoutMs: config.drainTimeoutMs,
@@ -541,7 +622,7 @@ function composeStagingCaseControlRuntime(
     });
     const start = async (): Promise<void> => {
       await lifecycle.start();
-      // This continuation only runs after all three children have reported
+      // This continuation only runs after every configured child has reported
       // ready. If close raced with startup, lifecycle reports stopped/draining
       // instead and recovery remains on the non-sealing abort path.
       if (lifecycle.health().ready) recoveryReadyForSeal = true;
@@ -556,7 +637,8 @@ function composeStagingCaseControlRuntime(
 /**
  * Compose the private Case owner used by the loopback staging tracer.  It has
  * one SQLite owner, an authenticated staff admission server, a credential-free
- * private outbox server, and a capability-free health probe.  This is not a
+ * private outbox server, a capability-free health probe, and optional scoped
+ * administration review. This is not a
  * Kubernetes bind adapter and deliberately cannot expose `0.0.0.0`.
  */
 export function createStagingCaseControlRuntime(

@@ -274,6 +274,9 @@ export type DepartmentReviewInput = {
   packageId: string;
   draftArtifactChecksum: string;
   decision: "accepted" | "rejected";
+  /** Reviewer-declared time, not a server clock attestation. The explicitly
+   * enabled synthetic review lane accepts canonical UTC with milliseconds;
+   * other reference lanes retain their deterministic fixture contract. */
   reviewedAt: string;
 };
 
@@ -1443,11 +1446,13 @@ function normalizeDepartmentDraft(value: unknown): DepartmentDraftInput {
   };
 }
 
-function normalizeDepartmentReview(value: unknown): DepartmentReviewInput {
+function normalizeDepartmentReview(value: unknown, syntheticReview = false): DepartmentReviewInput {
   ownKeys(value, DEPARTMENT_REVIEW_KEYS, "review");
   if (!isRecord(value)) fail("department_review_invalid");
   const reviewedAt = value.reviewedAt;
-  if (typeof reviewedAt !== "string" || !RFC3339_UTC.test(reviewedAt) || reviewedAt !== DETERMINISTIC_REVIEWED_AT) {
+  if (typeof reviewedAt !== "string" || !RFC3339_UTC.test(reviewedAt) ||
+    (syntheticReview ? !Number.isFinite(Date.parse(reviewedAt)) || new Date(reviewedAt).toISOString() !== reviewedAt
+      : reviewedAt !== DETERMINISTIC_REVIEWED_AT)) {
     fail("department_review_time_invalid");
   }
   if (value.decision !== "accepted" && value.decision !== "rejected") fail("department_review_decision_invalid");
@@ -2164,7 +2169,7 @@ function replayJournal(
       const reviewPayload = payload as DepartmentReviewPayload;
       const department = departments.get(reviewPayload.review.packageId);
       if (!department?.draft || department.review || event.correctionOf !== null) fail("journal_chain_invalid");
-      const review = normalizeDepartmentReview(reviewPayload.review);
+      const review = normalizeDepartmentReview(reviewPayload.review, options.syntheticDepartmentReview === true);
       const registration = options.actors.get(event.actorBinding.actorId);
       if (
         reviewPayload.authorityBinding !== "none" ||
@@ -2776,7 +2781,7 @@ type NormalizedCommand = {
   outcome?: ReviewedOutcomeInput;
 };
 
-function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
+function normalizeCommand(command: CommandEnvelope, syntheticReview = false): NormalizedCommand {
   ownKeys(command, COMMAND_KEYS, "envelope");
   if (!isRecord(command) || command.schemaVersion !== COMMAND_ENVELOPE_SCHEMA_VERSION) fail("schema_version_unsupported");
   const commandType = command.commandType;
@@ -2870,7 +2875,7 @@ function normalizeCommand(command: CommandEnvelope): NormalizedCommand {
     result.retraction = normalizeDepartmentRetraction(command.payload.retraction);
   } else {
     ownKeys(command.payload, REVIEW_PAYLOAD_KEYS, "payload");
-    result.review = normalizeDepartmentReview(command.payload.review);
+    result.review = normalizeDepartmentReview(command.payload.review, syntheticReview);
   }
   return result;
 }
@@ -2965,7 +2970,7 @@ export function createCivicCaseCoordinator(
 
   const handle = (command: CommandEnvelope): CommandReceipt => {
     loadDurableState();
-    const normalized = normalizeCommand(command);
+    const normalized = normalizeCommand(command, options.syntheticDepartmentReview === true);
     if (normalized.caseId !== options.caseId) fail("case_id_invalid");
     if (normalized.policyVersion !== options.policyVersion) fail("policy_version_invalid");
     const registeredActor = options.actors.get(normalized.actor.actorId);
