@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   closeSync,
+  chmodSync,
   copyFileSync,
   existsSync,
   fsyncSync,
@@ -17,6 +18,7 @@ import {
   statSync,
   unlinkSync,
   writeSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -1246,6 +1248,34 @@ function initialAdmissionAppend(append: CoordinatorJournalAppend, caseId: string
   }
 }
 
+function admissionConfigurationFingerprint(config: Readonly<SqliteAtomicTopicCaseAdmissionOptions>): string {
+  return checksum({
+    schemaVersion: SCHEMA_VERSION, municipalityId: config.municipalityId, policyVersion: config.policyVersion,
+    ...(config.citizenAdoption ? { citizenAdoptionPolicy: config.citizenAdoption.policy } : {}),
+    ...(config.syntheticAdoption ? { syntheticAdoptionPolicy: config.syntheticAdoption.policy } : {}),
+    ...(config.syntheticDepartmentReview ? { syntheticDepartmentReview: true as const } : {}),
+    actorRegistry: [...config.actorRegistry].sort((left, right) => `${left.actorClass}:${left.actorId}`.localeCompare(`${right.actorClass}:${right.actorId}`)),
+    requiredDepartmentIds: config.requiredDepartmentIds ? [...config.requiredDepartmentIds].sort() : [],
+    allowedSignerPubkeys: [...config.allowedSignerPubkeys].sort(),
+    allowedAgentPubkeys: [...config.allowedAgentPubkeys].sort(),
+  });
+}
+
+function configuredCoordinator(
+  config: Readonly<SqliteAtomicTopicCaseAdmissionOptions>, caseId: string, uuidV7: string, journal: CoordinatorJournalPort,
+): CivicCaseCoordinator {
+  return createCivicCaseCoordinator({
+    jurisdictionValue: config.municipalityId, uuidV7, canonicalCaseId: caseId,
+    policyVersion: config.policyVersion, syntheticFixtureOnly: true,
+    requireSignedSuggestionAdmission: true, allowedSignerPubkeys: (config.citizenAdoption || config.syntheticAdoption) ? undefined : [...config.allowedSignerPubkeys],
+    allowedAgentPubkeys: [...config.allowedAgentPubkeys], actors: config.actorRegistry,
+    requiredDepartmentIds: config.requiredDepartmentIds, journalPort: journal, journalNamespace: journal.namespace,
+    ...(config.citizenAdoption ? { citizenAdoptionPolicy: config.citizenAdoption.policy } : {}),
+    ...(config.syntheticAdoption ? { syntheticAdoptionPolicy: config.syntheticAdoption.policy } : {}),
+    ...(config.syntheticDepartmentReview ? { syntheticDepartmentReview: true as const } : {}),
+  });
+}
+
 /**
  * Staging-only municipal SQLite adapter. The exposed admission interface is
  * intentionally one method; claiming a root, writing the first three Case
@@ -1267,16 +1297,7 @@ export function createSqliteAtomicTopicCaseAdmission(
       if (!hasAgent || !hasReviewer) fail("atomic_admission_options_invalid");
     }
   }
-  const configFingerprint = checksum({
-    schemaVersion: SCHEMA_VERSION, municipalityId: config.municipalityId, policyVersion: config.policyVersion,
-    ...(config.citizenAdoption ? { citizenAdoptionPolicy: config.citizenAdoption.policy } : {}),
-    ...(config.syntheticAdoption ? { syntheticAdoptionPolicy: config.syntheticAdoption.policy } : {}),
-    ...(config.syntheticDepartmentReview ? { syntheticDepartmentReview: true as const } : {}),
-    actorRegistry: [...config.actorRegistry].sort((left, right) => `${left.actorClass}:${left.actorId}`.localeCompare(`${right.actorClass}:${right.actorId}`)),
-    requiredDepartmentIds: config.requiredDepartmentIds ? [...config.requiredDepartmentIds].sort() : [],
-    allowedSignerPubkeys: [...config.allowedSignerPubkeys].sort(),
-    allowedAgentPubkeys: [...config.allowedAgentPubkeys].sort(),
-  });
+  const configFingerprint = admissionConfigurationFingerprint(config);
   const databaseBasename = `stadtstack-${config.municipalityId}-atomic-admission.sqlite`;
   const databasePath = join(config.rootDir, databaseBasename);
   ensureNotSymlink(databasePath); ensureNotSymlink(`${databasePath}-wal`); ensureNotSymlink(`${databasePath}-shm`);
@@ -1545,16 +1566,7 @@ export function createSqliteAtomicTopicCaseAdmission(
       .get(caseId) as CaseMetaRow | undefined;
 
   const pinnedCoordinator = (caseId: string, uuidV7: string, journal: CoordinatorJournalPort): CivicCaseCoordinator =>
-    createCivicCaseCoordinator({
-      jurisdictionValue: config.municipalityId, uuidV7, canonicalCaseId: caseId,
-      policyVersion: config.policyVersion, syntheticFixtureOnly: true,
-      requireSignedSuggestionAdmission: true, allowedSignerPubkeys: (config.citizenAdoption || config.syntheticAdoption) ? undefined : [...config.allowedSignerPubkeys],
-      allowedAgentPubkeys: [...config.allowedAgentPubkeys], actors: config.actorRegistry,
-      requiredDepartmentIds: config.requiredDepartmentIds, journalPort: journal, journalNamespace: journal.namespace,
-      ...(config.citizenAdoption ? { citizenAdoptionPolicy: config.citizenAdoption.policy } : {}),
-      ...(config.syntheticAdoption ? { syntheticAdoptionPolicy: config.syntheticAdoption.policy } : {}),
-      ...(config.syntheticDepartmentReview ? { syntheticDepartmentReview: true as const } : {}),
-    });
+    configuredCoordinator(config, caseId, uuidV7, journal);
 
   const validateCaseUnit = (meta: CaseMetaRow): PublicCaseBindingReceipt => {
     if (!meta || typeof meta.case_id !== "string" || meta.municipality_id !== config.municipalityId || !NAMESPACE.test(meta.namespace) ||
@@ -2148,4 +2160,183 @@ export function createSqliteAtomicTopicCaseAdmission(
       durableOwner?.release();
     },
   });
+}
+
+/** Only admission configuration is accepted; recovery/deployment capabilities
+ * and credentials cannot be carried into a migration rehearsal. */
+export type SyntheticReviewMigrationSourceConfig = Pick<SqliteAtomicTopicCaseAdmissionOptions,
+  "municipalityId" | "policyVersion" | "actorRegistry" | "allowedSignerPubkeys" | "allowedAgentPubkeys" | "syntheticAdoption">;
+
+export type SyntheticReviewMigrationCandidateV1 = Readonly<{
+  schemaVersion: "synthetic_review_migration_candidate_v1";
+  caseId: string;
+  caseVersion: 3;
+  journalHeadChecksum: string;
+  admissionReceiptChecksum: string;
+  sourceSealChecksum: string;
+  sourceDatabaseSha256: string;
+  sourceConfigFingerprint: string;
+  targetConfigFingerprint: string;
+  sourceOptionsFingerprint: string;
+  targetOptionsFingerprint: string;
+  preservedTablesChecksum: string;
+  targetDatabaseSha256: string;
+  targetDatabaseByteLength: number;
+  testOnly: true;
+  authorityBinding: "none";
+  candidateChecksum: string;
+}>;
+
+/** Prepare an isolated candidate from a checksum-pinned clean shutdown. This
+ * never opens SQLite on the source directory, edits a deployment claim, or
+ * produces a shutdown seal for the candidate. Operations must separately
+ * authorize and implement activation; this artifact is not a recovery token. */
+export function prepareSyntheticDepartmentReviewMigration(input: {
+  sourceRootDir: string;
+  expectedSourceSealChecksum: string;
+  expectedCaseId: string;
+  expectedAdmissionReceiptChecksum: string;
+  sourceConfig: SyntheticReviewMigrationSourceConfig;
+  additionalActors: readonly ActorRegistration[];
+  requiredDepartmentIds: readonly string[];
+}): Readonly<{ candidateRootDir: string; receipt: SyntheticReviewMigrationCandidateV1 }> {
+  const code = "synthetic_review_migration_invalid";
+  ownKeys(input, ["sourceRootDir", "expectedSourceSealChecksum", "expectedCaseId", "expectedAdmissionReceiptChecksum",
+    "sourceConfig", "additionalActors", "requiredDepartmentIds"], code);
+  const sourceRoot = safeDurableRoot(input.sourceRootDir);
+  const seal = readCanonicalPriorSeal(sourceRoot);
+  const caseIdentity = parseSyntheticCaseId(input.expectedCaseId);
+  if (!seal || !caseIdentity || seal.sealChecksum !== input.expectedSourceSealChecksum ||
+    seal.municipalityId !== caseIdentity.municipalityId || seal.recoveryEvidence.orderedHeads.length !== 1 ||
+    seal.recoveryEvidence.orderedHeads[0]?.caseId !== input.expectedCaseId ||
+    seal.recoveryEvidence.orderedHeads[0]?.caseVersion !== 3 ||
+    seal.recoveryEvidence.orderedBindingEvidence.length !== 1 ||
+    seal.recoveryEvidence.orderedBindingEvidence[0]?.receiptChecksum !== input.expectedAdmissionReceiptChecksum) fail(code);
+  // A completed shutdown has no outstanding runtime transition. Never read an
+  // active epoch or interpret an interrupted recovery as a migration baseline.
+  if (readCanonicalCaseOpenEpoch(sourceRoot) || readCanonicalCaseStoreBootstrap(sourceRoot) ||
+    readCanonicalRecoveryActivationMarker(sourceRoot)) fail(code);
+  const sourcePath = join(sourceRoot, seal.databaseBasename);
+  const sourceStat = lstatSync(sourcePath);
+  if (!sourceStat.isFile() || sourceStat.nlink !== 1) fail(code);
+  closedDatabaseIdentity(sourceRoot, seal);
+  const sourceClaim = readCanonicalCaseDurableDeploymentClaim(sourceRoot);
+  if ((sourceClaim?.claimChecksum ?? null) !== seal.deploymentClaimChecksum ||
+    (sourceClaim && sourceClaim.releaseDigest !== seal.sourceReleaseDigest)) fail(code);
+  const sourceFields = ["municipalityId", "policyVersion", "actorRegistry", "allowedSignerPubkeys", "allowedAgentPubkeys", "syntheticAdoption"];
+  ownKeys(input.sourceConfig, sourceFields, code);
+  if (input.sourceConfig.municipalityId !== seal.municipalityId || !input.sourceConfig.syntheticAdoption) fail(code);
+  const additions = input.additionalActors;
+  if (!Array.isArray(additions) || additions.length < 1 || additions.length > 32) fail(code);
+  // Original subjects retain their exact roles and departments. Only the
+  // review/read roles are additive; no new admission, council or ballot role.
+  const combined = actorRegistry([...input.sourceConfig.actorRegistry, ...additions], code);
+  if (additions.some((entry) => !["administration", "public", "department_agent", "department_reviewer"].includes(entry.actorClass))) fail(code);
+  const departments = requiredDepartments(input.requiredDepartmentIds, code);
+  if (!departments || additions.some((entry) => entry.departmentId && !departments.includes(entry.departmentId))) fail(code);
+
+  const candidateRootDir = mkdtempSync(join(tmpdir(), "stadtstack-review-migration-"));
+  const candidatePath = join(candidateRootDir, seal.databaseBasename);
+  let store: SqliteAtomicTopicCaseAdmission | undefined;
+  let database: DatabaseSync | undefined;
+  try {
+    const sourceConfig = validateOptions({ ...input.sourceConfig, rootDir: candidateRootDir });
+    const targetConfig = validateOptions({ ...input.sourceConfig, rootDir: candidateRootDir,
+      actorRegistry: combined, requiredDepartmentIds: departments, syntheticDepartmentReview: true });
+    const sourceConfigFingerprint = admissionConfigurationFingerprint(sourceConfig);
+    const targetConfigFingerprint = admissionConfigurationFingerprint(targetConfig);
+    if (sourceConfigFingerprint !== seal.configFingerprint) fail(code);
+    copyFileSync(sourcePath, candidatePath);
+    chmodSync(candidatePath, 0o600);
+    if (sha256File(candidatePath) !== seal.databaseSha256) fail(code);
+
+    // The ordinary adapter performs its full schema, original receipt,
+    // idempotency and journal replay validation before any metadata is edited.
+    store = createSqliteAtomicTopicCaseAdmission(sourceConfig);
+    const sourceEntries = store.outbox.replay({ limit: 2 });
+    if (sourceEntries.length !== 1 || sourceEntries[0]?.receipt.receiptChecksum !== input.expectedAdmissionReceiptChecksum) fail(code);
+    store.caseCoordinators.open(input.expectedCaseId);
+    store.close(); store = undefined;
+
+    database = new DatabaseSync(candidatePath, { enableForeignKeyConstraints: true });
+    database.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; BEGIN IMMEDIATE");
+    ensureSchema(database, false);
+    if (canonicalJson(captureCaseStateRecoveryEvidence(database)) !== canonicalJson(seal.recoveryEvidence)) fail(code);
+    const meta = database.prepare("SELECT case_id,municipality_id,namespace,options_fingerprint,case_version,head_checksum FROM atomic_case_meta WHERE case_id=?")
+      .get(input.expectedCaseId) as CaseMetaRow;
+    if (!meta || meta.case_version !== 3 || meta.head_checksum !== seal.recoveryEvidence.orderedHeads[0]!.journalHeadChecksum) fail(code);
+    let targetOptionsFingerprint = "";
+    configuredCoordinator(targetConfig, input.expectedCaseId, caseIdentity.uuidV7, {
+      namespace: meta.namespace,
+      recover(request) { targetOptionsFingerprint = request.optionsFingerprint; return { events: [], idempotency: [] }; },
+      appendAtomic() { fail(code); }, close() {}, deleteExactSynthetic() { fail(code); },
+    });
+    if (!SHA256.test(targetOptionsFingerprint) || targetOptionsFingerprint === meta.options_fingerprint) fail(code);
+
+    // Hash every stored field except the two configuration fingerprints that
+    // this transition deliberately changes. JSON payload strings remain exact
+    // bytes, including private evidence, original receipts and retry records.
+    const preservedTables = (): string => checksum([
+      database!.prepare("SELECT municipality_id,schema_version FROM atomic_municipality_meta ORDER BY municipality_id").all().map((row) => ({ ...row })),
+      database!.prepare("SELECT case_id,municipality_id,namespace,case_version,head_checksum FROM atomic_case_meta ORDER BY case_id").all().map((row) => ({ ...row })),
+      ...["atomic_case_events", "atomic_case_idempotency", "atomic_root_claims", "atomic_binding_receipts", "atomic_binding_outbox", "sqlite_sequence"]
+        .map((table) => database!.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map((row) => ({ ...row }))),
+    ]);
+    const preservedTablesChecksum = preservedTables();
+    const municipalityChange = database.prepare("UPDATE atomic_municipality_meta SET config_fingerprint=? WHERE municipality_id=? AND config_fingerprint=?")
+      .run(targetConfigFingerprint, seal.municipalityId, sourceConfigFingerprint);
+    const caseChange = database.prepare("UPDATE atomic_case_meta SET options_fingerprint=? WHERE case_id=? AND options_fingerprint=? AND case_version=3 AND head_checksum=?")
+      .run(targetOptionsFingerprint, meta.case_id, meta.options_fingerprint, meta.head_checksum);
+    if (municipalityChange.changes !== 1 || caseChange.changes !== 1 || preservedTables() !== preservedTablesChecksum) fail(code);
+    database.exec("COMMIT");
+    truncateWalCheckpoint(database);
+    database.close(); database = undefined;
+
+    // Restart with the new configuration, replay all original events and
+    // verify that public admission remains the original immutable receipt.
+    store = createSqliteAtomicTopicCaseAdmission(targetConfig);
+    store.caseCoordinators.open(input.expectedCaseId);
+    if (canonicalJson(store.outbox.replay({ limit: 2 })) !== canonicalJson(sourceEntries)) fail(code);
+    store.close(); store = undefined;
+    // Use a normal connection on the candidate so SQLite removes its own WAL
+    // index on close; a read-only WAL connection can leave a nonempty -shm.
+    database = new DatabaseSync(candidatePath);
+    ensureSchema(database, false);
+    if (preservedTables() !== preservedTablesChecksum ||
+      canonicalJson(captureCaseStateRecoveryEvidence(database)) !== canonicalJson(seal.recoveryEvidence)) fail(code);
+    database.close(); database = undefined;
+    assertRecoverySidecarsAreEmpty(candidatePath);
+    // A source owner restarting during rehearsal invalidates the result.
+    if (readCanonicalPriorSeal(sourceRoot)?.sealChecksum !== seal.sealChecksum ||
+      readCanonicalCaseOpenEpoch(sourceRoot) || readCanonicalCaseStoreBootstrap(sourceRoot) ||
+      readCanonicalRecoveryActivationMarker(sourceRoot) ||
+      canonicalJson(readCanonicalCaseDurableDeploymentClaim(sourceRoot) ?? null) !== canonicalJson(sourceClaim ?? null)) fail(code);
+    closedDatabaseIdentity(sourceRoot, seal);
+    const finalSourceStat = lstatSync(sourcePath);
+    if (finalSourceStat.dev !== sourceStat.dev || finalSourceStat.ino !== sourceStat.ino || finalSourceStat.nlink !== 1) fail(code);
+    const unsigned = {
+      schemaVersion: "synthetic_review_migration_candidate_v1" as const,
+      caseId: meta.case_id, caseVersion: 3 as const, journalHeadChecksum: meta.head_checksum,
+      admissionReceiptChecksum: input.expectedAdmissionReceiptChecksum,
+      sourceSealChecksum: seal.sealChecksum, sourceDatabaseSha256: seal.databaseSha256,
+      sourceConfigFingerprint, targetConfigFingerprint, sourceOptionsFingerprint: meta.options_fingerprint, targetOptionsFingerprint,
+      preservedTablesChecksum, targetDatabaseSha256: sha256File(candidatePath), targetDatabaseByteLength: statSync(candidatePath).size,
+      testOnly: true as const, authorityBinding: "none" as const,
+    };
+    const receipt = deepFreeze({ ...unsigned, candidateChecksum: checksum(unsigned) });
+    const receiptPath = join(candidateRootDir, "synthetic-review-migration-candidate-v1.json");
+    writeFileSync(receiptPath, `${canonicalJson(receipt)}\n`, { flag: "wx", mode: 0o600 });
+    for (const path of [candidatePath, receiptPath, candidateRootDir]) {
+      const descriptor = openSync(path, "r");
+      try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
+    }
+    return Object.freeze({ candidateRootDir, receipt });
+  } catch (error) {
+    store?.close();
+    if (database) { try { database.exec("ROLLBACK"); } catch { /* no transaction after commit */ } database.close(); }
+    rmSync(candidateRootDir, { recursive: true, force: true });
+    // Never include SQLite payloads, actor configuration or source paths in an error.
+    void error;
+    fail(code);
+  }
 }

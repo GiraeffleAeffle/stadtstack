@@ -6,6 +6,9 @@ publication, runtime operations, public relay writes, or civic effects.
 
 ## Accepted baseline
 
+- [ADR 0034](./0034-rehearse-synthetic-review-migration-on-a-copy.md) — prepare
+  a verified review-capable copy of a sealed synthetic admission without changing
+  the source or authorizing deployment.
 - [ADR 0033](./0033-connected-workspace-identity-and-synthetic-review.md) — connect
   municipal role mapping, scoped workspace review and the explicit synthetic lane.
 
