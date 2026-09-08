@@ -129,6 +129,14 @@ internal administrative-gateway Interface, not a browser login or deployed Town
 Workspace. External workspace connectors and the live public return remain
 integration work.
 
+[ADR 0034](docs/adr/0034-rehearse-synthetic-review-migration-on-a-copy.md) adds
+`prepareSyntheticDepartmentReviewMigration` for an existing admission-only
+synthetic Case at version 3. It prepares a private database copy, changes only
+the two configuration fingerprints, verifies every civic record and replays
+the Case with the added review roles. The source remains unchanged. Its candidate
+receipt is integrity evidence for Operations review; it grants no activation
+capability and does not replace a shutdown seal or deployment claim.
+
 ## Contributing and licensing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md).
