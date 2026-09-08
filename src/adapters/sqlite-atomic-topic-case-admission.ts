@@ -158,6 +158,7 @@ export type SqliteAtomicTopicCaseAdmissionOptions = {
   /** Pins a fresh issuer/ledger reader and exclusively enables citizen adoption. */
   citizenAdoption?: CitizenAdoptionVerificationDependencies;
   syntheticAdoption?: SyntheticAdoptionVerificationDependencies;
+  syntheticDepartmentReview?: true;
   rootDir: string;
   municipalityId: string;
   policyVersion: string;
@@ -382,8 +383,8 @@ function recoveryAuthorization(value: unknown, code: string): StagingCaseRecover
   return value as StagingCaseRecoveryActivationAuthorization;
 }
 
-function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required<Omit<SqliteAtomicTopicCaseAdmissionOptions, "citizenAdoption" | "syntheticAdoption" | "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization">> & Pick<SqliteAtomicTopicCaseAdmissionOptions, "citizenAdoption" | "syntheticAdoption" | "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization"> {
-  const parsed = allowedKeys(input, ["citizenAdoption", "syntheticAdoption", "actorRegistry", "allowedAgentPubkeys", "allowedSignerPubkeys", "deploymentClaimToken", "durableState", "failpoint", "municipalityId", "policyVersion", "recoveryActivationAuthorization", "requiredDepartmentIds", "rootDir"], "atomic_admission_options_invalid");
+function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required<Omit<SqliteAtomicTopicCaseAdmissionOptions, "citizenAdoption" | "syntheticAdoption" | "syntheticDepartmentReview" | "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization">> & Pick<SqliteAtomicTopicCaseAdmissionOptions, "citizenAdoption" | "syntheticAdoption" | "syntheticDepartmentReview" | "failpoint" | "requiredDepartmentIds" | "durableState" | "deploymentClaimToken" | "recoveryActivationAuthorization"> {
+  const parsed = allowedKeys(input, ["citizenAdoption", "syntheticAdoption", "syntheticDepartmentReview", "actorRegistry", "allowedAgentPubkeys", "allowedSignerPubkeys", "deploymentClaimToken", "durableState", "failpoint", "municipalityId", "policyVersion", "recoveryActivationAuthorization", "requiredDepartmentIds", "rootDir"], "atomic_admission_options_invalid");
   if (typeof parsed.municipalityId !== "string" || !MUNICIPALITY_ID.test(parsed.municipalityId) ||
     typeof parsed.policyVersion !== "string" || !/^[A-Za-z0-9:._-]{1,256}$/u.test(parsed.policyVersion) ||
     (parsed.failpoint !== undefined && parsed.failpoint !== "after_root_claim" && parsed.failpoint !== "after_case_events" && parsed.failpoint !== "after_binding_receipt")) fail("atomic_admission_options_invalid");
@@ -417,11 +418,16 @@ function validateOptions(input: SqliteAtomicTopicCaseAdmissionOptions): Required
     syntheticAdoption = Object.freeze({ ...deps, policy }) as SyntheticAdoptionVerificationDependencies;
     createSyntheticAdoptionEvidenceVerifier(syntheticAdoption);
   }
+  if (parsed.syntheticDepartmentReview !== undefined &&
+    (parsed.syntheticDepartmentReview !== true || !syntheticAdoption || !parsed.requiredDepartmentIds)) {
+    fail("atomic_admission_options_invalid");
+  }
   return Object.freeze({
     rootDir: resolvedDurableState ? safeDurableRoot(parsed.rootDir as string) : safeRoot(parsed.rootDir as string), municipalityId: parsed.municipalityId,
     policyVersion: parsed.policyVersion, actorRegistry: actorRegistry(parsed.actorRegistry, "atomic_admission_options_invalid"),
     allowedSignerPubkeys: frozenStringSet(parsed.allowedSignerPubkeys, "atomic_admission_options_invalid", Boolean(citizenAdoption || syntheticAdoption)),
     citizenAdoption, syntheticAdoption,
+    ...(parsed.syntheticDepartmentReview === true ? { syntheticDepartmentReview: true as const } : {}),
     allowedAgentPubkeys: frozenStringSet(parsed.allowedAgentPubkeys, "atomic_admission_options_invalid"),
     requiredDepartmentIds: requiredDepartments(parsed.requiredDepartmentIds, "atomic_admission_options_invalid"),
     failpoint: parsed.failpoint as SqliteAtomicTopicCaseAdmissionOptions["failpoint"],
@@ -1265,6 +1271,7 @@ export function createSqliteAtomicTopicCaseAdmission(
     schemaVersion: SCHEMA_VERSION, municipalityId: config.municipalityId, policyVersion: config.policyVersion,
     ...(config.citizenAdoption ? { citizenAdoptionPolicy: config.citizenAdoption.policy } : {}),
     ...(config.syntheticAdoption ? { syntheticAdoptionPolicy: config.syntheticAdoption.policy } : {}),
+    ...(config.syntheticDepartmentReview ? { syntheticDepartmentReview: true as const } : {}),
     actorRegistry: [...config.actorRegistry].sort((left, right) => `${left.actorClass}:${left.actorId}`.localeCompare(`${right.actorClass}:${right.actorId}`)),
     requiredDepartmentIds: config.requiredDepartmentIds ? [...config.requiredDepartmentIds].sort() : [],
     allowedSignerPubkeys: [...config.allowedSignerPubkeys].sort(),
@@ -1546,6 +1553,7 @@ export function createSqliteAtomicTopicCaseAdmission(
       requiredDepartmentIds: config.requiredDepartmentIds, journalPort: journal, journalNamespace: journal.namespace,
       ...(config.citizenAdoption ? { citizenAdoptionPolicy: config.citizenAdoption.policy } : {}),
       ...(config.syntheticAdoption ? { syntheticAdoptionPolicy: config.syntheticAdoption.policy } : {}),
+      ...(config.syntheticDepartmentReview ? { syntheticDepartmentReview: true as const } : {}),
     });
 
   const validateCaseUnit = (meta: CaseMetaRow): PublicCaseBindingReceipt => {

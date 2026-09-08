@@ -1,6 +1,6 @@
 import { types as utilTypes } from "node:util";
 
-import { MUNICIPAL_CASE_ID } from "./case-id.ts";
+import { MUNICIPAL_CASE_ID, SYNTHETIC_CASE_ID } from "./case-id.ts";
 
 import {
   acceptAdministrationWorkspaceResponseAsDraft,
@@ -24,13 +24,14 @@ import type {
   CivicCaseCoordinator,
   CommandReceipt,
   DepartmentPackageInput,
+  DepartmentDraftInput,
+  DepartmentPackageProjection,
   DepartmentReviewInput,
   ParticipationResultInput,
   ProjectionEnvelope,
   ReviewedOutcomeInput,
 } from "./civic-case-coordinator.ts";
 
-const CASE_ID = MUNICIPAL_CASE_ID;
 const MUNICIPALITY = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const POLICY = /^[A-Za-z0-9:._-]{1,256}$/u;
 const ACTOR_ID = /^[A-Za-z0-9:._-]{1,256}$/u;
@@ -47,6 +48,9 @@ export type DurableContinuationRoleAuthenticator = {
 };
 export type DurableContinuationDepartment = { departmentId: string; agent: ActorBinding; reviewer: ActorBinding };
 export type DurableCaseContinuationConfig = {
+  /** Omitted retains the municipal lane. Synthetic mode requires the writer's
+   * separately pinned syntheticDepartmentReview option. */
+  caseKind?: "synthetic_case";
   caseCoordinators: DurableCaseCoordinatorSource;
   roleAuthenticator: DurableContinuationRoleAuthenticator;
   municipalityId: string;
@@ -61,8 +65,28 @@ export type DurableCaseContinuationConfig = {
 };
 
 type AuthorizedInput = { authorization: unknown; caseId: string };
+export type AdministrationCaseViewV1 = {
+  schemaVersion: "administration_case_view_v1";
+  caseId: string;
+  municipalityId: string;
+  caseVersion: number;
+  journalHeadChecksum: string;
+  policyVersion: string;
+  caseKind: "municipal_case" | "synthetic_case";
+  testOnly: boolean;
+  actingAs: ActorBinding;
+  suggestion: { id: string; title: string; summary: string | null };
+  departmentPackages: DepartmentPackageProjection[];
+  briefReadiness: CitizenBriefReadinessV1 | null;
+  authorityBinding: "none";
+};
+
 export type DurableCaseContinuation = {
-  assignDepartmentPackage(input: AuthorizedInput & { departmentPackage: DepartmentPackageInput }): Promise<CommandReceipt>;
+  administrationView(input: AuthorizedInput): Promise<AdministrationCaseViewV1>;
+  recordDepartmentDraft(input: AuthorizedInput & {
+    expectedCaseVersion: number; packageId: string; packageChecksum: string; draft: DepartmentDraftInput;
+  }): Promise<CommandReceipt>;
+  assignDepartmentPackage(input: AuthorizedInput & { expectedCaseVersion?: number; departmentPackage: DepartmentPackageInput }): Promise<CommandReceipt>;
   prepareAdministrationWork(input: AuthorizedInput & { packageId: string; targetSystem: AdministrationWorkspaceTarget }): Promise<AdministrationWorkRequestV1>;
   acceptAdministrationHandoff(input: AuthorizedInput & {
     packageId: string;
@@ -76,7 +100,7 @@ export type DurableCaseContinuation = {
     observation: Omit<AdministrationWorkspaceHandoffObservationV1, "observedBy">;
     response: AdministrationWorkspaceResponseV1;
   }): Promise<CommandReceipt>;
-  attestDepartmentReview(input: AuthorizedInput & { review: DepartmentReviewInput }): Promise<CommandReceipt>;
+  attestDepartmentReview(input: AuthorizedInput & { expectedCaseVersion?: number; review: DepartmentReviewInput }): Promise<CommandReceipt>;
   assessCitizenBrief(input: AuthorizedInput): Promise<CitizenBriefReadinessV1>;
   prepareCitizenBrief(input: AuthorizedInput & { briefId: string }): Promise<CitizenBriefDerivationPreparationV1>;
   applyCitizenBrief(input: AuthorizedInput & { briefId: string; preparationChecksum: string }): Promise<CommandReceipt>;
@@ -89,6 +113,7 @@ export type DurableCaseContinuation = {
 };
 
 type ValidatedConfig = {
+  caseKind: "municipal_case" | "synthetic_case";
   source: DurableCaseCoordinatorSource;
   authenticator: DurableContinuationRoleAuthenticator;
   municipalityId: string;
@@ -183,8 +208,11 @@ function identifier(value: unknown, code: string, expression?: RegExp): string {
     (expression && !expression.test(value))) fail(code);
   return value;
 }
-function checkedCaseId(value: unknown): string {
-  return identifier(value, "durable_continuation_case_invalid", CASE_ID);
+function caseExpression(config: ValidatedConfig): RegExp {
+  return config.caseKind === "synthetic_case" ? SYNTHETIC_CASE_ID : MUNICIPAL_CASE_ID;
+}
+function checkedCaseId(config: ValidatedConfig, value: unknown): string {
+  return identifier(value, "durable_continuation_case_invalid", caseExpression(config));
 }
 function actor(value: unknown, expected: ActorBinding["actorClass"] | null, code: string): ActorBinding {
   const parsed = exact(value, ["actorId", "actorClass"], code);
@@ -202,7 +230,9 @@ function sameActor(left: ActorBinding, right: ActorBinding): boolean {
 }
 
 function validateConfig(input: DurableCaseContinuationConfig): ValidatedConfig {
-  const parsed = exact(input, ["actors", "caseCoordinators", "departments", "municipalityId", "policyVersion", "roleAuthenticator"], "durable_continuation_config_invalid");
+  const parsed = exact(input, ["actors", "caseCoordinators", "departments", "municipalityId", "policyVersion", "roleAuthenticator", ...(Object.hasOwn(input, "caseKind") ? ["caseKind"] : [])], "durable_continuation_config_invalid");
+  if (Object.hasOwn(parsed, "caseKind") && parsed.caseKind !== "synthetic_case") fail("durable_continuation_config_invalid");
+  const caseKind = parsed.caseKind === "synthetic_case" ? "synthetic_case" : "municipal_case";
   const municipalityId = identifier(parsed.municipalityId, "durable_continuation_config_invalid", MUNICIPALITY);
   const policyVersion = identifier(parsed.policyVersion, "durable_continuation_config_invalid", POLICY);
   exactMethod(parsed.caseCoordinators, "open", "durable_continuation_config_invalid");
@@ -233,13 +263,13 @@ function validateConfig(input: DurableCaseContinuationConfig): ValidatedConfig {
   return Object.freeze({
     source: Object.freeze({ open: source.open.bind(source) }),
     authenticator: Object.freeze({ authenticate: authenticator.authenticate.bind(authenticator) }),
-    municipalityId, policyVersion, actors, departments,
+    municipalityId, policyVersion, actors, departments, caseKind,
   });
 }
 
 async function authenticate(config: ValidatedConfig, authorization: unknown, rawCaseId: unknown): Promise<{ caseId: string; principal: ActorBinding }> {
-  const caseId = checkedCaseId(rawCaseId);
-  const match = CASE_ID.exec(caseId);
+  const caseId = checkedCaseId(config, rawCaseId);
+  const match = caseExpression(config).exec(caseId);
   if (!match || match[1] !== config.municipalityId) fail("durable_continuation_municipality_mismatch");
   let candidate: ActorBinding | null;
   try { candidate = await config.authenticator.authenticate({ authorization, caseId }); }
@@ -267,8 +297,8 @@ function configuredDepartmentForActor(
 }
 
 function checkedProjection(config: ValidatedConfig, rawCaseId: unknown, visibility: "administration" | "public") {
-  const requestedCaseId = checkedCaseId(rawCaseId);
-  const match = CASE_ID.exec(requestedCaseId);
+  const requestedCaseId = checkedCaseId(config, rawCaseId);
+  const match = caseExpression(config).exec(requestedCaseId);
   if (!match || match[1] !== config.municipalityId) fail("durable_continuation_municipality_mismatch");
   const coordinator = config.source.open(requestedCaseId);
   const projection = coordinator.project({
@@ -308,8 +338,51 @@ export function createDurableCaseContinuation(input: DurableCaseContinuationConf
   const config = validateConfig(input);
   const requiredDepartmentIds = Object.freeze([...config.departments.keys()].sort());
   return Object.freeze({
+    async administrationView(value) {
+      const parsed = exact(value, ["authorization", "caseId"], "durable_continuation_view_invalid");
+      const { caseId, principal } = await authenticate(config, parsed.authorization, parsed.caseId);
+      const wholeCase = sameActor(principal, config.actors.caseSteward) || sameActor(principal, config.actors.administrationReader);
+      const department = wholeCase ? null : configuredDepartmentForActor(config, principal,
+        principal.actorClass === "department_agent" ? "agent" : "reviewer");
+      const { projection } = checkedProjection(config, caseId, "administration");
+      const packages = projection.projection.departmentPackages ??
+        (projection.projection.departmentPackage ? [projection.projection.departmentPackage] : []);
+      const visible = wholeCase ? packages : packages.filter((item) =>
+        item.departmentId === department!.departmentId &&
+        (principal.actorClass === "department_agent" ? item.assignedAgentActorId : item.assignedReviewerActorId) === principal.actorId);
+      const suggestion = projection.projection.suggestion;
+      return structuredClone({
+        schemaVersion: "administration_case_view_v1" as const,
+        caseId, municipalityId: config.municipalityId, caseVersion: projection.caseVersion,
+        journalHeadChecksum: projection.journalHeadChecksum, policyVersion: config.policyVersion,
+        caseKind: config.caseKind, testOnly: config.caseKind === "synthetic_case", actingAs: principal,
+        suggestion: { id: suggestion.id, title: suggestion.title, summary: suggestion.summary ?? null },
+        departmentPackages: visible,
+        briefReadiness: wholeCase ? assessCitizenBriefReadiness({ projection, requiredDepartmentIds }) : null,
+        authorityBinding: "none" as const,
+      });
+    },
+    async recordDepartmentDraft(value) {
+      const parsed = exact(value, ["authorization", "caseId", "expectedCaseVersion", "packageId", "packageChecksum", "draft"], "durable_continuation_draft_invalid");
+      const { caseId, principal } = await authenticate(config, parsed.authorization, parsed.caseId);
+      const department = configuredDepartmentForActor(config, principal, "agent");
+      const current = checkedProjection(config, caseId, "administration");
+      const packageId = identifier(parsed.packageId, "durable_continuation_package_invalid");
+      const assigned = packageFromProjection(current.projection, packageId);
+      if (!assigned || assigned.departmentId !== department.departmentId || assigned.assignedAgentActorId !== principal.actorId) {
+        fail("durable_continuation_actor_forbidden");
+      }
+      const draft = clonePlainData(parsed.draft, "durable_continuation_draft_invalid") as DepartmentDraftInput;
+      return current.coordinator.handle({
+        schemaVersion: "command_envelope_v1", commandType: "record_department_draft_v1", caseId,
+        actorBinding: principal, expectedCaseVersion: parsed.expectedCaseVersion as number,
+        idempotencyKey: `durable-draft:${packageId}:${identifier(draft.id, "durable_continuation_draft_invalid")}`,
+        visibility: "private_case", policyVersion: config.policyVersion,
+        payload: { packageId, packageChecksum: identifier(parsed.packageChecksum, "durable_continuation_draft_invalid", SHA256), draft },
+      });
+    },
     async assignDepartmentPackage(value) {
-      const parsed = exact(value, ["authorization", "caseId", "departmentPackage"], "durable_continuation_assignment_invalid");
+      const parsed = exact(value, ["authorization", "caseId", "departmentPackage", ...(Object.hasOwn(value, "expectedCaseVersion") ? ["expectedCaseVersion"] : [])], "durable_continuation_assignment_invalid");
       const authenticated = await authenticate(config, parsed.authorization, parsed.caseId);
       requireActor(authenticated.principal, config.actors.caseSteward);
       const current = checkedProjection(config, authenticated.caseId, "administration");
@@ -318,7 +391,7 @@ export function createDurableCaseContinuation(input: DurableCaseContinuationConf
       if (!department || candidate.assignedAgentActorId !== department.agent.actorId || candidate.assignedReviewerActorId !== department.reviewer.actorId) fail("durable_continuation_package_not_pinned");
       return current.coordinator.handle({
         schemaVersion: "command_envelope_v1", commandType: "assign_department_package_v1", caseId: authenticated.caseId,
-        actorBinding: authenticated.principal, expectedCaseVersion: current.projection.caseVersion,
+        actorBinding: authenticated.principal, expectedCaseVersion: Object.hasOwn(parsed, "expectedCaseVersion") ? parsed.expectedCaseVersion as number : current.projection.caseVersion,
         idempotencyKey: `durable-assignment:${candidate.id}`, visibility: "private_case", policyVersion: config.policyVersion,
         payload: { departmentPackage: candidate },
       });
@@ -351,7 +424,7 @@ export function createDurableCaseContinuation(input: DurableCaseContinuationConf
       return prepared.coordinator.handle(command);
     },
     async attestDepartmentReview(value) {
-      const parsed = exact(value, ["authorization", "caseId", "review"], "durable_continuation_review_invalid");
+      const parsed = exact(value, ["authorization", "caseId", "review", ...(Object.hasOwn(value, "expectedCaseVersion") ? ["expectedCaseVersion"] : [])], "durable_continuation_review_invalid");
       const authenticated = await authenticate(config, parsed.authorization, parsed.caseId);
       const reviewingDepartment = configuredDepartmentForActor(config, authenticated.principal, "reviewer");
       const current = checkedProjection(config, authenticated.caseId, "administration");
@@ -361,7 +434,7 @@ export function createDurableCaseContinuation(input: DurableCaseContinuationConf
       if (!department) fail("durable_continuation_package_not_pinned");
       if (department.departmentId !== reviewingDepartment.departmentId) fail("durable_continuation_actor_forbidden");
       return current.coordinator.handle({ schemaVersion: "command_envelope_v1", commandType: "attest_department_review_v1",
-        caseId: authenticated.caseId, actorBinding: authenticated.principal, expectedCaseVersion: current.projection.caseVersion,
+        caseId: authenticated.caseId, actorBinding: authenticated.principal, expectedCaseVersion: Object.hasOwn(parsed, "expectedCaseVersion") ? parsed.expectedCaseVersion as number : current.projection.caseVersion,
         idempotencyKey: `durable-review:${review.packageId}:${review.draftArtifactChecksum}:${review.decision}`,
         visibility: "private_case", policyVersion: config.policyVersion, payload: { review } });
     },
@@ -389,6 +462,7 @@ export function createDurableCaseContinuation(input: DurableCaseContinuationConf
       return current.coordinator.handle(expected.command);
     },
     async recordAdvisoryParticipation(value) {
+      if (config.caseKind === "synthetic_case") fail("synthetic_case_continuation_unavailable");
       const parsed = exact(value, ["authorization", "caseId", "participation", "sourceBrief"], "durable_continuation_participation_invalid");
       const authenticated = await authenticate(config, parsed.authorization, parsed.caseId);
       requireActor(authenticated.principal, config.actors.participationReviewer);
@@ -404,6 +478,7 @@ export function createDurableCaseContinuation(input: DurableCaseContinuationConf
           sourceBrief: { id: sourceBrief.id as string, briefChecksum: sourceBrief.briefChecksum as string } } });
     },
     async recordReviewedOutcome(value) {
+      if (config.caseKind === "synthetic_case") fail("synthetic_case_continuation_unavailable");
       const parsed = exact(value, ["authorization", "caseId", "outcome"], "durable_continuation_outcome_invalid");
       const authenticated = await authenticate(config, parsed.authorization, parsed.caseId);
       requireActor(authenticated.principal, config.actors.caseSteward);
@@ -420,6 +495,7 @@ export function createDurableCaseContinuation(input: DurableCaseContinuationConf
         visibility: "private_case", policyVersion: config.policyVersion, payload: { outcome } });
     },
     currentPublicKnowledge(value) {
+      if (config.caseKind === "synthetic_case") fail("synthetic_public_knowledge_unavailable");
       const parsed = exact(value, ["caseId"], "durable_continuation_public_request_invalid");
       const current = checkedProjection(config, parsed.caseId, "public");
       return createPublicKnowledge({ coordinator: { project: current.coordinator.project }, caseId: current.projection.caseId,

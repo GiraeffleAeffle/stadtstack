@@ -106,6 +106,29 @@ describes the current adoption implementation and its remaining activation work.
 [ADR 0032](docs/adr/0032-isolate-synthetic-case-admission.md) describes the separate
 staging test admission, its no-authority receipt and remaining browser/activation work.
 
+## Administration review reference
+
+[ADR 0033](docs/adr/0033-connected-workspace-identity-and-synthetic-review.md)
+records the connected Citizen App / Town Workspace direction, municipal role
+mapping, future OIDC/EUDI integration and public versus administration Mecky.
+
+`createAdministrationReviewService` and its unbound HTTP transport provide one
+staging-only `GET/POST /v1/staging/administration/review` for a configured
+synthetic Case. GET returns the authenticated actor's permitted package view;
+POST accepts only assignment, draft and checksum-bound review. The server-owned
+staging authenticator binds each credential to one actor, Case and validity
+interval. Clients cannot grant themselves a role or name another Case.
+
+The service reuses `DurableCaseContinuation` and the existing SQLite coordinator.
+The writer must explicitly enable `syntheticDepartmentReview: true` alongside
+its synthetic admission policy and full department registry. Existing stores
+keep their configuration fingerprints; this is not an in-place migration.
+The eight-department brief requirement is unchanged. The new HTTP path does not
+expose brief release, participation or public knowledge. The transport is an
+internal administrative-gateway Interface, not a browser login or deployed Town
+Workspace. External workspace connectors and the live public return remain
+integration work.
+
 ## Contributing and licensing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md).

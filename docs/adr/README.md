@@ -6,6 +6,9 @@ publication, runtime operations, public relay writes, or civic effects.
 
 ## Accepted baseline
 
+- [ADR 0033](./0033-connected-workspace-identity-and-synthetic-review.md) — connect
+  municipal role mapping, scoped workspace review and the explicit synthetic lane.
+
 - [ADR 0001](./0001-stadtstack-repository-reset.md) — keep the coordination
   Module neutral and separate city products and private operations.
 - [ADR 0003](./0003-one-city-runtime-acceptance-boundary.md) — prove one

@@ -355,6 +355,16 @@ export type CaseEventV1 = {
   eventChecksum: string;
 };
 
+// Both admission and replay enforce the same bounded synthetic review extension.
+const SYNTHETIC_REVIEW_COMMANDS = new Set<CommandEnvelope["commandType"]>([
+  "assign_department_package_v1", "record_department_draft_v1", "attest_department_review_v1",
+  "derive_citizen_brief_v1", "correct_department_draft_v1", "retract_department_response_v1",
+]);
+const SYNTHETIC_REVIEW_EVENTS = new Set<CaseEventV1["eventType"]>([
+  "department_package_assigned_v1", "department_draft_recorded_v1", "department_review_attested_v1",
+  "citizen_brief_derived_v1", "department_draft_corrected_v1", "department_response_retracted_v1",
+]);
+
 /** Internal durability port; the public coordinator remains handle/project-only. */
 export type CoordinatorJournalEvent = CaseEventV1 & { payload: unknown };
 
@@ -491,6 +501,8 @@ export type CivicCaseCoordinatorOptions = {
   /** Enables the adoption lane and pins all historical issuer verification. */
   citizenAdoptionPolicy?: CitizenAdoptionEvidencePolicy;
   syntheticAdoptionPolicy?: SyntheticAdoptionEvidencePolicy;
+  /** Explicit staging-only review extension; omitted configurations retain admission-only behavior. */
+  syntheticDepartmentReview?: true;
   fixturePubkey?: string;
   fixtureSignerPubkey?: string;
   /** Issue #4 synthetic fixture: exactly eight unique departments when configured. */
@@ -518,6 +530,8 @@ type InternalCoordinatorOptions = {
   allowedAgentPubkeys?: ReadonlySet<string>;
   citizenAdoptionPolicy?: CitizenAdoptionEvidencePolicy;
   syntheticAdoptionPolicy?: SyntheticAdoptionEvidencePolicy;
+  /** Explicit staging-only review extension; omitted configurations retain admission-only behavior. */
+  syntheticDepartmentReview?: true;
   requiredDepartmentIds?: readonly string[];
   requireSignedSuggestionAdmission: boolean;
 };
@@ -1147,6 +1161,7 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     "allowedAgentPubkeys",
     "citizenAdoptionPolicy",
     "syntheticAdoptionPolicy",
+    "syntheticDepartmentReview",
     "fixturePubkey",
     "fixtureSignerPubkey",
     "requiredDepartmentIds",
@@ -1273,6 +1288,10 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     syntheticAdoptionPolicy.policyVersion !== policyVersion || scope ||
     canonicalJson([...syntheticAdoptionPolicy.allowedAgentPubkeys].sort()) !== canonicalJson([...(allowedAgentPubkeys ?? [])].sort()) ||
     options.requireSignedSuggestionAdmission !== true)) fail("synthetic_adoption_policy_invalid");
+  if (options.syntheticDepartmentReview !== undefined &&
+    (options.syntheticDepartmentReview !== true || !syntheticAdoptionPolicy || !requiredDepartmentIds)) {
+    fail("synthetic_department_review_policy_invalid");
+  }
   return {
     scope,
     jurisdiction,
@@ -1285,6 +1304,7 @@ function normalizeOptions(options: CivicCaseCoordinatorOptions = {}): InternalCo
     allowedAgentPubkeys,
     citizenAdoptionPolicy,
     syntheticAdoptionPolicy,
+    ...(options.syntheticDepartmentReview === true ? { syntheticDepartmentReview: true as const } : {}),
     requiredDepartmentIds,
     requireSignedSuggestionAdmission: options.requireSignedSuggestionAdmission === true,
   };
@@ -1304,6 +1324,7 @@ function durableOptionsFingerprint(options: InternalCoordinatorOptions): string 
     allowedKinds: options.allowedKinds,
     ...(options.citizenAdoptionPolicy ? { citizenAdoptionPolicy: options.citizenAdoptionPolicy } : {}),
     ...(options.syntheticAdoptionPolicy ? { syntheticAdoptionPolicy: options.syntheticAdoptionPolicy } : {}),
+    ...(options.syntheticDepartmentReview ? { syntheticDepartmentReview: true } : {}),
     allowedSignerPubkeys: options.allowedSignerPubkeys ? [...options.allowedSignerPubkeys].sort() : null,
     allowedAgentPubkeys: options.allowedAgentPubkeys ? [...options.allowedAgentPubkeys].sort() : null,
     requiredDepartmentIds: options.requiredDepartmentIds ?? null,
@@ -1963,7 +1984,10 @@ function replayJournal(
     }
     if ((options.citizenAdoptionPolicy || options.syntheticAdoptionPolicy) && (event.eventType === "signed_suggestion_admitted_v1" ||
       event.eventType === "signed_topic_suggestion_admitted_v1")) fail("journal_chain_invalid");
-    if (options.syntheticAdoptionPolicy && index > 2) fail("synthetic_case_continuation_unavailable");
+    if (options.syntheticAdoptionPolicy && index > 2 &&
+      (!options.syntheticDepartmentReview || !SYNTHETIC_REVIEW_EVENTS.has(event.eventType))) {
+      fail("synthetic_case_continuation_unavailable");
+    }
     const { payload, eventChecksum, ...eventWithoutChecksum } = event;
     if (sha256(eventWithoutChecksum) !== eventChecksum) fail("event_checksum_invalid");
     if (sha256(payload) !== event.payloadChecksum) fail("payload_checksum_invalid");
@@ -2961,7 +2985,10 @@ export function createCivicCaseCoordinator(
           })
         : undefined;
     if (options.citizenAdoptionPolicy && ["intake_discussion_v1", "admit_signed_suggestion_v1", "admit_signed_topic_suggestion_v1"].includes(normalized.commandType)) fail("citizen_adoption_required");
-    if (options.syntheticAdoptionPolicy && normalized.commandType !== "admit_synthetic_adoption_v1") fail("synthetic_case_continuation_unavailable");
+    if (options.syntheticAdoptionPolicy && normalized.commandType !== "admit_synthetic_adoption_v1" &&
+      (!options.syntheticDepartmentReview || !SYNTHETIC_REVIEW_COMMANDS.has(normalized.commandType))) {
+      fail("synthetic_case_continuation_unavailable");
+    }
     let citizenAdoption: ReturnType<typeof verifyCitizenAdoptionCaseAdmission> | ReturnType<typeof verifySyntheticAdoptionCaseAdmission> | undefined;
     if (normalized.commandType === "admit_synthetic_adoption_v1") {
       if (!options.syntheticAdoptionPolicy || registeredActor.actorClass !== "case_steward") fail("actor_role_forbidden");
