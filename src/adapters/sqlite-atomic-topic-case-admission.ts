@@ -94,6 +94,10 @@ import {
   type StagingCaseRecoveryActivationAuthorization,
 } from "../staging-case-recovery-activation-authority.ts";
 import {
+  consumeStagingSyntheticReviewMigrationAuthorization,
+  type StagingSyntheticReviewMigrationAuthorization,
+} from "../staging-synthetic-review-migration-authority.ts";
+import {
   createCaseOpenEpoch,
   createCaseStoreBootstrap,
   readCanonicalCaseOpenEpoch,
@@ -124,6 +128,8 @@ const KUBERNETES_UID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 /** A recovery startup writes this once, before opening the restored municipal
  * database.  It is deliberately a basename-only, canonical receipt. */
 export const CASE_RECOVERY_ACTIVATION_FILENAME = "case-recovery-activation-v2.json";
+export const SYNTHETIC_REVIEW_MIGRATION_INTENT_FILENAME = "synthetic-review-migration-intent-v1.json";
+export const SYNTHETIC_REVIEW_MIGRATION_ACTIVATION_FILENAME = "synthetic-review-migration-activation-v1.json";
 const CASE_STATE_OWNER_DATABASE_FILENAME = "stadtstack-case-state-owner.sqlite";
 const CASE_STATE_OWNER_SCHEMA = "CREATE TABLE durable_store_binding(singleton INTEGER NOT NULL PRIMARY KEY CHECK(singleton=1),municipality_id TEXT NOT NULL) STRICT";
 
@@ -1311,6 +1317,12 @@ export function createSqliteAtomicTopicCaseAdmission(
   let bootstrapReceiptForTransition: CaseStoreBootstrapV1 | undefined;
   try {
     if (durableOwner) {
+      // An imported database becomes an ordinary sealed store only after the
+      // reviewed migration commits its receipt and removes its intent. Even a
+      // valid target seal must not bypass an interrupted migration.
+      if (canonicalReceiptPresent(join(config.rootDir, SYNTHETIC_REVIEW_MIGRATION_INTENT_FILENAME), "synthetic_review_migration_invalid")) {
+        fail("atomic_admission_migration_requires_activation");
+      }
       // These canonical reads are intentionally before durable recovery
       // reconciliation or epoch/seal mutation: they select the preflight's
       // sidecar policy only.
@@ -2191,7 +2203,7 @@ export type SyntheticReviewMigrationCandidateV1 = Readonly<{
  * never opens SQLite on the source directory, edits a deployment claim, or
  * produces a shutdown seal for the candidate. Operations must separately
  * authorize and implement activation; this artifact is not a recovery token. */
-export function prepareSyntheticDepartmentReviewMigration(input: {
+export type SyntheticReviewMigrationPreparationInput = {
   sourceRootDir: string;
   expectedSourceSealChecksum: string;
   expectedCaseId: string;
@@ -2199,7 +2211,8 @@ export function prepareSyntheticDepartmentReviewMigration(input: {
   sourceConfig: SyntheticReviewMigrationSourceConfig;
   additionalActors: readonly ActorRegistration[];
   requiredDepartmentIds: readonly string[];
-}): Readonly<{ candidateRootDir: string; receipt: SyntheticReviewMigrationCandidateV1 }> {
+};
+export function prepareSyntheticDepartmentReviewMigration(input: SyntheticReviewMigrationPreparationInput): Readonly<{ candidateRootDir: string; receipt: SyntheticReviewMigrationCandidateV1 }> {
   const code = "synthetic_review_migration_invalid";
   ownKeys(input, ["sourceRootDir", "expectedSourceSealChecksum", "expectedCaseId", "expectedAdmissionReceiptChecksum",
     "sourceConfig", "additionalActors", "requiredDepartmentIds"], code);
@@ -2338,5 +2351,183 @@ export function prepareSyntheticDepartmentReviewMigration(input: {
     // Never include SQLite payloads, actor configuration or source paths in an error.
     void error;
     fail(code);
+  }
+}
+
+export type SyntheticReviewMigrationActivationV1 = Readonly<{
+  schemaVersion: "synthetic_review_migration_activation_v1";
+  planChecksum: string;
+  candidate: SyntheticReviewMigrationCandidateV1;
+  sourceClaim: CaseDurableDeploymentClaim;
+  sourceSeal: CaseShutdownSealV2;
+  targetClaim: CaseDurableDeploymentClaim;
+  targetSeal: CaseShutdownSealV2;
+  startedAtUtc: string;
+  activationChecksum: string;
+}>;
+type MigrationActivationPoint = "intent" | "database" | "claim" | "seal" | "receipt";
+
+/** One-shot Operations import, with no civic command or listener capability.
+ * Holds both store owners until a validated, checkpointed candidate has been
+ * copied, sealed and receipted. It never edits or opens municipal SQLite on the
+ * retained source. Re-entry can finish only the same pinned import. */
+export function activateSyntheticDepartmentReviewMigration(input: {
+  preparation: SyntheticReviewMigrationPreparationInput;
+  targetRootDir: string;
+  targetDeploymentClaimToken: CaseDurableDeploymentClaimToken;
+  authorization: StagingSyntheticReviewMigrationAuthorization;
+  failpoint?: (point: MigrationActivationPoint) => void;
+}): SyntheticReviewMigrationActivationV1 {
+  const code = "synthetic_review_migration_activation_invalid";
+  const parsed = allowedKeys(input, ["preparation", "targetRootDir", "targetDeploymentClaimToken", "authorization", "failpoint"], code);
+  if (parsed.failpoint !== undefined && typeof parsed.failpoint !== "function") fail(code);
+  const sourceRoot = safeDurableRoot(input.preparation.sourceRootDir);
+  const targetRoot = safeDurableRoot(input.targetRootDir);
+  // Separate retained and target directories, never nested; the reviewed claim
+  // below additionally requires different PVC identities.
+  const nested = (left: string, right: string) => { const path = relative(left, right); return path === "" || (!path.startsWith("..") && !isAbsolute(path)); };
+  if (nested(sourceRoot, targetRoot) || nested(targetRoot, sourceRoot)) fail(code);
+  const targetClaim = consumeCaseDurableDeploymentClaimToken(input.targetDeploymentClaimToken);
+  if (targetClaim.municipalityId !== input.preparation.sourceConfig.municipalityId) fail(code);
+  const sourceOwner = acquireDurableOwnerLock(sourceRoot, targetClaim.municipalityId);
+  let targetOwner: DurableOwnerLock | undefined;
+  let candidateRoot: string | undefined;
+  let candidateDb: DatabaseSync | undefined;
+  try {
+    targetOwner = acquireDurableOwnerLock(targetRoot, targetClaim.municipalityId);
+    const initial = consumeStagingSyntheticReviewMigrationAuthorization(input.authorization);
+    const sourceSeal = readCanonicalPriorSeal(sourceRoot);
+    const sourceClaim = readCanonicalCaseDurableDeploymentClaim(sourceRoot);
+    if (!sourceSeal || !sourceClaim || sourceClaim.claimChecksum !== initial.plan.sourceDeploymentClaimChecksum ||
+      targetClaim.claimChecksum !== initial.plan.targetDeploymentClaimChecksum ||
+      sourceClaim.pvc.uid === targetClaim.pvc.uid || sourceClaim.pvName === targetClaim.pvName ||
+      initial.plan.caseId !== input.preparation.expectedCaseId || initial.plan.municipalityId !== targetClaim.municipalityId ||
+      sourceSeal.closedAtUtc > initial.verifiedAtUtc) fail(code);
+    const candidate = prepareSyntheticDepartmentReviewMigration(input.preparation);
+    candidateRoot = candidate.candidateRootDir;
+    if (candidate.receipt.candidateChecksum !== initial.plan.candidateChecksum) fail(code);
+    const candidatePath = join(candidateRoot, sourceSeal.databaseBasename);
+    candidateDb = new DatabaseSync(candidatePath);
+    const integrity = candidateDb.prepare("PRAGMA integrity_check").all() as Array<{ integrity_check?: string }>;
+    if (integrity.length !== 1 || integrity[0]?.integrity_check !== "ok" ||
+      canonicalJson(captureCaseStateRecoveryEvidence(candidateDb)) !== canonicalJson(sourceSeal.recoveryEvidence)) fail(code);
+    const walCheckpoint = truncateWalCheckpoint(candidateDb);
+    candidateDb.close(); candidateDb = undefined;
+    assertRecoverySidecarsAreEmpty(candidatePath);
+    if (sha256File(candidatePath) !== candidate.receipt.targetDatabaseSha256 || statSync(candidatePath).size !== candidate.receipt.targetDatabaseByteLength) fail(code);
+
+    const intentPath = join(targetRoot, SYNTHETIC_REVIEW_MIGRATION_INTENT_FILENAME);
+    const receiptPath = join(targetRoot, SYNTHETIC_REVIEW_MIGRATION_ACTIVATION_FILENAME);
+    const databasePath = join(targetRoot, sourceSeal.databaseBasename);
+    const copyPath = join(targetRoot, ".synthetic-review-migration.sqlite.tmp");
+    const syncDirectory = () => { const fd = openSync(targetRoot, "r"); try { fsyncSync(fd); } finally { closeSync(fd); } };
+    const present = (path: string) => { const found = canonicalReceiptPresent(path, code); if (found && lstatSync(path).nlink !== 1) fail(code); return found; };
+    const writeReceipt = (path: string, value: unknown) => {
+      const bytes = `${canonicalJson(value)}\n`;
+      if (present(path)) { if (readFileSync(path, "utf8") !== bytes) fail(code); return; }
+      const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+      try {
+        writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
+        const fd = openSync(temporary, "r"); try { fsyncSync(fd); } finally { closeSync(fd); }
+        if (present(path)) fail(code);
+        renameSync(temporary, path); syncDirectory();
+      } finally { if (existsSync(temporary)) unlinkSync(temporary); }
+    };
+    if (readCanonicalCaseOpenEpoch(targetRoot) || readCanonicalCaseStoreBootstrap(targetRoot) || readCanonicalRecoveryActivationMarker(targetRoot)) fail(code);
+    const hasIntent = present(intentPath), hasReceipt = present(receiptPath);
+    const currentClaim = readCanonicalCaseDurableDeploymentClaim(targetRoot);
+    const currentSeal = readCanonicalPriorSeal(targetRoot);
+    const hasDatabase = present(databasePath);
+    assertRecoverySidecarsAreEmpty(databasePath);
+    if (currentClaim && !sameCaseDurableDeploymentClaim(currentClaim, targetClaim)) fail(code);
+    if ((!hasDatabase && (currentClaim || currentSeal)) || (currentSeal && !currentClaim) || (hasReceipt && !currentSeal)) fail(code);
+    if (!hasIntent && !hasReceipt && (hasDatabase || currentClaim || currentSeal || present(copyPath))) fail(code);
+    let startedAtUtc = initial.verifiedAtUtc;
+    if (hasIntent || hasReceipt) {
+      const saved = JSON.parse(readFileSync(hasIntent ? intentPath : receiptPath, "utf8")) as Record<string, unknown>;
+      startedAtUtc = requireUtcTimestamp(saved.startedAtUtc, code);
+      if (startedAtUtc < initial.plan.notBeforeUtc || startedAtUtc > initial.verifiedAtUtc) fail(code);
+    }
+    const common = { planChecksum: initial.plan.planChecksum, candidate: candidate.receipt, sourceClaim, sourceSeal, targetClaim, startedAtUtc };
+    const intentBody = { schemaVersion: "synthetic_review_migration_intent_v1", ...common };
+    const intent = { ...intentBody, intentChecksum: checksum(intentBody) };
+    if (hasIntent && readFileSync(intentPath, "utf8") !== `${canonicalJson(intent)}\n`) fail(code);
+    const fresh = () => {
+      const next = consumeStagingSyntheticReviewMigrationAuthorization(input.authorization);
+      if (next.plan.planChecksum !== initial.plan.planChecksum || next.verifiedAtUtc < startedAtUtc) fail(code);
+      if (readCanonicalPriorSeal(sourceRoot)?.sealChecksum !== sourceSeal.sealChecksum ||
+        readCanonicalCaseDurableDeploymentClaim(sourceRoot)?.claimChecksum !== sourceClaim.claimChecksum) fail(code);
+      const heldClaim = readCanonicalCaseDurableDeploymentClaim(targetRoot);
+      if (heldClaim && !sameCaseDurableDeploymentClaim(heldClaim, targetClaim)) fail(code);
+      closedDatabaseIdentity(sourceRoot, sourceSeal);
+      return next.verifiedAtUtc;
+    };
+    const assertTargetBytes = () => {
+      if (!present(databasePath) || sha256File(databasePath) !== candidate.receipt.targetDatabaseSha256 ||
+        statSync(databasePath).size !== candidate.receipt.targetDatabaseByteLength) fail(code);
+      assertRecoverySidecarsAreEmpty(databasePath);
+    };
+    const assertTargetClaim = () => {
+      if (readCanonicalCaseDurableDeploymentClaim(targetRoot)?.claimChecksum !== targetClaim.claimChecksum) fail(code);
+    };
+    const assertTargetSeal = (seal: CaseShutdownSealV2) => {
+      if (seal.municipalityId !== targetClaim.municipalityId || seal.deploymentClaimChecksum !== targetClaim.claimChecksum ||
+        seal.configFingerprint !== candidate.receipt.targetConfigFingerprint || seal.sourceReleaseDigest !== targetClaim.releaseDigest ||
+        seal.databaseBasename !== sourceSeal.databaseBasename || seal.databaseSha256 !== candidate.receipt.targetDatabaseSha256 ||
+        seal.databaseByteLength !== candidate.receipt.targetDatabaseByteLength ||
+        seal.closedAtUtc < startedAtUtc || seal.closedAtUtc >= initial.plan.expiresAtUtc || seal.closedAtUtc > initial.verifiedAtUtc ||
+        canonicalJson(seal.recoveryEvidence) !== canonicalJson(sourceSeal.recoveryEvidence)) fail(code);
+      closedDatabaseIdentity(targetRoot, seal); assertTargetBytes();
+    };
+    const receiptFor = (targetSeal: CaseShutdownSealV2): SyntheticReviewMigrationActivationV1 => {
+      const body = { schemaVersion: "synthetic_review_migration_activation_v1" as const, ...common, targetSeal };
+      return deepFreeze({ ...body, activationChecksum: checksum(body) });
+    };
+    if (hasReceipt) {
+      assertTargetSeal(currentSeal!);
+      const receipt = receiptFor(currentSeal!);
+      if (readFileSync(receiptPath, "utf8") !== `${canonicalJson(receipt)}\n`) fail(code);
+      fresh();
+      if (hasIntent) { unlinkSync(intentPath); syncDirectory(); }
+      return receipt;
+    }
+    fresh(); writeReceipt(intentPath, intent); input.failpoint?.("intent");
+    if (!hasDatabase) {
+      // Only an exact durable intent permits replacing this private staging
+      // copy. An existing municipal database is always checked, never replaced.
+      if (present(copyPath)) unlinkSync(copyPath);
+      const bytes = readFileSync(candidatePath);
+      writeFileSync(copyPath, bytes, { flag: "wx", mode: 0o600 });
+      const fd = openSync(copyPath, "r"); try { fsyncSync(fd); } finally { closeSync(fd); }
+      if (sha256File(copyPath) !== candidate.receipt.targetDatabaseSha256 || present(databasePath)) fail(code);
+      fresh(); renameSync(copyPath, databasePath); syncDirectory();
+    }
+    assertTargetBytes(); input.failpoint?.("database");
+    fresh();
+    if (!currentClaim) writeCanonicalCaseDurableDeploymentClaim(targetRoot, targetClaim);
+    input.failpoint?.("claim");
+    assertTargetBytes(); assertTargetClaim(); fresh();
+    let targetSeal = currentSeal;
+    if (targetSeal) assertTargetSeal(targetSeal);
+    else {
+      const body = { schemaVersion: "case_shutdown_seal_v2" as const, municipalityId: targetClaim.municipalityId,
+        databaseSchemaVersion: SCHEMA_VERSION, configFingerprint: candidate.receipt.targetConfigFingerprint,
+        sourceReleaseDigest: targetClaim.releaseDigest, deploymentClaimChecksum: targetClaim.claimChecksum,
+        databaseBasename: sourceSeal.databaseBasename, databaseByteLength: candidate.receipt.targetDatabaseByteLength,
+        databaseSha256: candidate.receipt.targetDatabaseSha256, closedAtUtc: fresh(), walCheckpoint, recoveryEvidence: sourceSeal.recoveryEvidence };
+      targetSeal = verifyCaseShutdownSeal({ ...body, sealChecksum: checksum(body) });
+      writeCanonicalSeal(targetRoot, targetSeal);
+    }
+    input.failpoint?.("seal");
+    const receipt = receiptFor(targetSeal);
+    assertTargetBytes(); assertTargetClaim(); fresh(); writeReceipt(receiptPath, receipt); input.failpoint?.("receipt");
+    assertTargetBytes(); assertTargetClaim(); fresh(); unlinkSync(intentPath); syncDirectory();
+    return receipt;
+  } catch { return fail(code); }
+  finally {
+    try {
+      try { candidateDb?.close(); }
+      finally { if (candidateRoot) rmSync(candidateRoot, { recursive: true, force: true }); }
+    } finally { try { targetOwner?.release(); } finally { sourceOwner.release(); } }
   }
 }

@@ -51,6 +51,7 @@ COPY src/staging-case-control-preflight.ts ./src/staging-case-control-preflight.
 COPY src/staging-case-control-runtime.ts ./src/staging-case-control-runtime.ts
 COPY src/staging-case-process-lifecycle.ts ./src/staging-case-process-lifecycle.ts
 COPY src/staging-case-recovery-activation-authority.ts ./src/staging-case-recovery-activation-authority.ts
+COPY src/staging-synthetic-review-migration-authority.ts ./src/staging-synthetic-review-migration-authority.ts
 COPY src/staging-case-recovery-attestation.ts ./src/staging-case-recovery-attestation.ts
 COPY src/staging-case-runtime-lifecycle.ts ./src/staging-case-runtime-lifecycle.ts
 COPY src/staging-case-runtime-listener-capability.ts ./src/staging-case-runtime-listener-capability.ts

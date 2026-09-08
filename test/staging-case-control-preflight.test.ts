@@ -217,6 +217,8 @@ test("the supported Interface boundary restricts control proofs and public liste
     ["readCanonicalCaseDurableDeploymentClaim", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
     ["writeCanonicalCaseDurableDeploymentClaim", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
     ["replaceCanonicalCaseDurableDeploymentClaim", { definition: "src/case-durable-deployment-claim.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
+    ["createStagingSyntheticReviewMigrationAuthorization", { definition: "src/staging-synthetic-review-migration-authority.ts", consumers: new Set(["src/staging-case-control-runtime.ts"]) }],
+    ["consumeStagingSyntheticReviewMigrationAuthorization", { definition: "src/staging-synthetic-review-migration-authority.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
     ["createStagingCaseRecoveryActivationAuthorization", { definition: "src/staging-case-recovery-activation-authority.ts", consumers: new Set(["src/staging-case-control-runtime.ts"]) }],
     ["consumeStagingCaseRecoveryActivationAuthorization", { definition: "src/staging-case-recovery-activation-authority.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
     ["consumeStagingCaseRecoveryActivationLease", { definition: "src/staging-case-recovery-activation-authority.ts", consumers: new Set(["src/adapters/sqlite-atomic-topic-case-admission.ts"]) }],
