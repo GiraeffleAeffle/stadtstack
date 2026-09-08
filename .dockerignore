@@ -53,3 +53,10 @@
 !src/reviewed-public-knowledge-server.ts
 !src/staging-reviewed-public-knowledge-runtime.ts
 !src/reviewed-knowledge-runtime-entrypoint.mjs
+!src/adapters/administration-workspace-adapter.ts
+!src/adapters/citizen-brief-readiness-adapter.ts
+!src/administration-review-server.ts
+!src/administration-review-service.ts
+!src/durable-case-continuation.ts
+!src/public-knowledge.ts
+!src/staging-administration-authenticator.ts

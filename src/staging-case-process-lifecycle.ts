@@ -44,7 +44,7 @@ export type StagingCaseProcessLoopbackListener = {
 };
 
 export type StagingCaseProcessDeploymentListener = {
-  id: "admission" | "outbox" | "probe";
+  id: "admission" | "outbox" | "probe" | "administration-review";
   server: Server;
   bindPlan: StagingCaseControlListenerBindPlan;
 };

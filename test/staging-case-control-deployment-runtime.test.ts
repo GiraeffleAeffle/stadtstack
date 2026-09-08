@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, statfsSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -13,20 +13,26 @@ import {
   type OperationsBoundStagingCaseControlApplicationConfig,
 } from "../src/staging-case-control-runtime.ts";
 import {
+  createSqliteAtomicTopicCaseAdmission,
   CASE_RECOVERY_ACTIVATION_FILENAME,
   CASE_SHUTDOWN_SEAL_FILENAME,
   verifyCaseShutdownSeal,
 } from "../src/adapters/sqlite-atomic-topic-case-admission.ts";
 import {
+  createCaseDurableDeploymentClaimToken,
   CASE_DURABLE_DEPLOYMENT_CLAIM_FILENAME,
   readCanonicalCaseDurableDeploymentClaim,
   verifyCaseDurableDeploymentClaim,
   type CaseDurableDeploymentClaim,
 } from "../src/case-durable-deployment-claim.ts";
-import type {
-  StagingCaseControlReviewedBindingV1,
-  StagingCaseControlStorageObservation,
+import {
+  createStagingCaseControlDeploymentProof,
+  type StagingCaseControlReviewedBinding,
+  type StagingCaseControlReviewedBindingV1,
+  type StagingCaseControlStorageObservation,
 } from "../src/staging-case-control-preflight.ts";
+import type { ActorRegistration } from "../src/civic-case-coordinator.ts";
+import type { SyntheticAdoptionEvidenceBundle, SyntheticAdoptionEvidencePolicy } from "../src/citizen-adoption-evidence.ts";
 import type { CaseShutdownSealV2 } from "../src/case-shutdown-seal.ts";
 import type { StagingCaseRecoveryGateInput } from "../src/staging-case-recovery-attestation.ts";
 
@@ -61,7 +67,7 @@ function checksum(value: unknown): string {
   return `sha256:${createHash("sha256").update(canonical(value), "utf8").digest("hex")}`;
 }
 
-function markerBody(binding: Omit<StagingCaseControlReviewedBindingV1, "bindingChecksum">): Record<string, unknown> {
+function markerBody(binding: Omit<StagingCaseControlReviewedBinding, "bindingChecksum">): Record<string, unknown> {
   return {
     schemaVersion: "staging_case_control_storage_marker_v1",
     deploymentEnvironment: binding.deploymentEnvironment,
@@ -95,6 +101,7 @@ function markerBody(binding: Omit<StagingCaseControlReviewedBindingV1, "bindingC
 }
 
 function binding(rootDir: string, overrides: Readonly<{
+  municipalityId?: string;
   releaseDigest?: string;
   pvcName?: string;
   pvcUid?: string;
@@ -104,7 +111,7 @@ function binding(rootDir: string, overrides: Readonly<{
   const unsigned = {
     schemaVersion: "staging_case_control_deployment_binding_v1" as const,
     deploymentEnvironment: "staging" as const,
-    municipalityId: MUNICIPALITY_ID,
+    municipalityId: overrides.municipalityId ?? MUNICIPALITY_ID,
     workloadName: "roebel-case-steward-control",
     workload: {
       serviceAccountName: "roebel-case-steward-control",
@@ -158,7 +165,7 @@ function binding(rootDir: string, overrides: Readonly<{
   return Object.freeze({ ...unsigned, bindingChecksum: checksum(unsigned) }) as StagingCaseControlReviewedBindingV1;
 }
 
-function observation(value: StagingCaseControlReviewedBindingV1, availableBytes = BigInt(value.storage.minAvailableBytes)): StagingCaseControlStorageObservation {
+function observation(value: StagingCaseControlReviewedBinding, availableBytes = BigInt(value.storage.minAvailableBytes)): StagingCaseControlStorageObservation {
   return Object.freeze({
     rootDir: value.storage.rootDir,
     rootKind: "directory" as const,
@@ -293,7 +300,7 @@ function recoveryGate(
 }
 
 function reviewedSources(
-  value: StagingCaseControlReviewedBindingV1,
+  value: StagingCaseControlReviewedBinding,
   expectedBindingChecksum = value.bindingChecksum,
   reads?: string[],
 ) {
@@ -628,4 +635,69 @@ test("callers cannot smuggle storage, release, host, port, or a different munici
     application: { ...application(), municipalityId: "other-town" },
   }), /staging_case_control_runtime_config_invalid/u);
   assert.deepEqual(readdirSync(rootDir), []);
+});
+
+
+test("review deployment requires matching v2 binding and application, then opens only the pinned fourth listener", async (t) => {
+  const rootDir = root();
+  const vector = JSON.parse(readFileSync(new URL("./fixtures/synthetic-adoption-roebel-v1.json", import.meta.url), "utf8")) as {
+    policy: SyntheticAdoptionEvidencePolicy; bundle: SyntheticAdoptionEvidenceBundle; verifiedAt: number; projection: Record<string, unknown>;
+  };
+  const old = binding(rootDir, { municipalityId: vector.policy.municipalityId });
+  const { bindingChecksum: oldChecksum, ...oldBody } = old;
+  const body = { ...oldBody, schemaVersion: "staging_case_control_deployment_binding_v2" as const,
+    listeners: [...old.listeners, { id: "administration-review" as const, port: 18090 as const, bindScope: "pod_network" as const }] };
+  const reviewed = { ...body, bindingChecksum: checksum(body) };
+  const observed = observation(reviewed);
+  const sources = { ...reviewedSources(reviewed), storageObserver: { observe: () => observed } };
+  assert.notEqual(reviewed.bindingChecksum, oldChecksum);
+  assert.throws(() => createOperationsBoundStagingCaseControlRuntime({ ...sources, application: { ...application(), municipalityId: vector.policy.municipalityId } }), /config_invalid/);
+  assert.equal(readdirSync(rootDir).length, 0);
+  const departmentIds = ["planning", "traffic", "environment", "finance", "legal", "public-order", "social-affairs", "public-works"];
+  const registry: ActorRegistration[] = [
+    { actorId: "example:steward", actorClass: "case_steward" },
+    { actorId: "example:admin", actorClass: "administration" }, { actorId: "example:public", actorClass: "public" },
+    ...departmentIds.flatMap((departmentId): ActorRegistration[] => [
+      { actorId: `example:${departmentId}:agent`, actorClass: "department_agent", departmentId },
+      { actorId: `example:${departmentId}:reviewer`, actorClass: "department_reviewer", departmentId },
+    ]),
+  ];
+  const policy = vector.policy;
+  // Seed a fresh bound synthetic fixture under the exact v2 proof, close it,
+  // then test the real Operations runtime against that same durable owner.
+  // Existing-store migration activation is a separate Operations transition.
+  const proof = createStagingCaseControlDeploymentProof({ reviewedBinding: reviewed,
+    expectedBindingChecksum: reviewed.bindingChecksum, storageObserver: { observe: () => observed } });
+  const seed = createSqliteAtomicTopicCaseAdmission({ rootDir, municipalityId: policy.municipalityId, policyVersion: policy.policyVersion,
+    actorRegistry: registry, allowedSignerPubkeys: [], allowedAgentPubkeys: policy.allowedAgentPubkeys,
+    requiredDepartmentIds: departmentIds, syntheticDepartmentReview: true,
+    syntheticAdoption: { policy, now: () => new Date(vector.verifiedAt * 1000), acceptance: { resolve: async () => vector.projection } },
+    durableState: { mode: "durable_single_writer", sourceReleaseDigest: reviewed.releaseDigest },
+    deploymentClaimToken: createCaseDurableDeploymentClaimToken(proof),
+  });
+  t.after(() => seed.close());
+  const principal = { actorId: "example:steward", actorClass: "case_steward" as const };
+  const admitted = await seed.admission.admitSyntheticAdoption!({ schemaVersion: "atomic_synthetic_adoption_admission_v1",
+    municipalityId: policy.municipalityId, policyVersion: policy.policyVersion, actorBinding: principal,
+    expectedCaseVersion: 0, bundle: vector.bundle });
+  seed.sealAndClose();
+  const grant = { token: randomBytes(32).toString("base64url"), caseId: admitted.caseId, actor: principal,
+    notBefore: Date.now() - 1000, expiresAt: Date.now() + 120_000 };
+  const reviewApplication: OperationsBoundStagingCaseControlApplicationConfig = {
+    ...application(), municipalityId: policy.municipalityId, policyVersion: policy.policyVersion,
+    actorRegistry: registry, allowedSignerPubkeys: [], allowedAgentPubkeys: policy.allowedAgentPubkeys,
+    requiredDepartmentIds: departmentIds, syntheticAdoption: { policy, acceptanceBaseUrl: "https://ledger.example/acceptance" },
+    credentials: [{ token: randomBytes(32).toString("base64url"), principal: { ...principal, municipalityIds: [policy.municipalityId] } }],
+    administrationReview: { caseId: admitted.caseId, grants: [grant], allowedHosts: ["127.0.0.1"] },
+  };
+  const before = readFileSync(join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME));
+  assert.throws(() => createOperationsBoundStagingCaseControlRuntime({ ...reviewedSources(old),
+    storageObserver: { observe: () => observation(old) }, application: reviewApplication }), /config_invalid/);
+  assert.deepEqual(readFileSync(join(rootDir, CASE_SHUTDOWN_SEAL_FILENAME)), before);
+  const runtime = createOperationsBoundStagingCaseControlRuntime({ ...sources, application: reviewApplication });
+  t.after(() => runtime.close());
+  await runtime.start();
+  assert.deepEqual(runtime.health().ports, { probe: 18088, outbox: 18087, admission: 18085, "administration-review": 18090 });
+  assert.equal((await request(18090, "/v1/staging/administration/review")).status, 401);
+  await runtime.close();
 });

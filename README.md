@@ -137,6 +137,16 @@ the Case with the added review roles. The source remains unchanged. Its candidat
 receipt is integrity evidence for Operations review; it grants no activation
 capability and does not replace a shutdown seal or deployment claim.
 
+[ADR 0035](docs/adr/0035-bind-administration-review-to-the-case-runtime.md)
+connects this service to the existing single-writer runtime. Optional
+`administrationReview` configuration and a matching version-2 deployment binding
+add the private review listener on port 18090. The old version-1 binding keeps
+its original three listeners. Review grants remain separate from admission
+credentials. Clean shutdown and restart preserve the review journal and original
+public receipt. Synthetic reviews accept calendar-valid, reviewer-declared UTC
+timestamps. Existing-store activation and the authenticated Town Workspace
+gateway remain the next integration work.
+
 ## Contributing and licensing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md).

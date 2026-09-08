@@ -59,7 +59,7 @@ export type DurableCaseContinuationConfig = {
     caseSteward: ActorBinding;
     administrationReader: ActorBinding;
     publicReader: ActorBinding;
-    participationReviewer: ActorBinding;
+    participationReviewer?: ActorBinding;
   };
   departments: readonly DurableContinuationDepartment[];
 };
@@ -239,18 +239,22 @@ function validateConfig(input: DurableCaseContinuationConfig): ValidatedConfig {
   exactMethod(parsed.roleAuthenticator, "authenticate", "durable_continuation_config_invalid");
   const source = parsed.caseCoordinators as DurableCaseCoordinatorSource;
   const authenticator = parsed.roleAuthenticator as DurableContinuationRoleAuthenticator;
-  const configuredActors = exact(parsed.actors, ["administrationReader", "caseSteward", "participationReviewer", "publicReader"], "durable_continuation_config_invalid");
+  if (!plain(parsed.actors)) fail("durable_continuation_config_invalid");
+  const configuredActors = exact(parsed.actors, ["administrationReader", "caseSteward", "publicReader",
+    ...(caseKind !== "synthetic_case" || Object.hasOwn(parsed.actors as object, "participationReviewer") ? ["participationReviewer"] : [])], "durable_continuation_config_invalid");
   const actors = Object.freeze({
     caseSteward: actor(configuredActors.caseSteward, "case_steward", "durable_continuation_config_invalid"),
     administrationReader: actor(configuredActors.administrationReader, "administration", "durable_continuation_config_invalid"),
     publicReader: actor(configuredActors.publicReader, "public", "durable_continuation_config_invalid"),
-    participationReviewer: actor(configuredActors.participationReviewer, "participation_reviewer", "durable_continuation_config_invalid"),
+    ...(Object.hasOwn(configuredActors, "participationReviewer") ? {
+      participationReviewer: actor(configuredActors.participationReviewer, "participation_reviewer", "durable_continuation_config_invalid"),
+    } : {}),
   });
   const configuredDepartments = clonePlainData(parsed.departments, "durable_continuation_config_invalid");
   if (!Array.isArray(configuredDepartments) || configuredDepartments.length !== 8) fail("durable_continuation_config_invalid");
   const departments = new Map<string, DurableContinuationDepartment>();
   const usedActorIds = new Set(Object.values(actors).map((entry) => entry.actorId));
-  if (usedActorIds.size !== 4) fail("durable_continuation_config_invalid");
+  if (usedActorIds.size !== Object.values(actors).length) fail("durable_continuation_config_invalid");
   for (const value of configuredDepartments) {
     const item = exact(value, ["agent", "departmentId", "reviewer"], "durable_continuation_config_invalid");
     const departmentId = identifier(item.departmentId, "durable_continuation_config_invalid", DEPARTMENT_ID);
@@ -465,6 +469,7 @@ export function createDurableCaseContinuation(input: DurableCaseContinuationConf
       if (config.caseKind === "synthetic_case") fail("synthetic_case_continuation_unavailable");
       const parsed = exact(value, ["authorization", "caseId", "participation", "sourceBrief"], "durable_continuation_participation_invalid");
       const authenticated = await authenticate(config, parsed.authorization, parsed.caseId);
+      if (!config.actors.participationReviewer) fail("durable_continuation_actor_forbidden");
       requireActor(authenticated.principal, config.actors.participationReviewer);
       const current = checkedProjection(config, authenticated.caseId, "administration");
       const sourceBrief = exact(parsed.sourceBrief, ["briefChecksum", "id"], "durable_continuation_participation_binding_invalid");
