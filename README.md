@@ -144,8 +144,17 @@ add the private review listener on port 18090. The old version-1 binding keeps
 its original three listeners. Review grants remain separate from admission
 credentials. Clean shutdown and restart preserve the review journal and original
 public receipt. Synthetic reviews accept calendar-valid, reviewer-declared UTC
-timestamps. Existing-store activation and the authenticated Town Workspace
-gateway remain the next integration work.
+timestamps.
+
+[ADR 0036](docs/adr/0036-activate-synthetic-review-on-a-retained-source.md) adds
+`activateOperationsBoundSyntheticReviewMigration`. An independently pinned
+Operations plan and version-2 deployment proof authorize the exact candidate
+on a separate target volume. The importer retains the sealed source, verifies
+and seals the target under the existing owner locks, and persists linked
+activation evidence. Interrupted imports block normal startup and can resume
+only the same transition. Source acceptance covers migration through HTTP
+review and restart; live Operations activation and the authenticated Town
+Workspace gateway remain integration work.
 
 ## Contributing and licensing
 

@@ -236,6 +236,7 @@ const CONTROL_ONLY_CASE_RUNTIME_SOURCES = [
   "src/staging-case-control-runtime.ts",
   "src/staging-case-process-lifecycle.ts",
   "src/staging-case-recovery-activation-authority.ts",
+  "src/staging-synthetic-review-migration-authority.ts",
   "src/staging-case-recovery-attestation.ts",
   "src/staging-case-steward-token-authenticator.ts",
   "src/topic-case-admission.ts",

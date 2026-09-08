@@ -17,9 +17,13 @@ import {
 
 import {
   createSqliteAtomicTopicCaseAdmission,
+  activateSyntheticDepartmentReviewMigration,
+  type SyntheticReviewMigrationPreparationInput,
+  type SyntheticReviewMigrationActivationV1,
   type DurableSingleWriterState,
   type SqliteAtomicTopicCaseAdmissionOptions,
 } from "./adapters/sqlite-atomic-topic-case-admission.ts";
+import { createStagingSyntheticReviewMigrationAuthorization, type StagingSyntheticReviewMigrationSources } from "./staging-synthetic-review-migration-authority.ts";
 import {
   createCaseDurableDeploymentClaimToken,
   type CaseDurableDeploymentClaimToken,
@@ -674,6 +678,35 @@ export function createOperationsBoundStagingCaseControlRuntime(
     deploymentPlans(proof),
     createCaseDurableDeploymentClaimToken(proof),
   );
+}
+
+/** Offline Operations activation, separate from both normal startup and backup
+ * recovery. Returns a sealed target store; callers start the ordinary runtime
+ * only after the receipt is persisted. No credentials or sockets are created. */
+export function activateOperationsBoundSyntheticReviewMigration(input: Readonly<{
+  reviewedBindingSource: StagingCaseControlReviewedBindingSource;
+  bindingPinSource: StagingCaseControlBindingPinSource;
+  storageObserver?: StagingCaseControlStorageObserver;
+  migration: StagingSyntheticReviewMigrationSources;
+  preparation: SyntheticReviewMigrationPreparationInput;
+}>): SyntheticReviewMigrationActivationV1 {
+  const fields = ["reviewedBindingSource", "bindingPinSource", "migration", "preparation"];
+  if (input && Object.hasOwn(input, "storageObserver")) fields.push("storageObserver");
+  const parsed = exactRecord(input, fields);
+  const proof = createStagingCaseControlDeploymentProofFromReviewedSources({
+    reviewedBindingSource: parsed.reviewedBindingSource as StagingCaseControlReviewedBindingSource,
+    bindingPinSource: parsed.bindingPinSource as StagingCaseControlBindingPinSource,
+    storageObserver: Object.hasOwn(parsed, "storageObserver") ? parsed.storageObserver as StagingCaseControlStorageObserver
+      : createNodeStagingCaseControlStorageObserver(),
+  });
+  const deployment = consumeStagingCaseControlDeploymentProofForRuntime(proof);
+  if (!deployment.listeners.some((listener) => listener.id === "administration-review")) invalid();
+  return activateSyntheticDepartmentReviewMigration({
+    preparation: parsed.preparation as SyntheticReviewMigrationPreparationInput,
+    targetRootDir: deployment.durableRootDir,
+    targetDeploymentClaimToken: createCaseDurableDeploymentClaimToken(proof),
+    authorization: createStagingSyntheticReviewMigrationAuthorization(parsed.migration as StagingSyntheticReviewMigrationSources),
+  });
 }
 
 /**

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test, { type TestContext } from "node:test";
+import test, { after, type TestContext } from "node:test";
 import {
   createSqliteAtomicTopicCaseAdmission, prepareSyntheticDepartmentReviewMigration,
   type SyntheticReviewMigrationSourceConfig,
@@ -23,6 +23,16 @@ const additions: ActorRegistration[] = [administration, publicReader,
   ...departments.flatMap((departmentId) => [{ ...agent(departmentId), departmentId }, { ...reviewer(departmentId), departmentId }])];
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const snapshot = (root: string) => Object.fromEntries(readdirSync(root).sort().map((name) => [name, hash(readFileSync(join(root, name)))]));
+
+// This file asserts candidate cleanup. Give it a private temporary namespace
+// so another test process preparing a candidate cannot change its inventory.
+const previousTemporaryRoot = process.env.TMPDIR;
+const testTemporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), "stadtstack-migration-test-")));
+process.env.TMPDIR = testTemporaryRoot;
+after(() => {
+  if (previousTemporaryRoot === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previousTemporaryRoot;
+  rmSync(testTemporaryRoot, { recursive: true, force: true });
+});
 
 async function source(t: TestContext) {
   const vector = JSON.parse(readFileSync(new URL("./fixtures/synthetic-adoption-roebel-v1.json", import.meta.url), "utf8")) as {

@@ -6,6 +6,9 @@ publication, runtime operations, public relay writes, or civic effects.
 
 ## Accepted baseline
 
+- [ADR 0036](./0036-activate-synthetic-review-on-a-retained-source.md) — activate
+  the exact review migration on a separate target, retaining the sealed source
+  and resuming interrupted imports through linked receipts.
 - [ADR 0035](./0035-bind-administration-review-to-the-case-runtime.md) — compose
   review with the existing durable owner through a separately pinned listener.
 - [ADR 0034](./0034-rehearse-synthetic-review-migration-on-a-copy.md) — prepare
