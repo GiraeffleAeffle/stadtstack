@@ -32,4 +32,5 @@ src/staging-case-runtime-listener-capability.ts
 src/staging-case-steward-token-authenticator.ts
 src/staging-runtime-probe-server.ts
 src/staging-synthetic-review-migration-authority.ts
+src/synthetic-citizen-brief-return.ts
 src/topic-case-admission.ts

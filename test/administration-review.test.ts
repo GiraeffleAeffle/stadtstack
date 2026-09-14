@@ -8,7 +8,7 @@ import test, { type TestContext } from "node:test";
 import { createSqliteAtomicTopicCaseAdmission, type SqliteAtomicTopicCaseAdmissionOptions } from "../src/adapters/sqlite-atomic-topic-case-admission.ts";
 import { createDurableCaseContinuation, type DurableCaseContinuationConfig, type AdministrationCaseViewV1 } from "../src/durable-case-continuation.ts";
 import { createStagingAdministrationAuthenticator, type StagingAdministrationGrant } from "../src/staging-administration-authenticator.ts";
-import { createAdministrationReviewService, ADMINISTRATION_REVIEW_PATH, type AdministrationReviewResponse } from "../src/administration-review-service.ts";
+import { createAdministrationReviewService, ADMINISTRATION_REVIEW_PATH, SYNTHETIC_CITIZEN_BRIEF_PATH, type AdministrationReviewResponse } from "../src/administration-review-service.ts";
 import { createAdministrationReviewServer } from "../src/administration-review-server.ts";
 import { DETERMINISTIC_REVIEWED_AT, type ActorBinding, type ActorRegistration } from "../src/civic-case-coordinator.ts";
 import type { SyntheticAdoptionEvidencePolicy, SyntheticAdoptionEvidenceBundle } from "../src/citizen-adoption-evidence.ts";
@@ -82,16 +82,20 @@ test("synthetic workspace HTTP completes one role-scoped package, with replay an
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   t.after(() => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }));
   const address = server.address(); assert.ok(address && typeof address === "object");
-  const send = (actor: ActorBinding, body?: unknown, headers: Record<string, string> = {}, path = ADMINISTRATION_REVIEW_PATH) => new Promise<AdministrationReviewResponse>((resolve, reject) => {
+  const send = (actor: ActorBinding | null, body?: unknown, headers: Record<string, string> = {}, path = ADMINISTRATION_REVIEW_PATH) => new Promise<AdministrationReviewResponse>((resolve, reject) => {
     const bytes = body === undefined ? null : JSON.stringify(body);
     const req = httpRequest({ host: "127.0.0.1", port: address.port, path, method: bytes === null ? "GET" : "POST",
-      headers: { host: "review.internal", authorization: h.token(actor), ...(bytes === null ? {} : {
+      headers: { host: "review.internal", ...(actor ? { authorization: h.token(actor) } : {}), ...(bytes === null ? {} : {
         "content-type": "application/json", "content-length": String(Buffer.byteLength(bytes)),
       }), ...headers } }, (res) => {
       let text = ""; res.setEncoding("utf8"); res.on("data", (chunk: string) => { text += chunk; });
       res.on("end", () => resolve({ status: res.statusCode as AdministrationReviewResponse["status"], headers: res.headers as Record<string, string>, body: text }));
     }); req.on("error", reject); req.end(bytes ?? undefined);
   });
+  assert.equal(parsed(await send(null, undefined, {}, SYNTHETIC_CITIZEN_BRIEF_PATH)).status, "not_ready");
+  assert.equal((await send(null)).status, 401);
+  assert.equal((await send(steward, undefined, {}, SYNTHETIC_CITIZEN_BRIEF_PATH)).status, 400);
+  assert.equal((await send(null, undefined, { origin: "https://browser.example" }, SYNTHETIC_CITIZEN_BRIEF_PATH)).status, 400);
   const initial = parsed(await send(steward));
   assert.equal(initial.testOnly, true); assert.equal(initial.caseVersion, 3);
   const assign = { schemaVersion: "administration_review_request_v1", operation: "assign", expectedCaseVersion: 3,
@@ -158,6 +162,13 @@ test("synthetic review stays separate from municipal access and old store config
 
 test("all configured reviews can derive a synthetic brief; private evidence and old admission receipt remain separate", async (t) => {
   const h = await setup(t);
+  const publicRequest = { method: "GET", path: SYNTHETIC_CITIZEN_BRIEF_PATH, authorization: null, body: null };
+  const publicReturn = () => h.service.respond(publicRequest);
+  assert.equal(parsed(await publicReturn()).status, "not_ready");
+  assert.equal(parsed(await publicReturn()).brief, null);
+  assert.equal((await h.service.respond({ ...publicRequest, authorization: h.token(steward) })).status, 400);
+  assert.equal((await h.service.respond({ ...publicRequest, method: "POST" })).status, 405);
+  assert.equal((await h.post(steward, "prepare_brief", { briefId: "brief:demo" }, 3)).status, 409);
   for (const id of departments) {
     const initial = await h.view(); parsed(await h.post(steward, "assign", assignment(id, initial.suggestion.id), initial.caseVersion));
     const view = await h.view(agent(id)); const item = view.departmentPackages[0]!;
@@ -169,11 +180,33 @@ test("all configured reviews can derive a synthetic brief; private evidence and 
       draftArtifactChecksum: drafted.departmentPackages[0]!.draft!.artifactChecksum,
       decision: "accepted", reviewedAt: DETERMINISTIC_REVIEWED_AT } }, drafted.caseVersion));
   }
-  const auth = { authorization: h.token(steward), caseId: h.admission.caseId };
-  const prepared = await h.continuation.prepareCitizenBrief({ ...auth, briefId: "brief:synthetic-review" });
-  await assert.rejects(h.continuation.applyCitizenBrief({ ...auth, briefId: "brief:synthetic-review", preparationChecksum: `sha256:${"0".repeat(64)}` }), /brief_stale/);
-  const receipt = await h.continuation.applyCitizenBrief({ ...auth, briefId: "brief:synthetic-review", preparationChecksum: prepared.preparationChecksum });
-  assert.equal(receipt.caseVersion, 28);
+  const version = (await h.view()).caseVersion;
+  const payload = { briefId: "brief:synthetic-review" };
+  assert.equal((await h.post(reviewer("planning"), "prepare_brief", payload, version)).status, 403);
+  assert.equal((await h.post(steward, "prepare_brief", payload, version - 1)).status, 409);
+  const prepared = parsed(await h.post(steward, "prepare_brief", payload, version));
+  assert.equal(prepared.state, "prepared_not_applied");
+  assert.equal(prepared.preview.responses.length, 8);
+  assert.ok(!JSON.stringify(prepared).includes("private-canary"));
+  assert.equal(parsed(await publicReturn()).brief, null, "eighth review and preview must not publish");
+  assert.equal((await h.view()).caseVersion, version, "preparation is read-only");
+  const apply = { ...payload, preparationChecksum: prepared.preparationChecksum };
+  assert.equal((await h.post(steward, "apply_brief", { ...apply, preparationChecksum: `sha256:${"0".repeat(64)}` }, version)).status, 409);
+  assert.equal((await h.post(administration, "apply_brief", apply, version)).status, 403);
+  const receipt = parsed(await h.post(steward, "apply_brief", apply, version));
+  assert.equal(receipt.receipt.caseVersion, 28);
+  // An ambiguous browser retry must reload, never append a second Brief.
+  assert.equal((await h.post(steward, "apply_brief", apply, version)).status, 409);
+  const returned = parsed(await publicReturn());
+  const golden = JSON.parse(readFileSync(new URL("./fixtures/synthetic-citizen-brief-return-v1.json", import.meta.url), "utf8"));
+  assert.deepEqual({ receipt: h.admission, returned }, golden);
+  assert.equal(returned.status, "current");
+  assert.equal(returned.caseId, h.admission.caseId);
+  assert.equal(returned.discussionId, h.admission.rootEventId);
+  assert.equal(returned.brief.responses.length, 8);
+  assert.ok(!JSON.stringify(returned).includes("private-canary"));
+  assert.ok(!JSON.stringify(returned).includes("example:steward"));
+  assert.ok(!JSON.stringify(returned).includes("journalHeadChecksum"));
   const read = () => h.store().caseCoordinators.open(h.admission.caseId).project({ schemaVersion: "query_envelope_v1",
     queryType: "case_projection_v1", caseId: h.admission.caseId, actorBinding: publicReader, visibility: "public",
     policyVersion: h.config.policyVersion, atCaseVersion: null });
@@ -188,6 +221,20 @@ test("all configured reviews can derive a synthetic brief; private evidence and 
     payload: { retraction: { participationId: "synthetic:participation", participationChecksum: `sha256:${"0".repeat(64)}` } },
   }), /synthetic_case_continuation_unavailable/);
   assert.deepEqual(read(), before);
+  assert.deepEqual(returned.brief, before.projection.reviewedCitizenBrief);
   h.restart(); assert.deepEqual(read(), before);
+  assert.deepEqual(parsed(await publicReturn()), returned);
+  const planning = (await h.view()).departmentPackages.find(p => p.departmentId === "planning")!;
+  h.store().caseCoordinators.open(h.admission.caseId).handle({
+    schemaVersion: "command_envelope_v1", commandType: "retract_department_response_v1", caseId: h.admission.caseId,
+    actorBinding: steward, expectedCaseVersion: 28, idempotencyKey: "demo:retract-planning", visibility: "private_case",
+    policyVersion: h.config.policyVersion, payload: { retraction: { packageId: planning.id,
+      packageChecksum: planning.packageChecksum, targetDraftArtifactChecksum: planning.draft!.artifactChecksum,
+      targetReviewAttestationChecksum: planning.review!.attestationChecksum! } },
+  });
+  const withdrawn = parsed(await publicReturn());
+  assert.equal(withdrawn.status, "withdrawn"); assert.equal(withdrawn.brief, null);
+  assert.ok(!JSON.stringify(withdrawn).includes("Synthetic assessment"));
+  h.restart(); assert.deepEqual(parsed(await publicReturn()), withdrawn);
   assert.deepEqual(h.store().outbox.replay({ afterSequence: 0, limit: 256 })[0]?.receipt, h.admission);
 });

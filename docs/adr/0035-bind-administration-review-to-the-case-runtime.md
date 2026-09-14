@@ -73,3 +73,33 @@ preservation, and sibling shutdown after the fourth bind fails. A separate
 fresh bound fixture exercises the version-2 Operations composition on its pinned
 ports. Version mismatch and mutable/forged listener facts fail. No live city
 database or credential is used by these tests.
+
+## 7C: confirmed synthetic Brief return
+
+The same review listener now exposes `prepare_brief` and `apply_brief` to the
+pinned steward, retaining the existing session, role, Case-version and origin
+checks. Preparation returns the exact accepted response texts without appending
+an event. Confirmation recomputes the preparation checksum against the current
+Case before invoking the coordinator. A changed Case, old preparation or an
+ambiguous repeat requires reloading; it cannot append a second Brief.
+
+`GET /v1/staging/administration/citizen-brief` is a separate credential-free
+read on this internal listener. It accepts no Case selector, request body or
+Authorization header. It projects only the pinned synthetic Case's confirmed
+Brief, with `testOnly: true`, `authorityBinding: none`, source discussion/topic,
+version and both the original Brief and return checksums. Pending drafts,
+private evidence, assigned actors, rejected answers and the journal stay inside
+the Case. Before confirmation it returns `not_ready`; after invalidation it
+returns `withdrawn` with no old response text.
+
+This return is not `PublicKnowledgeProjectionV1`. The municipal knowledge and
+participation paths continue to reject synthetic Cases. Röbel independently
+verifies both checksums and joins the return to its existing admission receipt;
+public Mecky must explicitly enable a synthetic evidence adapter and retain the
+demo authority. A user continuation request does not supply any department
+content review or steward confirmation.
+
+The runtime configuration and store fingerprint are unchanged. This source
+change still requires a reviewed image rollout; it does not authorize replaying
+admission, migration or any completed handover. The immutable admission outbox
+receipt remains at its original version.

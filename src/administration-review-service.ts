@@ -3,10 +3,12 @@ import type { DepartmentDraftInput, DepartmentPackageInput, DepartmentReviewInpu
 import { parseSyntheticCaseId } from "./case-id.ts";
 
 export const ADMINISTRATION_REVIEW_PATH = "/v1/staging/administration/review";
+export const SYNTHETIC_CITIZEN_BRIEF_PATH = "/v1/staging/administration/citizen-brief";
 export const ADMINISTRATION_REVIEW_MAX_BODY_BYTES = 65_536;
 
 type ReviewPort = Pick<DurableCaseContinuation,
-  "administrationView" | "assignDepartmentPackage" | "recordDepartmentDraft" | "attestDepartmentReview">;
+  "administrationView" | "assignDepartmentPackage" | "recordDepartmentDraft" | "attestDepartmentReview" |
+  "prepareCitizenBrief" | "applyCitizenBrief" | "currentSyntheticCitizenBrief">;
 export type AdministrationReviewRequest = {
   method: string;
   path: string;
@@ -40,7 +42,8 @@ function exact(value: unknown, keys: readonly string[]): Record<string, unknown>
 
 /** One pinned synthetic Case. Trusted identity comes solely from the injected
  * continuation authenticator; a request cannot supply actor or Case bindings.
- * This service has no admission, participation, publication or public-read port. */
+ * The separate credential-free GET returns only the synthetic Brief projection.
+ * No admission, participation, municipal publication or treasury port exists. */
 export function createAdministrationReviewService(config: {
   deploymentEnvironment: "staging";
   caseId: string;
@@ -55,9 +58,18 @@ export function createAdministrationReviewService(config: {
     assignDepartmentPackage: config.continuation.assignDepartmentPackage.bind(config.continuation),
     recordDepartmentDraft: config.continuation.recordDepartmentDraft.bind(config.continuation),
     attestDepartmentReview: config.continuation.attestDepartmentReview.bind(config.continuation),
+    prepareCitizenBrief: config.continuation.prepareCitizenBrief.bind(config.continuation),
+    applyCitizenBrief: config.continuation.applyCitizenBrief.bind(config.continuation),
+    currentSyntheticCitizenBrief: config.continuation.currentSyntheticCitizenBrief.bind(config.continuation),
   });
   return Object.freeze({
     async respond(request) {
+      if (request.path === SYNTHETIC_CITIZEN_BRIEF_PATH) {
+        if (request.method !== "GET") return error(405, "method_not_allowed");
+        if (request.body !== null || request.authorization != null) return error(400, "request_invalid");
+        try { return response(200, port.currentSyntheticCitizenBrief({ caseId })); }
+        catch { return error(500, "brief_unavailable"); }
+      }
       if (request.path !== ADMINISTRATION_REVIEW_PATH) return error(404, "not_found");
       if (request.method !== "GET" && request.method !== "POST") return error(405, "method_not_allowed");
       if (request.body !== null && (typeof request.body !== "string" ||
@@ -88,6 +100,25 @@ export function createAdministrationReviewService(config: {
         } else if (body.operation === "review") {
           const payload = exact(body.payload, ["review"]);
           receipt = await port.attestDepartmentReview({ ...input, review: payload.review as DepartmentReviewInput });
+        } else if (body.operation === "prepare_brief" || body.operation === "apply_brief") {
+          if (view.caseVersion !== input.expectedCaseVersion) return error(409, "review_conflict");
+          if (body.operation === "prepare_brief") {
+            const payload = exact(body.payload, ["briefId"]);
+            const prepared = await port.prepareCitizenBrief({ ...authorized, briefId: payload.briefId as string });
+            // The preview must be exactly the snapshot sealed by preparation.
+            if (prepared.command.expectedCaseVersion !== view.caseVersion) return error(409, "review_conflict");
+            return response(200, { schemaVersion: "synthetic_citizen_brief_preparation_v1", caseId,
+              environment: "staging", testOnly: true, authorityBinding: "none", state: "prepared_not_applied",
+              caseVersion: view.caseVersion, briefId: prepared.command.payload.brief.id,
+              preparationChecksum: prepared.preparationChecksum,
+              preview: { title: view.suggestion.title, responses: view.departmentPackages
+                .filter(item => item.reviewState === "accepted" && item.correctionState === "current" && item.draft)
+                .map(item => ({ departmentId: item.departmentId, publicSummary: item.draft!.publicSummary,
+                  publicCitations: [...new Set(item.draft!.publicCitations)].sort() })) } });
+          }
+          const payload = exact(body.payload, ["briefId", "preparationChecksum"]);
+          receipt = await port.applyCitizenBrief({ ...authorized, briefId: payload.briefId as string,
+            preparationChecksum: payload.preparationChecksum as string });
         } else return error(400, "operation_invalid");
         return response(200, { schemaVersion: "synthetic_administration_review_receipt_v1", caseId,
           environment: "staging", testOnly: true, authorityBinding: "none", receipt });
@@ -96,7 +127,7 @@ export function createAdministrationReviewService(config: {
         if (code === "durable_continuation_authentication_required") return error(401, "authentication_required");
         if (code === "durable_continuation_actor_forbidden" || code === "actor_role_forbidden") return error(403, "role_forbidden");
         if (failure instanceof SyntaxError || code === "review_request_invalid") return error(400, "request_invalid");
-        if (/^(?:case_version_conflict|idempotency_conflict|department_|durable_continuation_(?:draft|assignment|review|package))/.test(code)) {
+        if (/^(?:case_version_conflict|idempotency_conflict|department_|citizen_brief_|durable_continuation_(?:draft|assignment|review|package|brief))/.test(code)) {
           return error(409, "review_conflict");
         }
         return error(500, "review_unavailable");
