@@ -1,0 +1,193 @@
+{
+  "receipt": {
+    "schemaVersion": "public_synthetic_case_binding_receipt_v1",
+    "rootEventId": "062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4",
+    "topicId": "urn:stadtstack:topic:municipality:example-city:synthetic-road-safety",
+    "candidateId": "urn:stadtstack:synthetic-citizen-adoption-tracer:9e653eeddd76bde3aa2861edee2c9b4056244dbb983a42e9d411492d299df8e8",
+    "candidateEventId": "7521173273bd8b65f150227ee9d4214e5e6a5c2bcfeb91295dd56caaacbf628f",
+    "sourceAnswerEventId": "f43a555e86f81d9e5168de866287b19a3911751deb3a78d361ad265c1b4eb8dc",
+    "caseId": "urn:stadtstack:synthetic-case:municipality:example-city:01a0c454-ffe0-7fae-a47a-3db34ace03f0",
+    "caseVersion": 3,
+    "caseEventIds": [
+      "urn:stadtstack:case-event:urn:stadtstack:synthetic-case:municipality:example-city:01a0c454-ffe0-7fae-a47a-3db34ace03f0:1",
+      "urn:stadtstack:case-event:urn:stadtstack:synthetic-case:municipality:example-city:01a0c454-ffe0-7fae-a47a-3db34ace03f0:2",
+      "urn:stadtstack:case-event:urn:stadtstack:synthetic-case:municipality:example-city:01a0c454-ffe0-7fae-a47a-3db34ace03f0:3"
+    ],
+    "journalHeadChecksum": "sha256:39a4cede15f1040d16d10a030ff67ce6bd727263634e4ebf3a8a2f401aea7500",
+    "admissionEventChecksum": "sha256:39a4cede15f1040d16d10a030ff67ce6bd727263634e4ebf3a8a2f401aea7500",
+    "authorityBinding": "none",
+    "openDeskWrite": false,
+    "candidateKind": "synthetic_citizen_adoption_tracer_v1",
+    "environment": "staging",
+    "testOnly": true,
+    "civicCaseCreated": false,
+    "syntheticCaseCreated": true,
+    "participantSuggestionEventId": "9f3a7079571c08876d8beb937d0a8acddb27566d39f6547928ba93cc57c38655",
+    "adopterPubkey": "1cf37eb561f80022293855860f47122025c0929a05f6f08c503ed7f2325cafd5",
+    "testPolicyVersion": "example-test-citizen-pass-v1",
+    "adoptionAcceptanceReceiptChecksum": "f866a12e5faf88b45fcba84c6377169c9f005033b5a6002513adf809dd863daf",
+    "sourceAnswerReceiptId": "urn:stadtstack:mecky-answer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "administrativeEndorsement": false,
+    "bindingVote": false,
+    "councilDecision": false,
+    "treasuryEffect": false,
+    "paymentEffect": false,
+    "receiptChecksum": "sha256:5c86e8f185084df6b244d6954e7c650d1eecad68a03f37393682d9691aba8c7f"
+  },
+  "returned": {
+    "schemaVersion": "synthetic_citizen_brief_return_v1",
+    "environment": "staging",
+    "testOnly": true,
+    "authorityBinding": "none",
+    "caseId": "urn:stadtstack:synthetic-case:municipality:example-city:01a0c454-ffe0-7fae-a47a-3db34ace03f0",
+    "municipalityId": "example-city",
+    "discussionId": "062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4",
+    "topicId": "urn:stadtstack:topic:municipality:example-city:synthetic-road-safety",
+    "caseVersion": 28,
+    "policyVersion": "example-test-citizen-pass-v1",
+    "status": "current",
+    "brief": {
+      "schemaVersion": "citizen_brief_projection_v1",
+      "id": "brief:synthetic-review",
+      "title": "Test road-safety review",
+      "summary": "environment: Synthetic assessment for environment. finance: Synthetic assessment for finance. legal: Synthetic assessment for legal. planning: Synthetic assessment for planning. public-order: Synthetic assessment for public-order. public-works: Synthetic assessment for public-works. social-affairs: Synthetic assessment for social-affairs. traffic: Synthetic assessment for traffic.",
+      "responses": [
+        {
+          "departmentId": "environment",
+          "publicSummary": "Synthetic assessment for environment.",
+          "publicCitations": [
+            "synthetic://environment/evidence-1"
+          ]
+        },
+        {
+          "departmentId": "finance",
+          "publicSummary": "Synthetic assessment for finance.",
+          "publicCitations": [
+            "synthetic://finance/evidence-1"
+          ]
+        },
+        {
+          "departmentId": "legal",
+          "publicSummary": "Synthetic assessment for legal.",
+          "publicCitations": [
+            "synthetic://legal/evidence-1"
+          ]
+        },
+        {
+          "departmentId": "planning",
+          "publicSummary": "Synthetic assessment for planning.",
+          "publicCitations": [
+            "synthetic://planning/evidence-1"
+          ]
+        },
+        {
+          "departmentId": "public-order",
+          "publicSummary": "Synthetic assessment for public-order.",
+          "publicCitations": [
+            "synthetic://public-order/evidence-1"
+          ]
+        },
+        {
+          "departmentId": "public-works",
+          "publicSummary": "Synthetic assessment for public-works.",
+          "publicCitations": [
+            "synthetic://public-works/evidence-1"
+          ]
+        },
+        {
+          "departmentId": "social-affairs",
+          "publicSummary": "Synthetic assessment for social-affairs.",
+          "publicCitations": [
+            "synthetic://social-affairs/evidence-1"
+          ]
+        },
+        {
+          "departmentId": "traffic",
+          "publicSummary": "Synthetic assessment for traffic.",
+          "publicCitations": [
+            "synthetic://traffic/evidence-1"
+          ]
+        }
+      ],
+      "provenance": {
+        "sourceDiscussionRef": {
+          "type": "nostr_event",
+          "id": "062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4",
+          "ref": "nostr://event/062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4"
+        },
+        "suggestionId": "urn:stadtstack:suggestion:062ba9a872da45deb09cbf9232bad63b3ccb67ba71adaefc3bd0835c98899dc4",
+        "packageBindings": [
+          {
+            "packageId": "package:environment",
+            "packageChecksum": "sha256:239b5ae69a250f31647b3f29098e47f7e55e51320f14b357c50861c79f6637e8",
+            "draftArtifactChecksum": "sha256:e0f4f105f7a8180e079f55fe2344e00d3209d6b21f5d1be7d91df6e10d765f46",
+            "reviewAttestationChecksum": "sha256:cf9888a257213197b2fab601720ed25712b3bb9c574f2e1b1e3682fa153d2964",
+            "departmentId": "environment",
+            "reviewedAt": "2026-08-08T00:00:05.000Z"
+          },
+          {
+            "packageId": "package:finance",
+            "packageChecksum": "sha256:b265206206e785a2ce1566a22b58f6467a26be6348370548979991962d146726",
+            "draftArtifactChecksum": "sha256:a3ea4d0bc888520020a289a6e213c77254e53790bc2d7c989cb4e31f9d73f896",
+            "reviewAttestationChecksum": "sha256:16b384afdae9f5adb7be4c80f0bcd0fcfdc211bfac47bbaf3735806dbf39da2d",
+            "departmentId": "finance",
+            "reviewedAt": "2026-08-08T00:00:05.000Z"
+          },
+          {
+            "packageId": "package:legal",
+            "packageChecksum": "sha256:f53b581c68472b9de675bc09d3320a2493f947ebfd0a12db7fed8116cddc9fbb",
+            "draftArtifactChecksum": "sha256:b609825b3cf6dba763f3582f20ed411f98d46f84256d4108ffda02e1af5fe431",
+            "reviewAttestationChecksum": "sha256:f753954f2f26000d0b20288e1bd5cddc842f28b96b50cd0444f14b2d656c8eed",
+            "departmentId": "legal",
+            "reviewedAt": "2026-08-08T00:00:05.000Z"
+          },
+          {
+            "packageId": "package:planning",
+            "packageChecksum": "sha256:0069724bbf9b93af6fe5e164982c837a86b627801d2033b96fabd4b8bf0b848a",
+            "draftArtifactChecksum": "sha256:0695b234a3e91e2a278ad8a1a700d6c8490834083d282ecb1fcd743fb3704125",
+            "reviewAttestationChecksum": "sha256:d529dbe91b1e26aa6b913d824f7a1087bdc57894deb04ce8426a89812c4f0930",
+            "departmentId": "planning",
+            "reviewedAt": "2026-08-08T00:00:05.000Z"
+          },
+          {
+            "packageId": "package:public-order",
+            "packageChecksum": "sha256:44d50e14ad39306916abedeb47befa277d789bc1c0eb5f35cbc4b1cb45b4be04",
+            "draftArtifactChecksum": "sha256:87a07ea33a9197349a998b9c73697cd7b220a229ffd0d27268b60d80f3ceb2ec",
+            "reviewAttestationChecksum": "sha256:ad8f9b758f9c60bb1506e3f710a1843e2e066b2859053c9eba37cf1003db3ec9",
+            "departmentId": "public-order",
+            "reviewedAt": "2026-08-08T00:00:05.000Z"
+          },
+          {
+            "packageId": "package:public-works",
+            "packageChecksum": "sha256:dc707d49264fa43578e4ba30023078858fecc3d620d421e45e1b3370dc335659",
+            "draftArtifactChecksum": "sha256:06e16e110cdc3f017f490327d789a250a424cc1a271891be9a7ff2ae9b6f43e4",
+            "reviewAttestationChecksum": "sha256:5972099be53c44fc08e131b2b29291b3925b89c1f1fb5f9fb19b986ab2c682fc",
+            "departmentId": "public-works",
+            "reviewedAt": "2026-08-08T00:00:05.000Z"
+          },
+          {
+            "packageId": "package:social-affairs",
+            "packageChecksum": "sha256:cb11e59c5ad86e0b7ebf22d84bf568436fb57138347c425d9bca488228d2588a",
+            "draftArtifactChecksum": "sha256:93e5c0856e17bdcb0cc584a8216b1c43eafad53c4bfec99e7100dfef06820276",
+            "reviewAttestationChecksum": "sha256:ec9d1160a1cbd981623a7a6cbeb671b2e393e2f3cba9466fec233cd56ea1f0bd",
+            "departmentId": "social-affairs",
+            "reviewedAt": "2026-08-08T00:00:05.000Z"
+          },
+          {
+            "packageId": "package:traffic",
+            "packageChecksum": "sha256:29abcfc15374aa7fc96c4845c8417123d379df8954c89540da8ef209502e56d3",
+            "draftArtifactChecksum": "sha256:a0755cd340e3f1f1648269537220940d8d82b3972ab896f72df78c50dcd8b12f",
+            "reviewAttestationChecksum": "sha256:2c1d63f9084ec4468705d40d5d4623e81cd150f16354c45b44e48c615953eff8",
+            "departmentId": "traffic",
+            "reviewedAt": "2026-08-08T00:00:05.000Z"
+          }
+        ]
+      },
+      "briefChecksum": "sha256:02e4654b52118f1235c1a7de62abfd313ef1367e98b28722baa49f56922f3ca5",
+      "policyVersion": "example-test-citizen-pass-v1",
+      "correctionState": "current",
+      "authorityBinding": "none"
+    },
+    "returnChecksum": "sha256:1b23d7d54b50a1d0da969d0e0c844623facb71639fa6438f1818f6cede7e22b6"
+  }
+}

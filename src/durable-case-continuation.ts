@@ -1,4 +1,5 @@
 import { types as utilTypes } from "node:util";
+import { createSyntheticCitizenBriefReturn, type SyntheticCitizenBriefReturnV1 } from "./synthetic-citizen-brief-return.ts";
 
 import { MUNICIPAL_CASE_ID, SYNTHETIC_CASE_ID } from "./case-id.ts";
 
@@ -109,6 +110,7 @@ export type DurableCaseContinuation = {
     sourceBrief: { id: string; briefChecksum: string };
   }): Promise<CommandReceipt>;
   recordReviewedOutcome(input: AuthorizedInput & { outcome: ReviewedOutcomeInput }): Promise<CommandReceipt>;
+  currentSyntheticCitizenBrief(input: { caseId: string }): SyntheticCitizenBriefReturnV1;
   currentPublicKnowledge(input: { caseId: string }): PublicKnowledgeProjectionV1;
 };
 
@@ -498,6 +500,11 @@ export function createDurableCaseContinuation(input: DurableCaseContinuationConf
         caseId: authenticated.caseId, actorBinding: authenticated.principal, expectedCaseVersion: current.projection.caseVersion,
         idempotencyKey: `durable-outcome:${outcome.id}:${outcome.sourceParticipation.participationChecksum}`,
         visibility: "private_case", policyVersion: config.policyVersion, payload: { outcome } });
+    },
+    currentSyntheticCitizenBrief(value) {
+      if (config.caseKind !== "synthetic_case") fail("synthetic_brief_unavailable");
+      const parsed = exact(value, ["caseId"], "durable_continuation_public_request_invalid");
+      return createSyntheticCitizenBriefReturn(checkedProjection(config, parsed.caseId, "public").projection);
     },
     currentPublicKnowledge(value) {
       if (config.caseKind === "synthetic_case") fail("synthetic_public_knowledge_unavailable");

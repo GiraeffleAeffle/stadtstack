@@ -28,6 +28,7 @@ COPY src/adapters/citizen-brief-readiness-adapter.ts ./src/adapters/citizen-brie
 COPY src/administration-review-server.ts ./src/administration-review-server.ts
 COPY src/administration-review-service.ts ./src/administration-review-service.ts
 COPY src/durable-case-continuation.ts ./src/durable-case-continuation.ts
+COPY src/synthetic-citizen-brief-return.ts ./src/synthetic-citizen-brief-return.ts
 COPY src/public-knowledge.ts ./src/public-knowledge.ts
 COPY src/staging-administration-authenticator.ts ./src/staging-administration-authenticator.ts
 COPY src/adapters/discussion-adapter.ts ./src/adapters/discussion-adapter.ts

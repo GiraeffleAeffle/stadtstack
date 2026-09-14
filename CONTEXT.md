@@ -516,3 +516,9 @@ A staff-admitted staging simulation of a saved test Citizen Pass adoption.
 It has a separate Case identity and visibly test-only receipt, and proves no
 residence, municipal eligibility, administrative endorsement or civic decision.
 _Avoid_: municipal Case, citizen eligibility, legacy test Case
+
+**Synthetic Citizen Brief return**:
+A separately typed public read of a confirmed Brief from a synthetic Case.
+It connects the Workspace, citizen interface and Mecky to the same reviewed
+test responses and their checksums; invalidation removes the current texts.
+_Avoid_: municipal publication, actual department finding, citizen eligibility
