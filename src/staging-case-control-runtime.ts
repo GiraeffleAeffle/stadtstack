@@ -91,6 +91,8 @@ export type StagingSyntheticAdoptionConfig = Readonly<{
  * and reviewer per required department. No role is selected by a request. */
 export type StagingAdministrationReviewRuntimeConfig = Readonly<{
   caseId: string;
+  /** Already admitted Cases in the same municipality; the original default stays pinned. */
+  additionalCaseIds?: readonly string[];
   grants: readonly StagingAdministrationGrant[];
   allowedHosts: readonly string[];
 }>;
@@ -357,9 +359,16 @@ function captureAdministrationReview(
   value: unknown, municipalityId: string, registry: readonly ActorRegistration[],
   requiredDepartments: readonly string[] | undefined, admissionCredentials: readonly StagingCaseStewardCredential[],
 ): CapturedAdministrationReview {
-  const parsed = exactRecord(value, ["caseId", "grants", "allowedHosts"]);
+  const parsed = allowedRecord(value, ["caseId", "grants", "allowedHosts", "additionalCaseIds"]);
+  for (const field of ["caseId", "grants", "allowedHosts"]) if (!(field in parsed)) invalid();
   const identity = parseSyntheticCaseId(parsed.caseId);
   if (!identity || identity.municipalityId !== municipalityId || !requiredDepartments) invalid();
+  const additionalCaseIds = Object.freeze(parsed.additionalCaseIds === undefined ? [] : exactArray(parsed.additionalCaseIds, 0, 7).map(id => {
+    if (parseSyntheticCaseId(id)?.municipalityId !== municipalityId) invalid();
+    return id as string;
+  }));
+  const caseIds = new Set([parsed.caseId, ...additionalCaseIds]);
+  if (caseIds.size !== additionalCaseIds.length + 1) invalid();
   const oneActor = (actorClass: ActorBinding["actorClass"], departmentId?: string): ActorBinding => {
     const found = registry.filter((entry) => entry.actorClass === actorClass && entry.departmentId === departmentId);
     if (found.length !== 1) invalid();
@@ -372,7 +381,7 @@ function captureAdministrationReview(
   const grants = Object.freeze(exactArray(parsed.grants, 1, 64).map((value) => {
     const grant = exactRecord(value, ["token", "caseId", "actor", "notBefore", "expiresAt"]);
     const principal = exactRecord(grant.actor, ["actorId", "actorClass"]);
-    if (grant.caseId !== parsed.caseId || !registry.some((entry) => entry.actorId === principal.actorId && entry.actorClass === principal.actorClass) ||
+    if (!caseIds.has(grant.caseId) || !registry.some((entry) => entry.actorId === principal.actorId && entry.actorClass === principal.actorClass) ||
       admissionCredentials.some((credential) => credential.token === grant.token)) invalid();
     return Object.freeze({ token: grant.token as string, caseId: grant.caseId as string,
       actor: Object.freeze({ actorId: principal.actorId as string, actorClass: principal.actorClass as ActorBinding["actorClass"] }),
@@ -380,7 +389,7 @@ function captureAdministrationReview(
   }));
   // Validate all grant syntax and token uniqueness before the durable owner is opened.
   createStagingAdministrationAuthenticator({ deploymentEnvironment: "staging", grants });
-  return Object.freeze({ caseId: parsed.caseId as string, grants, allowedHosts: captureHosts(parsed.allowedHosts), actors, departments });
+  return Object.freeze({ caseId: parsed.caseId as string, additionalCaseIds, grants, allowedHosts: captureHosts(parsed.allowedHosts), actors, departments });
 }
 
 function captureConfig(input: StagingCaseControlRuntimeConfig): CapturedConfig {
@@ -578,7 +587,7 @@ function composeStagingCaseControlRuntime(
     let reviewServer: ReturnType<typeof createAdministrationReviewServer> | undefined;
     if (reviewConfig) {
       // Fail before any bind if the configured Case does not already exist.
-      durable.caseCoordinators.open(reviewConfig.caseId);
+      for (const caseId of [reviewConfig.caseId, ...(reviewConfig.additionalCaseIds ?? [])]) durable.caseCoordinators.open(caseId);
       const continuation = createDurableCaseContinuation({
         caseKind: "synthetic_case", municipalityId: config.municipalityId, policyVersion: config.policyVersion,
         caseCoordinators: durable.caseCoordinators,
@@ -586,7 +595,8 @@ function composeStagingCaseControlRuntime(
         actors: reviewConfig.actors, departments: reviewConfig.departments,
       });
       reviewServer = createAdministrationReviewServer({ allowedHosts: reviewConfig.allowedHosts,
-        service: createAdministrationReviewService({ deploymentEnvironment: "staging", caseId: reviewConfig.caseId, continuation }) });
+        service: createAdministrationReviewService({ deploymentEnvironment: "staging", caseId: reviewConfig.caseId,
+          additionalCaseIds: reviewConfig.additionalCaseIds, continuation }) });
     }
     const admission = createRoebelCaseStewardControlServer({
       allowedHosts: config.admissionAllowedHosts,

@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
-  ADMINISTRATION_REVIEW_MAX_BODY_BYTES, ADMINISTRATION_REVIEW_PATH, SYNTHETIC_CITIZEN_BRIEF_PATH,
+  ADMINISTRATION_REVIEW_MAX_BODY_BYTES, parseAdministrationReviewPath,
   type AdministrationReviewResponse, type AdministrationReviewService,
 } from "./administration-review-service.ts";
 
@@ -79,7 +79,7 @@ export function createAdministrationReviewServer(config: {
       if (!hosts.has(oneHeader(request, "host") ?? "") ||
         ["cookie", "origin", "transfer-encoding", "content-encoding"].some((name) => headerValues(request, name).length > 0) ||
         headerValues(request, "authorization").length > 1) { reject(response, 400, "request_invalid"); return; }
-      if (request.url !== ADMINISTRATION_REVIEW_PATH && request.url !== SYNTHETIC_CITIZEN_BRIEF_PATH) { reject(response, 404, "not_found"); return; }
+      if (!request.url || !parseAdministrationReviewPath(request.url)) { reject(response, 404, "not_found"); return; }
       if (request.method !== "GET" && request.method !== "POST") { reject(response, 405, "method_not_allowed"); return; }
       let body: string | null = null;
       if (request.method === "POST") {

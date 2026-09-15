@@ -6,6 +6,24 @@ export const ADMINISTRATION_REVIEW_PATH = "/v1/staging/administration/review";
 export const SYNTHETIC_CITIZEN_BRIEF_PATH = "/v1/staging/administration/citizen-brief";
 export const ADMINISTRATION_REVIEW_MAX_BODY_BYTES = 65_536;
 
+/** Canonical path only: a selector never conveys a role or admits a Case. */
+export function administrationReviewCasePath(caseId: string, operation: "review" | "citizen-brief" = "review"): string {
+  if (!parseSyntheticCaseId(caseId)) throw new Error("administration_review_config_invalid");
+  return `/v1/staging/administration/cases/${encodeURIComponent(caseId)}/${operation}`;
+}
+
+export function parseAdministrationReviewPath(path: string): { caseId: string | null; operation: "review" | "citizen-brief" } | null {
+  if (path === ADMINISTRATION_REVIEW_PATH) return { caseId: null, operation: "review" };
+  if (path === SYNTHETIC_CITIZEN_BRIEF_PATH) return { caseId: null, operation: "citizen-brief" };
+  const match = /^\/v1\/staging\/administration\/cases\/([^/]+)\/(review|citizen-brief)$/u.exec(path);
+  if (!match) return null;
+  try {
+    const caseId = decodeURIComponent(match[1]!);
+    const operation = match[2] as "review" | "citizen-brief";
+    return administrationReviewCasePath(caseId, operation) === path ? { caseId, operation } : null;
+  } catch { return null; }
+}
+
 type ReviewPort = Pick<DurableCaseContinuation,
   "administrationView" | "assignDepartmentPackage" | "recordDepartmentDraft" | "attestDepartmentReview" |
   "prepareCitizenBrief" | "applyCitizenBrief" | "currentSyntheticCitizenBrief">;
@@ -40,19 +58,25 @@ function exact(value: unknown, keys: readonly string[]): Record<string, unknown>
   return value as Record<string, unknown>;
 }
 
-/** One pinned synthetic Case. Trusted identity comes solely from the injected
- * continuation authenticator; a request cannot supply actor or Case bindings.
+/** Explicitly pinned synthetic Cases. Trusted identity comes solely from the
+ * continuation authenticator; selecting a Case does not authorize access.
  * The separate credential-free GET returns only the synthetic Brief projection.
  * No admission, participation, municipal publication or treasury port exists. */
 export function createAdministrationReviewService(config: {
   deploymentEnvironment: "staging";
   caseId: string;
+  additionalCaseIds?: readonly string[];
   continuation: ReviewPort;
 }): AdministrationReviewService {
-  if (config.deploymentEnvironment !== "staging" || !parseSyntheticCaseId(config.caseId)) {
+  const identity = parseSyntheticCaseId(config.caseId);
+  const extra = config.additionalCaseIds === undefined ? [] : config.additionalCaseIds;
+  if (config.deploymentEnvironment !== "staging" || !identity || !Array.isArray(extra) || extra.length > 7 ||
+    extra.some(id => parseSyntheticCaseId(id)?.municipalityId !== identity.municipalityId) ||
+    new Set([config.caseId, ...extra]).size !== extra.length + 1) {
     throw new Error("administration_review_config_invalid");
   }
-  const caseId = config.caseId;
+  const defaultCaseId = config.caseId;
+  const caseIds = new Set([defaultCaseId, ...extra]);
   const port: ReviewPort = Object.freeze({
     administrationView: config.continuation.administrationView.bind(config.continuation),
     assignDepartmentPackage: config.continuation.assignDepartmentPackage.bind(config.continuation),
@@ -64,13 +88,16 @@ export function createAdministrationReviewService(config: {
   });
   return Object.freeze({
     async respond(request) {
-      if (request.path === SYNTHETIC_CITIZEN_BRIEF_PATH) {
+      const route = parseAdministrationReviewPath(request.path);
+      if (!route) return error(404, "not_found");
+      const caseId = route.caseId ?? defaultCaseId;
+      if (!caseIds.has(caseId)) return error(404, "not_found");
+      if (route.operation === "citizen-brief") {
         if (request.method !== "GET") return error(405, "method_not_allowed");
         if (request.body !== null || request.authorization != null) return error(400, "request_invalid");
         try { return response(200, port.currentSyntheticCitizenBrief({ caseId })); }
         catch { return error(500, "brief_unavailable"); }
       }
-      if (request.path !== ADMINISTRATION_REVIEW_PATH) return error(404, "not_found");
       if (request.method !== "GET" && request.method !== "POST") return error(405, "method_not_allowed");
       if (request.body !== null && (typeof request.body !== "string" ||
         Buffer.byteLength(request.body, "utf8") > ADMINISTRATION_REVIEW_MAX_BODY_BYTES)) return error(413, "request_too_large");
