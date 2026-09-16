@@ -8,7 +8,7 @@ import test, { type TestContext } from "node:test";
 import { createSqliteAtomicTopicCaseAdmission, prepareSyntheticDepartmentReviewMigration } from "../src/adapters/sqlite-atomic-topic-case-admission.ts";
 import { createStagingCaseControlRuntime, type StagingCaseControlRuntimeConfig } from "../src/staging-case-control-runtime.ts";
 import { CASE_SHUTDOWN_SEAL_FILENAME, verifyCaseShutdownSeal } from "../src/case-shutdown-seal.ts";
-import { ADMINISTRATION_REVIEW_PATH } from "../src/administration-review-service.ts";
+import { ADMINISTRATION_REVIEW_PATH, SYNTHETIC_CITIZEN_BRIEF_PATH, administrationReviewCasePath } from "../src/administration-review-service.ts";
 import { CREDENTIAL_FREE_CASE_BINDING_OUTBOX_PATH } from "../src/credential-free-case-binding-outbox-server.ts";
 import type { ActorBinding, ActorRegistration } from "../src/civic-case-coordinator.ts";
 import type { SyntheticAdoptionEvidenceBundle, SyntheticAdoptionEvidencePolicy } from "../src/citizen-adoption-evidence.ts";
@@ -141,6 +141,8 @@ test("review configuration rejects ambiguous roles, foreign grants and reused ad
   const before = readFileSync(join(h.config.rootDir, h.seal.databaseBasename));
   const review = h.config.administrationReview!;
   const bad = [
+    ...[[review.caseId], [review.caseId.replace("example-city", "other-city")], ["not-a-case"], Array(8).fill(review.caseId)]
+      .map(additionalCaseIds => ({ ...h.config, administrationReview: { ...review, additionalCaseIds } })),
     { ...h.config, administrationReview: { ...review, grants: [{ ...review.grants[0]!, token: h.admissionToken }] } },
     { ...h.config, administrationReview: { ...review, grants: [{ ...review.grants[0]!, actor: { actorId: "example:unknown", actorClass: "administration" as const } }] } },
     { ...h.config, administrationReview: { ...review, caseId: review.caseId.replace("synthetic-case:", "case:") } },
@@ -153,6 +155,69 @@ test("review configuration rejects ambiguous roles, foreign grants and reused ad
     assert.deepEqual(readFileSync(join(h.config.rootDir, h.seal.databaseBasename)), before);
     assert.equal(existsSync(join(h.config.rootDir, CASE_SHUTDOWN_SEAL_FILENAME)), false);
   }
+});
+
+test("two admitted Cases share one writer while review credentials, commands and public returns remain Case-scoped after restart", async (t) => {
+  const h = await setup(t);
+  const vector = JSON.parse(readFileSync(new URL("./fixtures/synthetic-adoption-second-roebel-v1.json", import.meta.url), "utf8"));
+  // Admission happens through the existing writer before the Case is enabled
+  // for review. The second fixture uses real signatures and an offline ledger.
+  const writer = createSqliteAtomicTopicCaseAdmission({ rootDir: h.config.rootDir,
+    municipalityId: h.config.municipalityId, policyVersion: h.config.policyVersion,
+    actorRegistry: h.config.actorRegistry, allowedSignerPubkeys: [], allowedAgentPubkeys: h.config.allowedAgentPubkeys,
+    requiredDepartmentIds: departments, syntheticDepartmentReview: true, durableState: h.config.durableState,
+    syntheticAdoption: { policy: vector.policy, now: () => new Date(vector.verifiedAt * 1000), acceptance: { resolve: async () => vector.projection } } });
+  const second = await writer.admission.admitSyntheticAdoption!({ schemaVersion: "atomic_synthetic_adoption_admission_v1",
+    municipalityId: h.config.municipalityId, policyVersion: h.config.policyVersion, actorBinding: steward,
+    expectedCaseVersion: 0, bundle: vector.bundle });
+  writer.sealAndClose();
+  assert.notEqual(second.caseId, h.receipt.caseId);
+  const review = h.config.administrationReview!;
+  const secondGrants = review.grants.map(grant => ({ ...grant, caseId: second.caseId, token: token() }));
+  const config = { ...h.config, administrationReview: { ...review, additionalCaseIds: [second.caseId], grants: [...review.grants, ...secondGrants] } };
+  let runtime = h.createRuntime(config); await runtime.start();
+  const path = administrationReviewCasePath(second.caseId);
+  const send = (actor = steward, body?: unknown, url = path, useOriginal = false) => request(runtime.health().ports["administration-review"]!,
+    "review.internal", useOriginal ? h.authorization(actor) : `Bearer ${secondGrants.find(g => g.actor.actorId === actor.actorId)!.token}`, body, url);
+  const publicRead = (url: string) => request(runtime.health().ports["administration-review"]!, "review.internal", undefined, undefined, url);
+  const original = accepted(await send(steward, undefined, ADMINISTRATION_REVIEW_PATH, true));
+  const initial = accepted(await send()); assert.equal(initial.caseId, second.caseId);
+  assert.equal((await send(steward, undefined, path, true)).status, 401);
+  assert.equal((await send(steward, undefined, ADMINISTRATION_REVIEW_PATH)).status, 401);
+  assert.equal((await send(steward, undefined, administrationReviewCasePath(h.receipt.caseId))).status, 401);
+  for (const invalid of [path + "?caseId=x", path.replace(/%3A/g, ":"), path.replace(/%3A/g, "%3a"),
+    path.replace(/%3A/g, "%253A"), path + "/", administrationReviewCasePath(second.caseId.replace(/.$/, second.caseId.endsWith("0") ? "1" : "0"))]) {
+    assert.equal((await send(steward, undefined, invalid)).status, 404, invalid);
+  }
+  const assign = { schemaVersion: "administration_review_request_v1", operation: "assign", expectedCaseVersion: 3,
+    payload: { departmentPackage: { id: "package:second-planning", departmentId: "planning", suggestionId: initial.suggestion.id,
+      request: "Assess the second crossing only.", assignedAgentActorId: agent("planning").actorId,
+      assignedReviewerActorId: reviewer("planning").actorId, authorityBinding: "none" } } };
+  assert.equal((await send(steward, assign, path, true)).status, 401);
+  const assigned = accepted(await send(steward, assign));
+  const pkg = accepted(await send(agent("planning"))).departmentPackages[0];
+  accepted(await send(agent("planning"), { schemaVersion: "administration_review_request_v1", operation: "draft", expectedCaseVersion: 4,
+    payload: { packageId: pkg.id, packageChecksum: pkg.packageChecksum, draft: { schemaVersion: "department_draft_v1", id: "draft:second-planning",
+      publicSummary: "Fictional second-Case answer.", publicCitations: ["synthetic://second/source"], privateEvidenceRefs: ["synthetic://second/private-only"], authorityBinding: "none" } } }));
+  const drafted = accepted(await send(reviewer("planning"))).departmentPackages[0];
+  const reviewed = accepted(await send(reviewer("planning"), { schemaVersion: "administration_review_request_v1", operation: "review", expectedCaseVersion: 5,
+    payload: { review: { packageId: pkg.id, draftArtifactChecksum: drafted.draft.artifactChecksum, decision: "accepted", reviewedAt: new Date().toISOString() } } }));
+  assert.equal(reviewed.receipt.caseVersion, 6);
+  assert.deepEqual(accepted(await send(steward, undefined, ADMINISTRATION_REVIEW_PATH, true)), original);
+  for (const [url, caseId] of [[SYNTHETIC_CITIZEN_BRIEF_PATH, h.receipt.caseId], [administrationReviewCasePath(second.caseId, "citizen-brief"), second.caseId]]) {
+    const result = accepted(await publicRead(url!)); assert.equal(result.caseId, caseId); assert.equal(result.status, "not_ready");
+    assert.ok(!JSON.stringify(result).includes("synthetic://second/private-only"));
+    assert.equal((await send(steward, undefined, url)).status, 400);
+  }
+  const final = accepted(await send());
+  await runtime.close();
+  runtime = h.createRuntime(config); await runtime.start();
+  assert.deepEqual(accepted(await send()), final);
+  assert.deepEqual(accepted(await send(steward, assign)), assigned);
+  assert.deepEqual(accepted(await send(steward, undefined, ADMINISTRATION_REVIEW_PATH, true)), original);
+  const outbox = accepted(await request(runtime.health().ports.outbox!, "outbox.internal", undefined, undefined,
+    `${CREDENTIAL_FREE_CASE_BINDING_OUTBOX_PATH}?afterSequence=0&limit=2`));
+  assert.deepEqual(outbox.entries.map((entry: { receipt: unknown }) => entry.receipt), [h.receipt, second]);
 });
 
 test("review listener bind failure drains every sibling before releasing and sealing the single owner", async (t) => {

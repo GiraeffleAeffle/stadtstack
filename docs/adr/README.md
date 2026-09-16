@@ -6,6 +6,9 @@ publication, runtime operations, public relay writes, or civic effects.
 
 ## Accepted baseline
 
+- [ADR 0037](./0037-explicit-case-selection-for-synthetic-review.md) — route
+  explicitly configured synthetic Cases through one writer, retaining separate
+  Case credentials, the original default and public Brief bindings.
 - [ADR 0036](./0036-activate-synthetic-review-on-a-retained-source.md) — activate
   the exact review migration on a separate target, retaining the sealed source
   and resuming interrupted imports through linked receipts.
